@@ -1,0 +1,103 @@
+{
+  "SchemaVersion": "2.0",
+  "GeneralInformation": {
+    "MinSdkVersion": "21.0000.0000",
+    "Guid": "EE8EF1AA-E993-4482-9F64-A79DCC7913B8",
+    "DeviceType": "Platform",
+    "Manufacturer": "TP-Link",
+    "BaseModel": "KasaTapoPlatform",
+    "OtherSupportedModels": [],
+    "SupportedSeries": [ "4-Series" ],
+    "DependencyGroup": "",
+    "Developer": {
+      "Company": "Neil Colvin",
+      "Contact": "Neil Colvin",
+      "Email": "",
+      "Website": "",
+      "PhoneNumber": ""
+    },
+    "DriverVersion": "1.0.000.0084",
+    "VersionDate": "2026-06-19 06:19:06.184"
+  },
+  "ConfigurationSteps": {
+    "Items": [
+      {
+        "Id": "UserName",
+        "Title": "Tapo User Name",
+        "Description": "Optional Tapo account user name or email address. Leave blank to disable Tapo discovery and discover only Kasa devices.",
+        "UsageContext": "Authentication.Username",
+        "Required": false,
+        "Persistent": true,
+        "ValueType": "String"
+      },
+      {
+        "Id": "Password",
+        "Title": "Tapo Password",
+        "Description": "Optional Tapo password used with the supplied Tapo user name. Leave blank to disable Tapo discovery and discover only Kasa devices.",
+        "UsageContext": "Authentication.Password",
+        "Required": false,
+        "Persistent": true,
+        "ValueType": "String",
+        "Masked": true
+      },
+      {
+        "Id": "DiscoveryTimeoutSeconds",
+        "Title": "Discovery Timeout (Seconds)",
+        "Description": "Timeout used for discovery and per-device connection attempts.",
+        "UsageContext": "Generic.Prompt",
+        "Required": true,
+        "Persistent": true,
+        "ValueType": "String",
+        "DefaultValue": "5"
+      },
+      {
+        "Id": "TreatPlugsAsLights",
+        "Title": "Treat Plugs As Lights",
+        "Description": "Expose smart plugs as light entities when they control lamps or other lighting loads.",
+        "UsageContext": "Generic.Prompt",
+        "Required": true,
+        "Persistent": true,
+        "ValueType": "Boolean",
+        "DefaultValue": false
+      },
+      {
+        "Id": "EnableLightPolling",
+        "Title": "Enable Light Polling",
+        "Description": "Poll light-capable devices for external state changes.",
+        "UsageContext": "Generic.Prompt",
+        "Required": true,
+        "Persistent": true,
+        "ValueType": "Boolean",
+        "DefaultValue": false
+      },
+      {
+        "Id": "LightPollIntervalSeconds",
+        "Title": "Light Poll Interval (Seconds)",
+        "Description": "Polling interval for light-capable devices when light polling is enabled.",
+        "UsageContext": "Generic.Prompt",
+        "Required": true,
+        "Persistent": true,
+        "ValueType": "String",
+        "DefaultValue": "15"
+      },
+      {
+        "Id": "SensorPollIntervalSeconds",
+        "Title": "Sensor/Button Poll Interval (Seconds)",
+        "Description": "Reserved polling interval for future sensor and button entities that require regular refresh.",
+        "UsageContext": "Generic.Prompt",
+        "Required": true,
+        "Persistent": true,
+        "ValueType": "String",
+        "DefaultValue": "3"
+      }
+    ],
+    "Steps": [
+      {
+        "StepId": "Settings",
+        "Items": [ "UserName", "Password", "DiscoveryTimeoutSeconds", "TreatPlugsAsLights", "EnableLightPolling", "LightPollIntervalSeconds", "SensorPollIntervalSeconds" ],
+        "NextStep": null
+      }
+    ],
+    "FirstStep": "Settings"
+  }
+}

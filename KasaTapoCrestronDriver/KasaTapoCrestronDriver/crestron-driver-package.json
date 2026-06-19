@@ -1,0 +1,13 @@
+{
+  "standardVersion": "1.0",
+  "packageType": "CrestronHomeDriver",
+  "driverPlatform": "Crestron Home",
+  "payloadType": "pkg",
+  "payloadFile": "KasaTapoCrestronDriver.pkg",
+  "containsManagedDllPayload": false,
+  "packageId": "CrestronHomeDriver.TpLink.KasaTapoPlatform",
+  "packageVersion": "$packageVersion$",
+  "displayName": "KasaTapo Platform",
+  "vendor": "TP-Link",
+  "driverCategory": "Platform"
+}

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="templatepack.csproj" />
+  <Project Path="KasaTapoCrestronDriver/KasaTapoCrestronDriver.csproj" />
+</Solution>

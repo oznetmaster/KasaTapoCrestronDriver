@@ -1,0 +1,52 @@
+# Visual Studio
+.vs/
+*.vsidx
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+# .NET / NuGet
+*.nupkg
+*.snupkg
+packages/
+artifacts/
+TestResults/
+
+# Copilot / planning / temp agent files
+.copilot/
+.copilot/**
+**/.copilot/
+**/.copilot/**
+plans/
+plans/**
+**/plans/
+**/plans/**
+**/plan-*.md
+**/CopilotSnapshots/
+**/CopilotSnapshots/**
+
+# Repository repair backups
+.git_backup_*/
+**/.git_backup_*/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.testlog
+testlog.manifest
+
+# OS files
+Thumbs.db
+Desktop.ini

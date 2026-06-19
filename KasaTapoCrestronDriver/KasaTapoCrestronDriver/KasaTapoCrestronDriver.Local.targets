@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+	<ManifestUtilExe>C:\Applications (x86)\Crestron\Driver SDK\ManifestUtil\ManifestUtil.exe</ManifestUtilExe>
+	<LocalCrestronSdkLibDir>C:\Applications (x86)\Crestron\Driver SDK\Libraries</LocalCrestronSdkLibDir>
+	<LocalNet472ReferenceAssemblies>C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2</LocalNet472ReferenceAssemblies>
+	<LocalNetFxRuntimeDir>C:\Windows\Microsoft.NET\Framework64\v4.0.30319</LocalNetFxRuntimeDir>
+  </PropertyGroup>
+
+  <Target Name="DeployDriver" AfterTargets="PackageDriver" Condition="'$(DeployAfterBuild)' == 'true' And '$(Configuration)' == 'Debug'" Inputs="$(TargetDir)$(AssemblyName).pkg" Outputs="$(TargetDir)$(AssemblyName).deployed.stamp">
+	<PropertyGroup>
+	  <PkgFile>$(TargetDir)$(AssemblyName).pkg</PkgFile>
+	  <DeployScriptPath>$(MSBuildProjectDirectory)\Deploy.ps1</DeployScriptPath>
+	</PropertyGroup>
+	<Exec Command="pwsh -NoProfile -NonInteractive -File &quot;$(DeployScriptPath)&quot; -PkgFile &quot;$(PkgFile)&quot; -ProcessorIP &quot;$(CrestronHomeIP)&quot; -User &quot;$(CrestronHomeFtpUser)&quot; -Password &quot;$(CrestronHomeSftpPassword)&quot;" ContinueOnError="true" />
+	<Touch Files="$(TargetDir)$(AssemblyName).deployed.stamp" AlwaysCreate="true" />
+  </Target>
+</Project>

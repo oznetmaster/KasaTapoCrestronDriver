@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<uidefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://prd-use-rad-assets.azurewebsites.net/ExtensionsSchemaDefinition.xsd">
+  <version ver="2.0" />
+  <tile icon="{platformTileIcon}" status="{platformTileStatus}" navigation="show:MainPage" showinhomepage="#true" showinroompage="#false" />
+  <layouts>
+	 <layout id="MainPage" title="^PlatformTitle" isdefaultlayout="#true">
+		<controls>
+		  <textdisplay id="PlatformStatusDisplay" title="^PlatformStatusTitle" line1label="{platformStatus}" line2label="{platformLastError}" />
+		  <statusandbutton id="PrimaryActionButton" label="^PrimaryActionTitle" status="{platformTileStatus}" buttonlabel="{primaryActionLabel}" buttonaction="command:performPrimaryAction" />
+		</controls>
+	 </layout>
+  </layouts>
+  <alerts />
+</uidefinition>
