@@ -16,8 +16,8 @@
       "Website": "",
       "PhoneNumber": ""
     },
-    "DriverVersion": "1.0.000.0084",
-    "VersionDate": "2026-06-19 06:19:06.184"
+    "DriverVersion": "1.0.000.0425",
+    "VersionDate": "2026-06-22 16:12:43.585"
   },
   "ConfigurationSteps": {
     "Items": [
@@ -25,6 +25,7 @@
         "Id": "UserName",
         "Title": "Tapo User Name",
         "Description": "Optional Tapo account user name or email address. Leave blank to disable Tapo discovery and discover only Kasa devices.",
+        "Availability": "Always",
         "UsageContext": "Authentication.Username",
         "Required": false,
         "Persistent": true,
@@ -34,6 +35,7 @@
         "Id": "Password",
         "Title": "Tapo Password",
         "Description": "Optional Tapo password used with the supplied Tapo user name. Leave blank to disable Tapo discovery and discover only Kasa devices.",
+        "Availability": "Always",
         "UsageContext": "Authentication.Password",
         "Required": false,
         "Persistent": true,
@@ -44,16 +46,18 @@
         "Id": "DiscoveryTimeoutSeconds",
         "Title": "Discovery Timeout (Seconds)",
         "Description": "Timeout used for discovery and per-device connection attempts.",
+        "Availability": "Always",
         "UsageContext": "Generic.Prompt",
         "Required": true,
         "Persistent": true,
         "ValueType": "String",
-        "DefaultValue": "5"
+        "DefaultValue": "8"
       },
       {
         "Id": "TreatPlugsAsLights",
         "Title": "Treat Plugs As Lights",
         "Description": "Expose smart plugs as light entities when they control lamps or other lighting loads.",
+        "Availability": "Always",
         "UsageContext": "Generic.Prompt",
         "Required": true,
         "Persistent": true,
@@ -64,6 +68,7 @@
         "Id": "EnableLightPolling",
         "Title": "Enable Light Polling",
         "Description": "Poll light-capable devices for external state changes.",
+        "Availability": "Always",
         "UsageContext": "Generic.Prompt",
         "Required": true,
         "Persistent": true,
@@ -74,6 +79,7 @@
         "Id": "LightPollIntervalSeconds",
         "Title": "Light Poll Interval (Seconds)",
         "Description": "Polling interval for light-capable devices when light polling is enabled.",
+        "Availability": "Always",
         "UsageContext": "Generic.Prompt",
         "Required": true,
         "Persistent": true,
@@ -84,6 +90,7 @@
         "Id": "SensorPollIntervalSeconds",
         "Title": "Sensor/Button Poll Interval (Seconds)",
         "Description": "Reserved polling interval for future sensor and button entities that require regular refresh.",
+        "Availability": "Always",
         "UsageContext": "Generic.Prompt",
         "Required": true,
         "Persistent": true,

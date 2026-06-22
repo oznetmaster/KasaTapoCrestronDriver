@@ -4,6 +4,8 @@
 	<LocalCrestronSdkLibDir>C:\Applications (x86)\Crestron\Driver SDK\Libraries</LocalCrestronSdkLibDir>
 	<LocalNet472ReferenceAssemblies>C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2</LocalNet472ReferenceAssemblies>
 	<LocalNetFxRuntimeDir>C:\Windows\Microsoft.NET\Framework64\v4.0.30319</LocalNetFxRuntimeDir>
+	<UseLocalKasaTapoClient>false</UseLocalKasaTapoClient>
+	<LocalKasaTapoClientDllPath Condition="'$(LocalKasaTapoClientDllPath)' == ''">C:\Projects\KasaClient\KasaClient\bin\Release\net472\KasaTapoClient.dll</LocalKasaTapoClientDllPath>
   </PropertyGroup>
 
   <Target Name="DeployDriver" AfterTargets="PackageDriver" Condition="'$(DeployAfterBuild)' == 'true' And '$(Configuration)' == 'Debug'" Inputs="$(TargetDir)$(AssemblyName).pkg" Outputs="$(TargetDir)$(AssemblyName).deployed.stamp">

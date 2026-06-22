@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -6,56 +7,109 @@ using KasaTapoClient;
 namespace KasaTapoCrestronDriver;
 
 internal enum ManagedLightKind
-   {
-   DimmableRoot,
-   TunableWhiteRoot,
-   ColorRoot,
-   OnOffRoot,
-   OnOffChild
-   }
+	{
+	Dimmable,
+	TunableWhite,
+	Color,
+	OnOff
+	}
 
 internal sealed class ManagedLightDescriptor
-   {
-   public ManagedLightDescriptor (
-       string controllerId,
-       string name,
-       string modelName,
-       string serialNumber,
-       ManagedLightKind kind,
-       string? childId = null)
-      {
-      ControllerId = controllerId;
-      Name = name;
-      ModelName = modelName;
-      SerialNumber = serialNumber;
-      Kind = kind;
-      ChildId = childId;
-      }
+	{
+	public ManagedLightDescriptor (
+		string controllerId,
+		string host,
+		DeviceType discoveredDeviceType,
+		string name,
+		string modelName,
+		string serialNumber,
+		ManagedLightKind kind,
+		string? discoveryDeviceId = null,
+		string? childId = null)
+		{
+		ControllerId = controllerId;
+		Host = host;
+		DiscoveredDeviceType = discoveredDeviceType;
+		Name = name;
+		ModelName = modelName;
+		SerialNumber = serialNumber;
+		Kind = kind;
+		DiscoveryDeviceId = discoveryDeviceId;
+		ChildId = childId;
+		}
 
-   public string ControllerId { get; }
+	public string ControllerId
+		{
+		get;
+		}
 
-   public string Name { get; }
+	public string Host
+		{
+		get;
+		}
 
-   public string ModelName { get; }
+	public DeviceType DiscoveredDeviceType
+		{
+		get;
+		}
 
-   public string SerialNumber { get; }
+	public string Name
+		{
+		get;
+		}
 
-   public ManagedLightKind Kind { get; }
+	public string ModelName
+		{
+		get;
+		}
 
-   public string? ChildId { get; }
-   }
+	public string SerialNumber
+		{
+		get;
+		}
 
-internal interface IKasaManagedLightEntity
-   {
-   string DeviceName { get; }
+	public ManagedLightKind Kind
+		{
+		get;
+		}
 
-   string ModelName { get; }
+	public string? DiscoveryDeviceId
+		{
+		get;
+		}
 
-   string SerialNumber { get; }
+	public string? ChildId
+		{
+		get;
+		}
+	}
 
-   void UpdateDevice (KasaDevice device, ManagedLightDescriptor descriptor);
+internal interface IKasaManagedLightEntity : IDisposable
+	{
+	string DeviceName
+		{
+		get;
+		}
 
-   Task RefreshAsync (CancellationToken cancellationToken);
+	string ModelName
+		{
+		get;
+		}
 
-   void PublishStateSnapshot ();
-   }
+	string SerialNumber
+		{
+		get;
+		}
+
+	void UpdateDescriptor (ManagedLightDescriptor descriptor, DeviceConfiguration configuration);
+
+	void UpdateConfiguration (DeviceConfiguration configuration);
+
+	void ApplyRuntimeConfiguration (PlatformSharedConfigurationSnapshot previousConfiguration, PlatformSharedConfigurationSnapshot currentConfiguration);
+
+	void Stop ();
+
+	Task RefreshAsync (CancellationToken cancellationToken);
+
+	void PublishStateSnapshot ();
+	}

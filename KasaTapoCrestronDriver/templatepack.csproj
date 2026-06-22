@@ -34,9 +34,10 @@
   </ItemGroup>
 
   <ItemGroup>
-	 <Content Include=".template.config\**\*;KasaTapoCrestronDriver\**\*;KasaTapoCrestronDriver.slnx;README.md;LICENSE"
-				 Exclude="**\bin\**;**\obj\**;**\*.user;**\*.suo;KasaTapoCrestronDriver\KasaTapoCrestronDriver.csproj.user"
-				 Pack="true"
-				 PackagePath="content\%(RecursiveDir)%(Filename)%(Extension)" />
+	 <Content Include=".template.config\**\*;KasaTapoCrestronDriver\**\*;KasaTapoCrestronDriver.slnx;README.md;LICENSE" Exclude="**\bin\**;**\obj\**;**\*.user;**\*.suo;KasaTapoCrestronDriver\KasaTapoCrestronDriver.csproj.user" Pack="true" PackagePath="content\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="PlatformDriver.cs" />
   </ItemGroup>
 </Project>

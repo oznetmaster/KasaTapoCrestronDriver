@@ -51,7 +51,7 @@
   <ItemGroup>
 	 <PackageReference Include="Crestron.DeviceDrivers.DevKit" Version="27.0.24" />
 	 <PackageReference Include="Hafner.Compatibility.MetaPackage" Version="1.9.0" />
-	 <PackageReference Include="KasaTapoClient" Version="1.0.1" />
+	 <PackageReference Include="KasaTapoClient" Version="1.0.2" />
   </ItemGroup>
 
   <ItemGroup>
@@ -63,9 +63,6 @@
 	 <None Include="..\LICENSE" Pack="true" PackagePath="\" Visible="false" />
 	 <None Include="$(PackageDriverPkgPath)" Pack="true" PackagePath="\" Visible="false" Condition="'$(PackageDriverPkgPath)' != ''" />
 	 <None Include="$(PackageDriverManifestPath)" Pack="true" PackagePath="\" Visible="false" Condition="'$(PackageDriverManifestPath)' != ''" />
-	 <None Include="IncludeInPkg\UiDefinitions\UiDefinition.xml" />
-	 <None Include="IncludeInPkg\room\uidefinitions\UiDefinition.xml" />
-	 <None Include="IncludeInPkg\Translations\en-US.json" />
 	 <None Include="BumpDriverVersion.ps1" />
 	 <None Include="Deploy.ps1" />
 	 <None Include="FetchLatestLog.ps1" />
@@ -76,6 +73,12 @@
 	 <None Include="StartReleaseCycle.ps1" />
 	 <None Include="KasaTapoCrestronDriver.Local.targets" />
 	 <None Include="KasaTapoCrestronDriver.csproj.user" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="IncludeInPkg\room\uidefinitions\" />
+    <Folder Include="IncludeInPkg\Translations\" />
+    <Folder Include="IncludeInPkg\UiDefinitions\" />
   </ItemGroup>
 
   <PropertyGroup>
