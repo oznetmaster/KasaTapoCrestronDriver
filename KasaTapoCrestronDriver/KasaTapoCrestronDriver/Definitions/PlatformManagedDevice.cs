@@ -35,7 +35,7 @@ public sealed class PlatformManagedDevice
    /// <summary>
    /// Gets the display name of the managed device.
    /// </summary>
-   public string Name { get; }
+   public string Name { get; internal set; }
 
    [EntityProperty]
    /// <summary>

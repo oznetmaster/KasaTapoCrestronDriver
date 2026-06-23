@@ -94,8 +94,6 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private int _pollingGeneration;
 	private bool _disposed;
 
-	private bool IsKl130Controller => string.Equals (ControllerId, "device_8012184b2d44b892681bbba81fc6331f1d932836", StringComparison.OrdinalIgnoreCase);
-
 	public KasaLightEntity (
 		string controllerId,
 		ManagedLightDescriptor descriptor,
@@ -113,23 +111,11 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		_driverLogId = driverLogId;
 
 		UpdateDescriptor (descriptor, configuration);
-
-		try
-			{
-			LogInfo ($"Light entity '{ControllerId}' constructor connecting to discovered host '{descriptor.Host}' as {descriptor.DiscoveredDeviceType}; driverId='{_driverLogId}'.");
-			InitializeConnectedStateAsync (_lifetimeCancellationSource.Token).GetAwaiter ().GetResult ();
-			_suppressPropertyNotifications = false;
-			RestartPolling ();
-			}
-		catch (Exception ex)
-			{
-			LogInfo ($"Light entity '{ControllerId}' constructor connect failed for host '{descriptor.Host}': {ex.Message}");
-			OnlineIndicatorIsOnline = false;
-			ReadyIndicatorIsReady = false;
-			_suppressPropertyNotifications = false;
-			RestartPolling ();
-			StartBackgroundOperation (() => RefreshAsync (_lifetimeCancellationSource.Token), "constructor-initial-refresh");
-			}
+		OnlineIndicatorIsOnline = false;
+		ReadyIndicatorIsReady = false;
+		_suppressPropertyNotifications = false;
+		RestartPolling ();
+		StartBackgroundOperation (InitializeStartupAsync, "constructor-initial-refresh");
 		}
 
 	public string DeviceName => _deviceName;
@@ -595,13 +581,21 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	public virtual void UpdateDescriptor (ManagedLightDescriptor descriptor, DeviceConfiguration configuration)
 		{
-		_descriptor = descriptor;
+		if (_descriptor is null)
+			{
+			_descriptor = descriptor;
+			}
+		else
+			{
+			_descriptor.Name = descriptor.Name;
+			}
+
 		_configuration = configuration;
-		_deviceName = descriptor.Name;
-		_modelName = descriptor.ModelName;
-		_serialNumber = descriptor.SerialNumber;
-		_kind = descriptor.Kind;
-		_childId = descriptor.ChildId;
+		_deviceName = _descriptor.Name;
+		_modelName = _descriptor.ModelName;
+		_serialNumber = _descriptor.SerialNumber;
+		_kind = _descriptor.Kind;
+		_childId = _descriptor.ChildId;
 
 		RestartPolling ();
 		}
@@ -887,6 +881,26 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		ReadyIndicatorIsReady = true;
 		}
 
+	private async Task InitializeStartupAsync ()
+		{
+		try
+			{
+			LogInfo ($"Light entity '{ControllerId}' startup connecting to discovered host '{_descriptor.Host}' as {_descriptor.DiscoveredDeviceType}; driverId='{_driverLogId}'.");
+			await InitializeConnectedStateAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
+			}
+		catch (OperationCanceledException)
+			{
+			throw;
+			}
+		catch (Exception ex)
+			{
+			LogInfo ($"Light entity '{ControllerId}' startup connect failed for host '{_descriptor.Host}': {ex.Message}");
+			OnlineIndicatorIsOnline = false;
+			ReadyIndicatorIsReady = false;
+			StartBackgroundOperation (() => RefreshAsync (_lifetimeCancellationSource.Token), "startup-connect-retry");
+			}
+		}
+
 	private async Task<KasaDevice> EnsureConnectedAsync (CancellationToken cancellationToken)
 		{
 		KasaDevice? existingDevice = _connectedDevice;
@@ -950,17 +964,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		LogInfo ($"Light entity '{ControllerId}' UpdateDescriptorFromConnectedDevice: resolvedAlias='{resolvedAlias}', deviceAlias='{device.Alias ?? "<null>"}', systemInfoAlias='{device.SystemInfo?.Alias ?? "<null>"}', previousName='{_descriptor.Name ?? "<null>"}'.");
 
-		ManagedLightKind resolvedKind = ResolveManagedLightKind (device, _descriptor);
-		_descriptor = new ManagedLightDescriptor (
-			ControllerId,
-			device.Configuration.Host,
-			device.DeviceType,
-			resolvedAlias,
-			device.SystemInfo?.Model ?? _descriptor.ModelName,
-			device.SystemInfo?.DeviceId ?? _descriptor.SerialNumber,
-			resolvedKind,
-			device.SystemInfo?.DeviceId ?? _descriptor.DiscoveryDeviceId,
-			_descriptor.ChildId);
+		_descriptor.Name = resolvedAlias;
 
 		_deviceName = _descriptor.Name;
 		_modelName = _descriptor.ModelName;

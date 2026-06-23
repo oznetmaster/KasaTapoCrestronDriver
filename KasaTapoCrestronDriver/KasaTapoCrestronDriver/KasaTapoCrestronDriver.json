@@ -16,8 +16,8 @@
       "Website": "",
       "PhoneNumber": ""
     },
-    "DriverVersion": "1.0.000.0425",
-    "VersionDate": "2026-06-22 16:12:43.585"
+    "DriverVersion": "1.0.000.0483",
+    "VersionDate": "2026-06-23 11:33:58.002"
   },
   "ConfigurationSteps": {
     "Items": [
@@ -51,7 +51,7 @@
         "Required": true,
         "Persistent": true,
         "ValueType": "String",
-        "DefaultValue": "8"
+        "DefaultValue": "10"
       },
       {
         "Id": "TreatPlugsAsLights",

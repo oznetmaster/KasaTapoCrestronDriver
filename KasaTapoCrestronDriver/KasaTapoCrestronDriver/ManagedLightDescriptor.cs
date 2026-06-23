@@ -24,6 +24,7 @@ internal sealed class ManagedLightDescriptor
 		string modelName,
 		string serialNumber,
 		ManagedLightKind kind,
+		bool awaitingConnectedIdentity = false,
 		string? discoveryDeviceId = null,
 		string? childId = null)
 		{
@@ -34,6 +35,7 @@ internal sealed class ManagedLightDescriptor
 		ModelName = modelName;
 		SerialNumber = serialNumber;
 		Kind = kind;
+		AwaitingConnectedIdentity = awaitingConnectedIdentity;
 		DiscoveryDeviceId = discoveryDeviceId;
 		ChildId = childId;
 		}
@@ -56,6 +58,7 @@ internal sealed class ManagedLightDescriptor
 	public string Name
 		{
 		get;
+		internal set;
 		}
 
 	public string ModelName
@@ -71,6 +74,12 @@ internal sealed class ManagedLightDescriptor
 	public ManagedLightKind Kind
 		{
 		get;
+		}
+
+	public bool AwaitingConnectedIdentity
+		{
+		get;
+		internal set;
 		}
 
 	public string? DiscoveryDeviceId
