@@ -114,6 +114,8 @@ internal interface IKasaManagedLightEntity : IDisposable
 
 	void UpdateConfiguration (DeviceConfiguration configuration);
 
+	void SetConfigured (bool configured, string context);
+
 	void ApplyRuntimeConfiguration (PlatformSharedConfigurationSnapshot previousConfiguration, PlatformSharedConfigurationSnapshot currentConfiguration);
 
 	void Stop ();

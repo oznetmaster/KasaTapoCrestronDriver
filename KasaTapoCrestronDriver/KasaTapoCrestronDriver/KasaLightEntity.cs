@@ -91,6 +91,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private CancellationTokenSource? _sliderCommandCancellationSource;
 	private bool _sliderInteractionActive;
 	private bool _suppressPropertyNotifications = true;
+	private bool _isConfigured;
 	private int _stopState;
 	private int _pollingGeneration;
 	private bool _disposed;
@@ -115,8 +116,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		OnlineIndicatorIsOnline = false;
 		ReadyIndicatorIsReady = false;
 		_suppressPropertyNotifications = false;
-		RestartPolling ();
-		StartBackgroundOperation (InitializeStartupAsync, "constructor-initial-refresh");
+		LogInfo ($"Light entity '{ControllerId}' created in passive discovered state; awaiting child configuration callback before activation.");
 		}
 
 	public string DeviceName => _deviceName;
@@ -623,6 +623,39 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			{
 			ResetConnectionState ();
 			}
+
+		if (_isConfigured)
+			{
+			RestartPolling ();
+			}
+		}
+
+	public void SetConfigured (bool configured, string context)
+		{
+		if (_disposed)
+			{
+			return;
+			}
+
+		if (_isConfigured == configured)
+			{
+			LogInfo ($"Light entity '{ControllerId}' SetConfigured ignored because configured={configured} is unchanged; context='{context}'.");
+			return;
+			}
+
+		_isConfigured = configured;
+		LogInfo ($"Light entity '{ControllerId}' SetConfigured: configured={configured}, context='{context}'.");
+
+		if (!configured)
+			{
+			ResetConnectionState ();
+			Interlocked.Increment (ref _pollingGeneration);
+			_pollingTask = null;
+			return;
+			}
+
+		RestartPolling ();
+		StartBackgroundOperation (InitializeStartupAsync, $"child-configured:{context}");
 		}
 
 	public void ApplyRuntimeConfiguration (PlatformSharedConfigurationSnapshot previousConfiguration, PlatformSharedConfigurationSnapshot currentConfiguration)
@@ -720,6 +753,12 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		{
 		if (_disposed)
 			{
+			return;
+			}
+
+		if (!_isConfigured)
+			{
+			LogInfo ($"Light entity '{ControllerId}' RestartPolling skipped because the child is not configured/installed yet.");
 			return;
 			}
 
@@ -928,6 +967,11 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private async Task<KasaDevice> EnsureConnectedAsync (CancellationToken cancellationToken)
 		{
+		if (!_isConfigured)
+			{
+			throw new InvalidOperationException ($"Light entity '{ControllerId}' cannot connect before child configuration/installation has occurred.");
+			}
+
 		KasaDevice? existingDevice = _connectedDevice;
 		if (existingDevice is not null)
 			{
