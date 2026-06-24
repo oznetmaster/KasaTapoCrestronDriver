@@ -86,6 +86,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private bool _supportsFullColor;
 	private bool _supportsColorTemperature;
 	private bool _supportsEmulatedColorTemperature;
+	private static readonly TimeSpan StartupConnectRetryInterval = TimeSpan.FromSeconds (5);
 	private DesiredLightCommand? _pendingSliderCommand;
 	private CancellationTokenSource? _sliderCommandCancellationSource;
 	private bool _sliderInteractionActive;
@@ -587,7 +588,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		else
 			{
-			_descriptor.Name = descriptor.Name;
+			_descriptor.Name = SelectPreferredDescriptorName (_descriptor, descriptor);
 			}
 
 		_configuration = configuration;
@@ -598,6 +599,19 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		_childId = _descriptor.ChildId;
 
 		RestartPolling ();
+		}
+
+	private static string SelectPreferredDescriptorName (ManagedLightDescriptor currentDescriptor, ManagedLightDescriptor incomingDescriptor)
+		{
+		if (!string.IsNullOrWhiteSpace (currentDescriptor.Name)
+			&& incomingDescriptor.AwaitingConnectedIdentity)
+			{
+			return currentDescriptor.Name;
+			}
+
+		return !string.IsNullOrWhiteSpace (incomingDescriptor.Name)
+			? incomingDescriptor.Name
+			: currentDescriptor.Name;
 		}
 
 	public void UpdateConfiguration (DeviceConfiguration configuration)
@@ -883,21 +897,32 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private async Task InitializeStartupAsync ()
 		{
-		try
+		while (!_disposed && Volatile.Read (ref _stopState) == 0)
 			{
-			LogInfo ($"Light entity '{ControllerId}' startup connecting to discovered host '{_descriptor.Host}' as {_descriptor.DiscoveredDeviceType}; driverId='{_driverLogId}'.");
-			await InitializeConnectedStateAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
-			}
-		catch (OperationCanceledException)
-			{
-			throw;
-			}
-		catch (Exception ex)
-			{
-			LogInfo ($"Light entity '{ControllerId}' startup connect failed for host '{_descriptor.Host}': {ex.Message}");
-			OnlineIndicatorIsOnline = false;
-			ReadyIndicatorIsReady = false;
-			StartBackgroundOperation (() => RefreshAsync (_lifetimeCancellationSource.Token), "startup-connect-retry");
+			try
+				{
+				LogInfo ($"Light entity '{ControllerId}' startup connecting to discovered host '{_descriptor.Host}' as {_descriptor.DiscoveredDeviceType}; driverId='{_driverLogId}'.");
+				await InitializeConnectedStateAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
+				return;
+				}
+			catch (OperationCanceledException) when (!_disposed && Volatile.Read (ref _stopState) == 0)
+				{
+				LogInfo ($"Light entity '{ControllerId}' startup connect canceled for host '{_descriptor.Host}'; retrying in {StartupConnectRetryInterval.TotalSeconds:0} seconds.");
+				OnlineIndicatorIsOnline = false;
+				ReadyIndicatorIsReady = false;
+				}
+			catch (OperationCanceledException)
+				{
+				throw;
+				}
+			catch (Exception ex)
+				{
+				LogInfo ($"Light entity '{ControllerId}' startup connect failed for host '{_descriptor.Host}': {ex.Message}; retrying in {StartupConnectRetryInterval.TotalSeconds:0} seconds.");
+				OnlineIndicatorIsOnline = false;
+				ReadyIndicatorIsReady = false;
+				}
+
+			await Task.Delay (StartupConnectRetryInterval, _lifetimeCancellationSource.Token).ConfigureAwait (false);
 			}
 		}
 

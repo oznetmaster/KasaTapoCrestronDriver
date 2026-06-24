@@ -2,7 +2,10 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -30,11 +33,12 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 	private sealed class PendingMaterialization
 		{
-		public PendingMaterialization (DiscoveryResult discoveryResult, ManagedLightDescriptor descriptor, DeviceConfiguration configuration)
+		public PendingMaterialization (DiscoveryResult discoveryResult, ManagedLightDescriptor descriptor, DeviceConfiguration configuration, bool deferPublicationUntilIdentityResolved)
 			{
 			DiscoveryResult = discoveryResult;
 			Descriptor = descriptor;
 			Configuration = configuration;
+			DeferPublicationUntilIdentityResolved = deferPublicationUntilIdentityResolved;
 			}
 
 		public DiscoveryResult DiscoveryResult
@@ -51,9 +55,72 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			{
 			get;
 			}
+
+		public bool DeferPublicationUntilIdentityResolved
+			{
+			get;
+			}
+		}
+
+	[DataContract]
+	private sealed class ManagedDeviceCacheDocument
+		{
+		[DataMember (Name = "devices")]
+		public List<ManagedDeviceCacheEntry> Devices
+			{
+			get;
+			set;
+			} = new ();
+		}
+
+	[DataContract]
+	private sealed class ManagedDeviceCacheEntry
+		{
+		[DataMember (Name = "controllerId")]
+		public string ControllerId
+			{
+			get;
+			set;
+			} = string.Empty;
+
+		[DataMember (Name = "uxCategory")]
+		public DeviceUxCategory UxCategory
+			{
+			get;
+			set;
+			}
+
+		[DataMember (Name = "name")]
+		public string Name
+			{
+			get;
+			set;
+			} = string.Empty;
+
+		[DataMember (Name = "manufacturer")]
+		public string Manufacturer
+			{
+			get;
+			set;
+			} = string.Empty;
+
+		[DataMember (Name = "model")]
+		public string Model
+			{
+			get;
+			set;
+			} = string.Empty;
+
+		[DataMember (Name = "serialNumber")]
+		public string SerialNumber
+			{
+			get;
+			set;
+			} = string.Empty;
 		}
 
 	private const string TP_LINK_MANUFACTURER = "TP-Link";
+	private const string ManagedDeviceCacheFileName = "managed-devices-cache.json";
 
 	private static readonly TimeSpan InitialDiscoveryRefreshInterval = TimeSpan.FromSeconds (5);
 	private static readonly TimeSpan DefaultDiscoveryTimeout = TimeSpan.FromSeconds (8);
@@ -68,10 +135,13 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private readonly Dictionary<string, ConfigurableDriverEntity> _childControllers = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, DeviceConfiguration> _deviceConfigurations = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, DiscoveryResult> _discoveryResults = new (StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, ManagedLightDescriptor> _knownDescriptors = new (StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, string> _resolvedDeviceNames = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, IKasaManagedLightEntity> _lightEntities = new (StringComparer.OrdinalIgnoreCase);
-	private readonly HashSet<string> _awaitingRemovalControllerIds = new (StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, int> _pendingRemovalMissCounts = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _connectedIdentityResolvedControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _materializationInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
+	private readonly HashSet<string> _previousDiscoveredControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, PlatformManagedDevice> _managedDevices = new (StringComparer.OrdinalIgnoreCase);
 	private readonly PlatformSharedConfiguration _sharedConfiguration = new ();
 	private readonly SemaphoreSlim _refreshGate = new (1, 1);
@@ -254,6 +324,8 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			case ConfigurationApplyMode.InitialConfiguration:
 			case ConfigurationApplyMode.SavedConfiguration:
 				_managedDevices.Clear ();
+					_resolvedDeviceNames.Clear ();
+					LoadManagedDeviceCacheIntoMemory ();
 				NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (ManagedDevices));
 				SetOnline (false);
 				SetReady (false);
@@ -354,6 +426,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private async Task RefreshPlatformAsync (CancellationToken cancellationToken)
 		{
 		bool isInitialLoad = _initialDiscoveryLoadPending;
+		bool isFastRefreshPhase = _initialDiscoveryLoadPending || _initialShortRefreshPending || !_normalRemovalRefreshPhaseReached;
 		bool allowRemovals = !_initialMaterializationStageActive && _normalRemovalRefreshPhaseReached;
 		_runtimeDiscoveryStarted = true;
 		var timeout = _sharedConfiguration.DiscoveryTimeout;
@@ -383,8 +456,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		var descriptorsByControllerId = new Dictionary<string, ManagedLightDescriptor> (StringComparer.OrdinalIgnoreCase);
 		var discoveryErrors = new List<string> ();
 		var pendingMaterializations = new List<PendingMaterialization> ();
-		bool hasIncompleteMaterializations = false;
-		bool hasPendingConnectedIdentity = false;
+		var discoveredControllerIds = new HashSet<string> (StringComparer.OrdinalIgnoreCase);
 
 		foreach (DiscoveryResult discoveryResult in discoveredDevices.OrderBy (ResolveDiscoveryName, StringComparer.OrdinalIgnoreCase))
 			{
@@ -409,17 +481,27 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				{
 				foreach (ManagedLightDescriptor descriptor in CreateManagedLightDescriptors (discoveryResult))
 					{
+					_knownDescriptors[descriptor.ControllerId] = descriptor;
+					discoveredControllerIds.Add (descriptor.ControllerId);
 					activeControllerIds.Add (descriptor.ControllerId);
-					_awaitingRemovalControllerIds.Remove (descriptor.ControllerId);
-					descriptorsByControllerId[descriptor.ControllerId] = descriptor;
-					hasPendingConnectedIdentity |= descriptor.AwaitingConnectedIdentity;
+					_pendingRemovalMissCounts.Remove (descriptor.ControllerId);
 
-					if (HasSuccessfulMaterialization (descriptor.ControllerId))
+					descriptorsByControllerId[descriptor.ControllerId] = descriptor;
+
+					if (_lightEntities.TryGetValue (descriptor.ControllerId, out IKasaManagedLightEntity? existingLightEntity))
 						{
+						existingLightEntity.UpdateDescriptor (descriptor, configuration);
+						if (!descriptor.AwaitingConnectedIdentity)
+							{
+							HandleManagedLightDescriptorNameChanged (descriptor);
+							}
 						continue;
 						}
 
-					hasIncompleteMaterializations = true;
+					if (_lightEntities.ContainsKey (descriptor.ControllerId))
+						{
+						continue;
+						}
 
 					if (IsMaterializationInFlight (descriptor.ControllerId))
 						{
@@ -429,17 +511,26 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 					if (isInitialLoad)
 						{
-						AddInitialManagedDeviceEntry (
-							descriptor.ControllerId,
-							descriptor.Name,
-							descriptor.ModelName,
-							descriptor.SerialNumber);
+						bool deferPublicationUntilIdentityResolved = descriptor.AwaitingConnectedIdentity;
+						if (!deferPublicationUntilIdentityResolved)
+							{
+							AddInitialManagedDeviceEntry (
+								descriptor.ControllerId,
+								descriptor.Name,
+								descriptor.ModelName,
+								descriptor.SerialNumber);
+							}
+						else
+							{
+							LogInfo ($"Deferring initial managed-device publication for controllerId='{descriptor.ControllerId}' until connected identity resolves.");
+							}
 
 						TryMarkMaterializationInFlight (descriptor.ControllerId);
 						pendingMaterializations.Add (new PendingMaterialization (
 							discoveryResult,
 							descriptor,
-							configuration));
+							configuration,
+							deferPublicationUntilIdentityResolved));
 						LogInfo ($"Queued pending materialization for controllerId='{descriptor.ControllerId}', host='{descriptor.Host}', type={descriptor.DiscoveredDeviceType}, name='{descriptor.Name}', model='{descriptor.ModelName}', serial='{descriptor.SerialNumber}'.");
 						continue;
 						}
@@ -450,16 +541,24 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 						}
 					else
 						{
-						LogInfo ($"Discovered unmanaged controllerId='{descriptor.ControllerId}' on non-initial refresh; attempting managed-device add before materialization. name='{descriptor.Name}', model='{descriptor.ModelName}', serial='{descriptor.SerialNumber}'.");
-						if (!PublishManagedDeviceAddition (
-							descriptor.ControllerId,
-							descriptor.Name,
-							descriptor.ModelName,
-							descriptor.SerialNumber,
-							descriptorsByControllerId))
+						bool deferPublicationUntilIdentityResolved = descriptor.AwaitingConnectedIdentity;
+						if (!deferPublicationUntilIdentityResolved)
 							{
-							LogInfo ($"Skipping materialization scheduling for controllerId='{descriptor.ControllerId}' because managed-device add did not succeed.");
-							continue;
+							LogInfo ($"Discovered unmanaged controllerId='{descriptor.ControllerId}' on non-initial refresh; attempting managed-device add before materialization. name='{descriptor.Name}', model='{descriptor.ModelName}', serial='{descriptor.SerialNumber}'.");
+							if (!PublishManagedDeviceAddition (
+								descriptor.ControllerId,
+								descriptor.Name,
+								descriptor.ModelName,
+								descriptor.SerialNumber,
+								descriptorsByControllerId))
+								{
+								LogInfo ($"Skipping materialization scheduling for controllerId='{descriptor.ControllerId}' because managed-device add did not succeed.");
+								continue;
+								}
+							}
+						else
+							{
+							LogInfo ($"Deferring managed-device publication for controllerId='{descriptor.ControllerId}' on non-initial refresh until connected identity resolves.");
 							}
 						}
 
@@ -467,7 +566,8 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					pendingMaterializations.Add (new PendingMaterialization (
 						discoveryResult,
 						descriptor,
-						configuration));
+						configuration,
+						descriptor.AwaitingConnectedIdentity));
 					LogInfo ($"Queued pending materialization for controllerId='{descriptor.ControllerId}', host='{descriptor.Host}', type={descriptor.DiscoveredDeviceType}, name='{descriptor.Name}', model='{descriptor.ModelName}', serial='{descriptor.SerialNumber}'.");
 
 					}
@@ -489,16 +589,24 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		SetOnline (true);
 		SetReady (true);
 
+		var previousDiscoveredControllerIds = new HashSet<string> (_previousDiscoveredControllerIds, StringComparer.OrdinalIgnoreCase);
+		int previousDiscoveredCount = previousDiscoveredControllerIds.Count;
+		bool hasAddedDiscoveryChange = discoveredControllerIds.Except (previousDiscoveredControllerIds, StringComparer.OrdinalIgnoreCase).Any ();
+		bool hasRemovedDiscoveryChange = previousDiscoveredControllerIds.Except (discoveredControllerIds, StringComparer.OrdinalIgnoreCase).Any ();
+		bool ignoreRemovalSignalsThisPass = isFastRefreshPhase && hasRemovedDiscoveryChange;
+
+		if (ignoreRemovalSignalsThisPass)
+			{
+			_previousDiscoveredControllerIds.UnionWith (discoveredControllerIds);
+			}
+		else
+			{
+			_previousDiscoveredControllerIds.Clear ();
+			_previousDiscoveredControllerIds.UnionWith (discoveredControllerIds);
+			}
+
 		TimeSpan nextRefreshInterval = DefaultDiscoveryRefreshInterval;
-		if (_initialDiscoveryLoadPending)
-			{
-			nextRefreshInterval = InitialDiscoveryRefreshInterval;
-			}
-		else if (hasPendingConnectedIdentity)
-			{
-			nextRefreshInterval = InitialDiscoveryRefreshInterval;
-			}
-		else if (hasIncompleteMaterializations)
+		if (isInitialLoad)
 			{
 			nextRefreshInterval = InitialDiscoveryRefreshInterval;
 			}
@@ -507,28 +615,45 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			nextRefreshInterval = InitialDiscoveryRefreshInterval;
 			_initialShortRefreshPending = false;
 			}
+		else if (hasAddedDiscoveryChange)
+			{
+			nextRefreshInterval = InitialDiscoveryRefreshInterval;
+			}
+		else if (ignoreRemovalSignalsThisPass)
+			{
+			nextRefreshInterval = InitialDiscoveryRefreshInterval;
+			LogInfo ($"RefreshPlatformAsync: ignoring shrinking fast-refresh pass from {previousDiscoveredCount} discovered devices to {discoveredControllerIds.Count}; removals remain deferred until the 10-minute two-strike cycle.");
+			}
 		else
 			{
 			_normalRemovalRefreshPhaseReached = true;
 			}
-
-		RestartDiscoveryRefreshLoop (nextRefreshInterval);
 
 		if (pendingMaterializations.Count > 0)
 			{
 			CompletePendingMaterializationsAsync (
 				pendingMaterializations,
 				discoveryErrors,
-				cancellationToken);
+				cancellationToken,
+				nextRefreshInterval);
+			}
+		else
+			{
+			RestartDiscoveryRefreshLoop (nextRefreshInterval);
 			}
 
 		if (allowRemovals)
 			{
 			foreach (string existingControllerId in _childControllers.Keys.Except (activeControllerIds, StringComparer.OrdinalIgnoreCase).ToArray ())
 				{
-				if (_awaitingRemovalControllerIds.Add (existingControllerId))
+				int missedCount = _pendingRemovalMissCounts.TryGetValue (existingControllerId, out int currentMissedCount)
+					? currentMissedCount + 1
+					: 1;
+				_pendingRemovalMissCounts[existingControllerId] = missedCount;
+
+				if (missedCount < 3)
 					{
-					LogInfo ($"Managed-device removal deferred for controllerId='{existingControllerId}' after first missed discovery.");
+					LogInfo ($"Managed-device removal deferred for controllerId='{existingControllerId}' after miss {missedCount}/3 on the normal 10-minute refresh cycle.");
 					continue;
 					}
 
@@ -543,7 +668,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					removedEntity.Dispose ();
 					}
 
-				_awaitingRemovalControllerIds.Remove (existingControllerId);
+				_pendingRemovalMissCounts.Remove (existingControllerId);
 				_childControllers.Remove (existingControllerId);
 				_lightEntities.Remove (existingControllerId);
 				controllersToRemove ??= new List<string> ();
@@ -552,6 +677,14 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			}
 		else
 			{
+			if (isFastRefreshPhase)
+				{
+				foreach (string existingControllerId in _childControllers.Keys.Except (activeControllerIds, StringComparer.OrdinalIgnoreCase))
+					{
+					LogInfo ($"Ignoring first missed discovery for controllerId='{existingControllerId}' during fast-refresh phase.");
+					}
+				}
+
 			LogInfo ("RefreshPlatformAsync: removals suppressed during startup/fast-refresh stage; discovery remains additive only.");
 			}
 
@@ -569,11 +702,13 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private void CompletePendingMaterializationsAsync (
 		List<PendingMaterialization> pendingMaterializations,
 		List<string> discoveryErrors,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		TimeSpan nextRefreshInterval)
 		{
 		_ = Task.Run (async () =>
 			{
 				List<ConfigurableDriverEntity>? controllersToAdd = null;
+				bool managedDevicesChanged = false;
 				var materializationTasks = pendingMaterializations
 					.Select (pendingMaterialization => new
 						{
@@ -592,26 +727,46 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 							{
 							if (!HasManagedDeviceEntry (controllerId))
 								{
-								LogInfo ($"Discarding async materialization for controllerId='{controllerId}' because no managed-device entry exists before materialization completes.");
-								continue;
+								if (!pendingMaterialization.DeferPublicationUntilIdentityResolved)
+									{
+									LogInfo ($"Discarding async materialization for controllerId='{controllerId}' because no managed-device entry exists before materialization completes.");
+									continue;
+									}
 								}
 
 							IKasaManagedLightEntity lightEntity = await materialization.Task.ConfigureAwait (false);
 							LogInfo ($"Async materialization completed for controllerId='{controllerId}', deviceName='{lightEntity.DeviceName}', model='{lightEntity.ModelName}', serial='{lightEntity.SerialNumber}'.");
 
-							if (!HasManagedDeviceEntry (controllerId))
+							bool hasManagedDeviceEntry = HasManagedDeviceEntry (controllerId);
+							if (!hasManagedDeviceEntry && !pendingMaterialization.DeferPublicationUntilIdentityResolved)
 								{
 								LogInfo ($"Discarding async materialized controller for controllerId='{controllerId}' because the managed-device entry was removed while materialization was in progress.");
 								lightEntity.Stop ();
 								continue;
 								}
 
+							if (!hasManagedDeviceEntry && !TryPublishDeferredManagedDevice (pendingMaterialization.Descriptor))
+								{
+								LogInfo ($"Deferred publication still pending for controllerId='{controllerId}' after materialization; waiting for connected identity callback.");
+								}
+							else if (!hasManagedDeviceEntry)
+								{
+								managedDevicesChanged = true;
+								}
+
 							var controller = new ConfigurableDriverEntity (controllerId, (ReflectedAttributeDriverEntity)lightEntity, null);
 							_lightEntities[controllerId] = lightEntity;
 							_childControllers[controllerId] = controller;
-							controllersToAdd ??= new List<ConfigurableDriverEntity> ();
-							controllersToAdd.Add (controller);
-							LogInfo ($"Async materialization accepted for controllerId='{controllerId}' and controller queued for publication.");
+							if (HasManagedDeviceEntry (controllerId))
+								{
+								controllersToAdd ??= new List<ConfigurableDriverEntity> ();
+								controllersToAdd.Add (controller);
+								LogInfo ($"Async materialization accepted for controllerId='{controllerId}' and controller queued for publication.");
+								}
+							else
+								{
+								LogInfo ($"Async materialization accepted for controllerId='{controllerId}' but controller publication remains deferred until identity resolves.");
+								}
 							}
 						catch (Exception ex) when (!(ex is OperationCanceledException))
 							{
@@ -622,6 +777,11 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 							{
 							ClearMaterializationInFlight (controllerId);
 							}
+						}
+
+					if (managedDevicesChanged)
+						{
+						NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (ManagedDevices));
 						}
 
 					if ((controllersToAdd?.Count ?? 0) > 0)
@@ -656,6 +816,8 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					}
 				finally
 					{
+					RestartDiscoveryRefreshLoop (nextRefreshInterval);
+
 					if (pendingMaterializations.Count == 0 && _initialMaterializationStageActive)
 						{
 						_initialMaterializationStageActive = false;
@@ -667,6 +829,8 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 	private bool AddInitialManagedDeviceEntry (string controllerId, string name, string modelName, string serialNumber)
 		{
+		name = ResolveManagedDeviceName (controllerId, name, serialNumber, null);
+
 		if (string.IsNullOrWhiteSpace (name))
 			{
 			LogInfo ($"Skipping managed-device publish for '{controllerId}' because the resolved device name is blank.");
@@ -674,6 +838,8 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			}
 
 		_managedDevices[controllerId] = CreateManagedDeviceEntry (controllerId, name, modelName, serialNumber);
+		RememberResolvedDeviceName (controllerId, name);
+		PersistManagedDeviceCache ();
 		LogInfo ($"Managed-device entry added: controllerId='{controllerId}', name='{name}', model='{modelName}', serial='{serialNumber}'.");
 		return true;
 		}
@@ -691,12 +857,6 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private bool HasManagedDeviceEntry (string controllerId)
 		{
 		return _managedDevices.ContainsKey (controllerId);
-		}
-
-	private bool HasSuccessfulMaterialization (string controllerId)
-		{
-		return _lightEntities.ContainsKey (controllerId)
-			&& _childControllers.ContainsKey (controllerId);
 		}
 
 	private bool IsMaterializationInFlight (string controllerId)
@@ -829,6 +989,25 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		{
 		LogInfo ($"HandleManagedLightDescriptorNameChanged: controllerId='{descriptor.ControllerId}', incomingName='{descriptor.Name}', hasExistingEntry={_managedDevices.ContainsKey (descriptor.ControllerId)}, currentCount={_managedDevices.Count}.");
 		_connectedIdentityResolvedControllerIds.Add (descriptor.ControllerId);
+		RememberResolvedDeviceName (descriptor.ControllerId, descriptor.Name);
+
+		if (!_managedDevices.ContainsKey (descriptor.ControllerId))
+			{
+			if (!TryPublishDeferredManagedDevice (descriptor))
+				{
+				LogInfo ($"HandleManagedLightDescriptorNameChanged: still deferring controllerId='{descriptor.ControllerId}' because no publishable identity is available yet.");
+				return;
+				}
+
+			if (_childControllers.TryGetValue (descriptor.ControllerId, out ConfigurableDriverEntity? deferredController))
+				{
+				UpdateSubControllers (new[] { deferredController }, null);
+				if (_lightEntities.TryGetValue (descriptor.ControllerId, out IKasaManagedLightEntity? lightEntity))
+					{
+					lightEntity.PublishStateSnapshot ();
+					}
+				}
+			}
 
 		if (!_managedDevices.TryGetValue (descriptor.ControllerId, out PlatformManagedDevice? existingEntry))
 			{
@@ -845,6 +1024,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 		existingEntry.Name = descriptor.Name;
 		descriptor.AwaitingConnectedIdentity = false;
+		PersistManagedDeviceCache ();
 
 		try
 			{
@@ -865,9 +1045,49 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		LogManagedDeviceSnapshot ("HandleManagedLightDescriptorNameChanged snapshot", _managedDevices);
 		}
 
+	private bool TryPublishDeferredManagedDevice (ManagedLightDescriptor descriptor)
+		{
+		if (HasManagedDeviceEntry (descriptor.ControllerId))
+			{
+			return true;
+			}
+
+		string name = ResolvePublishableManagedDeviceName (descriptor);
+		if (string.IsNullOrWhiteSpace (name))
+			{
+			return false;
+			}
+
+		return PublishManagedDeviceAddition (
+			descriptor.ControllerId,
+			name,
+			descriptor.ModelName,
+			descriptor.SerialNumber,
+			_knownDescriptors);
+		}
+
+	private string ResolvePublishableManagedDeviceName (ManagedLightDescriptor descriptor)
+		{
+		if (!descriptor.AwaitingConnectedIdentity)
+			{
+			return ResolveManagedDeviceName (descriptor.ControllerId, descriptor.Name, descriptor.DiscoveryDeviceId ?? descriptor.SerialNumber, descriptor.Host);
+			}
+
+		if (_resolvedDeviceNames.TryGetValue (descriptor.ControllerId, out string? rememberedName)
+			&& !string.IsNullOrWhiteSpace (rememberedName)
+			&& !string.Equals (rememberedName, descriptor.DiscoveryDeviceId, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals (rememberedName, descriptor.Host, StringComparison.OrdinalIgnoreCase))
+			{
+			return rememberedName;
+			}
+
+		return string.Empty;
+		}
+
 	private IEnumerable<ManagedLightDescriptor> CreateManagedLightDescriptors (DiscoveryResult discoveryResult)
 		{
-		string rootName = ResolveDiscoveryName (discoveryResult);
+		string controllerId = CreateControllerId (discoveryResult);
+		string rootName = ResolveManagedDeviceName (controllerId, ResolveDiscoveryName (discoveryResult), discoveryResult.DeviceId, discoveryResult.Host);
 		string rootModel = discoveryResult.Model ?? "Kasa/Tapo Device";
 		string rootSerial = discoveryResult.DeviceId ?? discoveryResult.Host;
 
@@ -877,7 +1097,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			case KasaDeviceType.LightStrip:
 			case KasaDeviceType.Dimmer:
 				yield return new ManagedLightDescriptor (
-					CreateControllerId (discoveryResult),
+					controllerId,
 					discoveryResult.Host,
 					discoveryResult.DeviceType,
 					rootName,
@@ -891,7 +1111,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			case KasaDeviceType.Plug when _sharedConfiguration.TreatPlugsAsLights:
 			case KasaDeviceType.Strip when _sharedConfiguration.TreatPlugsAsLights:
 				yield return new ManagedLightDescriptor (
-					CreateControllerId (discoveryResult),
+					controllerId,
 					discoveryResult.Host,
 					discoveryResult.DeviceType,
 					rootName,
@@ -904,7 +1124,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 			case KasaDeviceType.Strip:
 				yield return new ManagedLightDescriptor (
-					CreateControllerId (discoveryResult),
+					controllerId,
 					discoveryResult.Host,
 					discoveryResult.DeviceType,
 					rootName,
@@ -1209,16 +1429,10 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		if (string.IsNullOrWhiteSpace (name)
 			&& descriptorsByControllerId.TryGetValue (controllerId, out ManagedLightDescriptor? descriptor))
 			{
-			name = !string.IsNullOrWhiteSpace (descriptor.Name)
-				? descriptor.Name
-				: !string.IsNullOrWhiteSpace (descriptor.DiscoveryDeviceId)
-					? descriptor.DiscoveryDeviceId!
-					: !string.IsNullOrWhiteSpace (descriptor.SerialNumber)
-						? descriptor.SerialNumber
-						: !string.IsNullOrWhiteSpace (descriptor.Host)
-							? descriptor.Host
-							: controllerId;
+			name = ResolveManagedDeviceName (controllerId, descriptor.Name, descriptor.DiscoveryDeviceId ?? descriptor.SerialNumber, descriptor.Host);
 			}
+
+		name = ResolveManagedDeviceName (controllerId, name, serialNumber, null);
 
 		if (string.IsNullOrWhiteSpace (name))
 			{
@@ -1233,11 +1447,103 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			return false;
 			}
 
+		RememberResolvedDeviceName (controllerId, name);
+		PersistManagedDeviceCache ();
+
 		DriverEntityValueUpdate managedDevicesChange = DriverEntityValueUpdate.Create (
 			DriverEntityValueUpdate.Create (controllerId, CreateValueForObject (entry)));
 
 		NotifyPropertyChanged ("platform:managedDevices", managedDevicesChange);
 		return true;
+		}
+
+	private void LoadManagedDeviceCacheIntoMemory ()
+		{
+		string cachePath = GetManagedDeviceCachePath ();
+		if (string.IsNullOrWhiteSpace (cachePath) || !File.Exists (cachePath))
+			{
+			LogInfo ("Managed-device cache load skipped because no cache file exists.");
+			return;
+			}
+
+		try
+			{
+				using var stream = File.OpenRead (cachePath);
+				var serializer = new DataContractJsonSerializer (typeof (ManagedDeviceCacheDocument));
+				if (serializer.ReadObject (stream) is not ManagedDeviceCacheDocument document)
+					{
+					LogInfo ("Managed-device cache load returned no document.");
+					return;
+					}
+
+				foreach (ManagedDeviceCacheEntry entry in document.Devices)
+					{
+						if (string.IsNullOrWhiteSpace (entry.ControllerId)
+							|| string.IsNullOrWhiteSpace (entry.Name))
+							{
+							continue;
+							}
+
+						_managedDevices[entry.ControllerId] = new PlatformManagedDevice (
+							entry.UxCategory,
+							entry.Name,
+							entry.Manufacturer,
+							entry.Model,
+							entry.SerialNumber);
+						RememberResolvedDeviceName (entry.ControllerId, entry.Name);
+					}
+
+				LogInfo ($"Managed-device cache seeded {_managedDevices.Count} device entries from '{cachePath}'.");
+			}
+		catch (Exception ex)
+			{
+			LogInfo ($"Managed-device cache load failed from '{cachePath}': {ex.Message}");
+			}
+		}
+
+	private string GetManagedDeviceCachePath ()
+		{
+		if (string.IsNullOrWhiteSpace (_args.DriverDataDirectoryPath))
+			{
+			return string.Empty;
+			}
+
+		return Path.Combine (_args.DriverDataDirectoryPath, ManagedDeviceCacheFileName);
+		}
+
+	private string ResolveManagedDeviceName (string controllerId, string? candidateName, string? deviceId, string? host)
+		{
+		string? normalizedCandidateName = string.IsNullOrWhiteSpace (candidateName)
+			? null
+			: candidateName;
+
+		if (normalizedCandidateName is not null
+			&& !string.Equals (normalizedCandidateName, deviceId, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals (normalizedCandidateName, host, StringComparison.OrdinalIgnoreCase))
+			{
+			return normalizedCandidateName;
+			}
+
+		if (_resolvedDeviceNames.TryGetValue (controllerId, out string? rememberedName)
+			&& !string.IsNullOrWhiteSpace (rememberedName))
+			{
+			return rememberedName;
+			}
+
+		return normalizedCandidateName
+			?? deviceId
+			?? host
+			?? controllerId;
+		}
+
+	private void RememberResolvedDeviceName (string controllerId, string? name)
+		{
+		if (string.IsNullOrWhiteSpace (name))
+			{
+			return;
+			}
+
+		_resolvedDeviceNames[controllerId] = name!;
 		}
 
 	private bool PublishManagedDeviceRemoval (string controllerId)
@@ -1249,9 +1555,52 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 		DriverEntityValueUpdate managedDevicesChange = DriverEntityValueUpdate.Create (
 			DriverEntityValueUpdate.CreateDeletion (controllerId));
+		PersistManagedDeviceCache ();
 
 		NotifyPropertyChanged ("platform:managedDevices", managedDevicesChange);
 		return true;
+		}
+
+	private void PersistManagedDeviceCache ()
+		{
+		string cachePath = GetManagedDeviceCachePath ();
+		if (string.IsNullOrWhiteSpace (cachePath))
+			{
+			return;
+			}
+
+		try
+			{
+				string? cacheDirectory = Path.GetDirectoryName (cachePath);
+				if (!string.IsNullOrWhiteSpace (cacheDirectory))
+					{
+					Directory.CreateDirectory (cacheDirectory);
+					}
+
+				var document = new ManagedDeviceCacheDocument
+					{
+					Devices = _managedDevices
+						.OrderBy (entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+						.Select (entry => new ManagedDeviceCacheEntry
+							{
+							ControllerId = entry.Key,
+							UxCategory = entry.Value.UxCategory,
+							Name = entry.Value.Name,
+							Manufacturer = entry.Value.Manufacturer,
+							Model = entry.Value.Model,
+							SerialNumber = entry.Value.SerialNumber
+							})
+						.ToList ()
+					};
+
+				using var stream = File.Create (cachePath);
+				var serializer = new DataContractJsonSerializer (typeof (ManagedDeviceCacheDocument));
+				serializer.WriteObject (stream, document);
+			}
+		catch (Exception ex)
+			{
+			LogInfo ($"Managed-device cache save failed to '{cachePath}': {ex.Message}");
+			}
 		}
 
 	private void LogInfo (string message)
