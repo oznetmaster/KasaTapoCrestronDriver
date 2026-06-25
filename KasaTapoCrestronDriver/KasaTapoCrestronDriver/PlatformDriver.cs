@@ -1124,9 +1124,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 		KasaDeviceType deviceType = ResolveCachedDeviceType (entry);
 		ManagedLightKind lightKind = ResolveCachedLightKind (entry, deviceType);
-		string serialNumber = !string.IsNullOrWhiteSpace (entry.SerialNumber)
-			? entry.SerialNumber
-			: entry.ControllerId;
+		string serialNumber = ResolveCachedSerialNumber (entry);
 
 		descriptor = new ManagedLightDescriptor (
 			entry.ControllerId,
@@ -1168,6 +1166,49 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			configuration.DiscoveryTimeout);
 
 		return true;
+		}
+
+	private static string ResolveCachedSerialNumber (ManagedDeviceCacheEntry entry)
+		{
+		if (!string.IsNullOrWhiteSpace (entry.SerialNumber)
+			&& !LooksLikeModelIdentifier (entry.SerialNumber, entry.Model))
+			{
+			return entry.SerialNumber;
+			}
+
+		const string controllerPrefix = "device_";
+		if (!string.IsNullOrWhiteSpace (entry.ControllerId)
+			&& entry.ControllerId.StartsWith (controllerPrefix, StringComparison.OrdinalIgnoreCase)
+			&& entry.ControllerId.Length > controllerPrefix.Length)
+			{
+			return entry.ControllerId.Substring (controllerPrefix.Length).ToUpperInvariant ();
+			}
+
+		return !string.IsNullOrWhiteSpace (entry.SerialNumber)
+			? entry.SerialNumber
+			: entry.ControllerId;
+		}
+
+	private static bool LooksLikeModelIdentifier (string? candidate, string? model)
+		{
+		string candidateValue = candidate ?? string.Empty;
+		if (string.IsNullOrWhiteSpace (candidateValue))
+			{
+			return false;
+			}
+
+		string normalizedCandidate = candidateValue.Trim ();
+		string normalizedModel = (model ?? string.Empty).Trim ();
+
+		if (!string.IsNullOrWhiteSpace (normalizedModel)
+			&& string.Equals (normalizedCandidate, normalizedModel, StringComparison.OrdinalIgnoreCase))
+			{
+			return true;
+			}
+
+		return normalizedCandidate.Contains ("(")
+			&& normalizedCandidate.Contains (")")
+			&& normalizedCandidate.IndexOfAny (new[] { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' }) >= 0;
 		}
 
 	private static KasaDeviceType ResolveCachedDeviceType (ManagedDeviceCacheEntry entry)

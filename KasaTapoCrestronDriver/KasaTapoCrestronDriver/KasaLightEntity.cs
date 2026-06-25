@@ -366,13 +366,13 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private void SetColorTemperatureLevel (string commandId, long level, long transitionTime)
 		{
 		LogCommandInvocation (commandId, $"level={level}, transitionMs={transitionTime}");
+		bool isCurrentlyOn = LightIsOn;
 
 		if (level <= 0L)
 			{
-			SetAndNotifyColorTemperatureLevel (0L);
-			if (!LightIsOn)
+			if (isCurrentlyOn)
 				{
-				LightIsOn = true;
+				SetAndNotifyColorTemperatureLevel (0L);
 				}
 
 			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, GetEffectiveOnLevel (), LightColorHue, LightColorSaturation, 0L));
@@ -381,12 +381,15 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		long temperatureLevel = Math.Max (1L, level);
 
-		LightColorHue = 0d;
-		LightColorSaturation = 0d;
-		SetAndNotifyColorTemperatureLevel (temperatureLevel);
-		if (!LightIsOn)
+		if (isCurrentlyOn)
 			{
-			LightIsOn = true;
+			LightColorHue = 0d;
+			LightColorSaturation = 0d;
+			SetAndNotifyColorTemperatureLevel (temperatureLevel);
+			}
+		else
+			{
+			LogInfo ($"Light entity '{ControllerId}' deferring optimistic color-temperature UI projection while the light is off; waiting for command resolution.");
 			}
 
 		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, GetEffectiveOnLevel (), 0d, 0d, temperatureLevel));
