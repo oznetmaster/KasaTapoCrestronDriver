@@ -120,6 +120,20 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			set;
 			} = string.Empty;
 
+		[DataMember (Name = "discoveredDeviceType", EmitDefaultValue = false)]
+		public KasaDeviceType DiscoveredDeviceType
+			{
+			get;
+			set;
+			}
+
+		[DataMember (Name = "managedLightKind", EmitDefaultValue = false)]
+		public ManagedLightKind ManagedLightKind
+			{
+			get;
+			set;
+			}
+
 		[DataMember (Name = "serialNumber")]
 		public string SerialNumber
 			{
@@ -136,6 +150,13 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 		[DataMember (Name = "awaitingConnectedIdentity", EmitDefaultValue = false)]
 		public bool AwaitingConnectedIdentity
+			{
+			get;
+			set;
+			}
+
+		[DataMember (Name = "isConfigured", EmitDefaultValue = false)]
+		public bool IsConfigured
 			{
 			get;
 			set;
@@ -236,7 +257,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private const string TP_LINK_MANUFACTURER = "TP-Link";
 	private const string PERSISTENT_STORAGE_ROOT = "/user/Data/ThirdParty/NeilColvin/KasaTapoCrestronDriver";
 	private const string MANAGED_DEVICE_CACHE_FILE_NAME = "managed-devices-cache.json";
-	private const int MANAGED_DEVICE_CACHE_VERSION = 3;
+	private const int MANAGED_DEVICE_CACHE_VERSION = 4;
 
 	private static readonly TimeSpan InitialDiscoveryRefreshInterval = TimeSpan.FromSeconds (5);
 	private static readonly TimeSpan DefaultDiscoveryTimeout = TimeSpan.FromSeconds (8);
@@ -456,6 +477,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					_managedDeviceCacheMetadata.Clear ();
 					_resolvedDeviceNames.Clear ();
 					LoadManagedDeviceCacheIntoMemory ();
+				PublishCachedChildControllers (currentConfiguration);
 				NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (ManagedDevices));
 				SetOnline (false);
 				SetReady (false);
@@ -715,8 +737,6 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 		if (isInitialLoad)
 			{
-			NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (ManagedDevices));
-			LogInfo ($"Managed-device publish: count={_managedDevices.Count}, controllerIds=[{string.Join (", ", _managedDevices.Keys.OrderBy (key => key, StringComparer.OrdinalIgnoreCase))}].");
 			_initialDiscoveryLoadPending = false;
 			}
 
@@ -772,6 +792,12 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			}
 		else
 			{
+			if (isInitialLoad)
+				{
+				NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (ManagedDevices));
+				LogInfo ($"Managed-device publish after initial materialization skipped/no-op: count={_managedDevices.Count}, controllerIds=[{string.Join (", ", _managedDevices.Keys.OrderBy (key => key, StringComparer.OrdinalIgnoreCase))}].");
+				}
+
 			RestartDiscoveryRefreshLoop (nextRefreshInterval);
 			}
 
@@ -920,11 +946,6 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 							}
 						}
 
-					if (managedDevicesChanged)
-						{
-						NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (ManagedDevices));
-						}
-
 					if ((controllersToAdd?.Count ?? 0) > 0)
 						{
 						List<ConfigurableDriverEntity> controllersToPublish = controllersToAdd!;
@@ -937,6 +958,11 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 								lightEntity.PublishStateSnapshot ();
 								}
 							}
+						}
+
+					if (managedDevicesChanged || pendingMaterializations.Count > 0)
+						{
+						NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (ManagedDevices));
 						}
 
 					if (_initialMaterializationStageActive)
@@ -1016,9 +1042,12 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			Name = name,
 			Manufacturer = TP_LINK_MANUFACTURER,
 			Model = descriptor.ModelName,
+			DiscoveredDeviceType = descriptor.DiscoveredDeviceType,
+			ManagedLightKind = descriptor.Kind,
 			SerialNumber = descriptor.SerialNumber,
 			Host = configuration.Host,
 			AwaitingConnectedIdentity = descriptor.AwaitingConnectedIdentity,
+			IsConfigured = _configuredChildControllerIds.Contains (descriptor.ControllerId),
 			Port = configuration.Port,
 			TransportKind = options.TransportKind,
 			DeviceFamily = parameters.DeviceFamily,
@@ -1040,6 +1069,140 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private bool HasManagedDeviceEntry (string controllerId)
 		{
 		return _managedDevices.ContainsKey (controllerId);
+		}
+
+	private void PublishCachedChildControllers (PlatformSharedConfigurationSnapshot configuration)
+		{
+		List<ConfigurableDriverEntity>? controllersToAdd = null;
+		foreach (ManagedDeviceCacheEntry entry in _managedDeviceCacheMetadata.Values.ToArray ())
+			{
+			if (_childControllers.ContainsKey (entry.ControllerId))
+				{
+				continue;
+				}
+
+			if (!TryCreateCachedDescriptorAndConfiguration (entry, configuration, out ManagedLightDescriptor? descriptor, out DeviceConfiguration? deviceConfiguration))
+				{
+				continue;
+				}
+
+			_knownDescriptors[descriptor.ControllerId] = descriptor;
+			_deviceConfigurations[descriptor.ControllerId] = deviceConfiguration;
+			IKasaManagedLightEntity lightEntity = CreateManagedLightEntity (descriptor, deviceConfiguration);
+			lightEntity.SetConfigured (_configuredChildControllerIds.Contains (descriptor.ControllerId), "cached-child-controller-publication");
+
+			var controller = new ConfigurableDriverEntity (descriptor.ControllerId, (ReflectedAttributeDriverEntity)lightEntity, CreateChildConfigurationController (descriptor));
+			_lightEntities[descriptor.ControllerId] = lightEntity;
+			_childControllers[descriptor.ControllerId] = controller;
+			controllersToAdd ??= new List<ConfigurableDriverEntity> ();
+			controllersToAdd.Add (controller);
+			LogInfo ($"Cached child controller published early for controllerId='{descriptor.ControllerId}', name='{descriptor.Name}', model='{descriptor.ModelName}', host='{descriptor.Host}'.");
+			}
+
+		if ((controllersToAdd?.Count ?? 0) > 0)
+			{
+			UpdateSubControllers (controllersToAdd, null);
+			}
+		}
+
+	private bool TryCreateCachedDescriptorAndConfiguration (
+		ManagedDeviceCacheEntry entry,
+		PlatformSharedConfigurationSnapshot configuration,
+		out ManagedLightDescriptor descriptor,
+		out DeviceConfiguration deviceConfiguration)
+		{
+		descriptor = null!;
+		deviceConfiguration = null!;
+
+		if (string.IsNullOrWhiteSpace (entry.ControllerId)
+			|| string.IsNullOrWhiteSpace (entry.Host)
+			|| entry.Port <= 0)
+			{
+			LogInfo ($"Cached child controller skipped for controllerId='{entry.ControllerId}' because reconnect metadata is incomplete: host='{entry.Host}', port={entry.Port}.");
+			return false;
+			}
+
+		KasaDeviceType deviceType = ResolveCachedDeviceType (entry);
+		ManagedLightKind lightKind = ResolveCachedLightKind (entry, deviceType);
+		string serialNumber = !string.IsNullOrWhiteSpace (entry.SerialNumber)
+			? entry.SerialNumber
+			: entry.ControllerId;
+
+		descriptor = new ManagedLightDescriptor (
+			entry.ControllerId,
+			entry.Host,
+			deviceType,
+			entry.Name,
+			entry.Model,
+			serialNumber,
+			lightKind,
+			entry.AwaitingConnectedIdentity,
+			serialNumber);
+
+		DeviceCredentials? credentials = string.IsNullOrWhiteSpace (configuration.UserName) || string.IsNullOrWhiteSpace (configuration.Password)
+			? null
+			: new DeviceCredentials (configuration.UserName, configuration.Password);
+
+		DeviceConnectionParameters connectionParameters = new (
+			entry.DeviceFamily,
+			entry.EncryptionKind,
+			entry.LoginVersion,
+			entry.UseHttps,
+			entry.HttpPort);
+
+		DeviceConnectionOptions connectionOptions = new (
+			entry.TransportKind,
+			connectionParameters,
+			entry.UseSsl,
+			entry.UseDefaultCredentials,
+			entry.DefaultCredentialProfile,
+			entry.ApplicationPath ?? string.Empty,
+			entry.UseSecurePassthrough,
+			entry.TpapKeepAliveIntervalMs.HasValue ? TimeSpan.FromMilliseconds (entry.TpapKeepAliveIntervalMs.Value) : null);
+
+		deviceConfiguration = new DeviceConfiguration (
+			entry.Host,
+			entry.Port,
+			credentials,
+			connectionOptions,
+			configuration.DiscoveryTimeout);
+
+		return true;
+		}
+
+	private static KasaDeviceType ResolveCachedDeviceType (ManagedDeviceCacheEntry entry)
+		{
+		if (!string.IsNullOrWhiteSpace (entry.Model))
+			{
+			string model = entry.Model.Trim ();
+			if (model.StartsWith ("KP", StringComparison.OrdinalIgnoreCase)
+				|| model.StartsWith ("P", StringComparison.OrdinalIgnoreCase))
+				{
+				return KasaDeviceType.Plug;
+				}
+
+			if (model.StartsWith ("L900", StringComparison.OrdinalIgnoreCase)
+				|| model.StartsWith ("KL4", StringComparison.OrdinalIgnoreCase))
+				{
+				return KasaDeviceType.LightStrip;
+				}
+			}
+
+		return entry.DiscoveredDeviceType == default
+			? KasaDeviceType.Bulb
+			: entry.DiscoveredDeviceType;
+		}
+
+	private static ManagedLightKind ResolveCachedLightKind (ManagedDeviceCacheEntry entry, KasaDeviceType deviceType)
+		{
+		if (deviceType == KasaDeviceType.Plug || deviceType == KasaDeviceType.Strip)
+			{
+			return ManagedLightKind.OnOff;
+			}
+
+		return entry.ManagedLightKind == default
+			? ManagedLightKind.Dimmable
+			: entry.ManagedLightKind;
 		}
 
 	private bool IsMaterializationInFlight (string controllerId)
@@ -1236,6 +1399,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		_configuredChildControllerIds.Add (controllerId);
 		_inUseChildControllerIds.Add (controllerId);
 		_pendingRemovalMissCounts.Remove (controllerId);
+		MarkChildConfiguredInCache (controllerId);
 
 		if (_lightEntities.TryGetValue (controllerId, out IKasaManagedLightEntity? lightEntity))
 			{
@@ -1249,6 +1413,24 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			}
 
 		return null;
+		}
+
+	private void MarkChildConfiguredInCache (string controllerId)
+		{
+		if (!_managedDeviceCacheMetadata.TryGetValue (controllerId, out ManagedDeviceCacheEntry? entry))
+			{
+			LogInfo ($"MarkChildConfiguredInCache: no managed-device cache metadata exists yet for controllerId='{controllerId}'.");
+			return;
+			}
+
+		if (entry.IsConfigured)
+			{
+			return;
+			}
+
+		entry.IsConfigured = true;
+		PersistManagedDeviceCache ();
+		LogInfo ($"MarkChildConfiguredInCache: persisted configured child marker for controllerId='{controllerId}'.");
 		}
 
 	private void HandleManagedLightDescriptorNameChanged (ManagedLightDescriptor descriptor)
@@ -1896,6 +2078,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				bool requiresUpgradeRewrite = document.Version < MANAGED_DEVICE_CACHE_VERSION;
 
 				bool skippedInvalidEntries = false;
+				int configuredEntryCount = 0;
 
 				foreach (ManagedDeviceCacheEntry entry in document.Devices)
 					{
@@ -1926,10 +2109,17 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 							entry.Model,
 							cacheSerialNumber);
 					_managedDeviceCacheMetadata[entry.ControllerId] = entry;
+					if (entry.IsConfigured)
+						{
+						_configuredChildControllerIds.Add (entry.ControllerId);
+						_inUseChildControllerIds.Add (entry.ControllerId);
+						configuredEntryCount++;
+						}
+
 					RememberResolvedDeviceName (entry.ControllerId, entry.Name, cacheSerialNumber, entry.Host);
 					}
 
-				LogInfo ($"Managed-device cache seeded {_managedDevices.Count} device entries from '{cachePath}'.");
+				LogInfo ($"Managed-device cache seeded {_managedDevices.Count} device entries from '{cachePath}', configuredChildCount={configuredEntryCount}.");
 				if (skippedInvalidEntries || requiresUpgradeRewrite)
 					{
 					PersistManagedDeviceCache ();
@@ -2103,16 +2293,36 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					{
 					Version = MANAGED_DEVICE_CACHE_VERSION,
 					Devices = cacheableDevices
-						.Select (entry => new ManagedDeviceCacheEntry
+						.Select (entry =>
+							{
+							_managedDeviceCacheMetadata.TryGetValue (entry.Key, out ManagedDeviceCacheEntry? metadata);
+							return new ManagedDeviceCacheEntry
 							{
 							ControllerId = entry.Key,
 							UxCategory = entry.Value.UxCategory,
 							Name = entry.Value.Name,
 							Manufacturer = entry.Value.Manufacturer,
 							Model = entry.Value.Model,
+							DiscoveredDeviceType = metadata?.DiscoveredDeviceType ?? ResolveCachedDeviceType (metadata ?? new ManagedDeviceCacheEntry { Model = entry.Value.Model }),
+							ManagedLightKind = metadata?.ManagedLightKind ?? ResolveCachedLightKind (metadata ?? new ManagedDeviceCacheEntry { Model = entry.Value.Model }, metadata?.DiscoveredDeviceType ?? KasaDeviceType.Bulb),
 							SerialNumber = entry.Value.SerialNumber,
-							Host = _managedDeviceCacheMetadata.TryGetValue (entry.Key, out ManagedDeviceCacheEntry? metadata) ? metadata.Host : string.Empty,
-							AwaitingConnectedIdentity = _managedDeviceCacheMetadata.TryGetValue (entry.Key, out metadata) && metadata.AwaitingConnectedIdentity
+							Host = metadata?.Host ?? string.Empty,
+							AwaitingConnectedIdentity = metadata?.AwaitingConnectedIdentity ?? false,
+							IsConfigured = _configuredChildControllerIds.Contains (entry.Key) || (metadata?.IsConfigured ?? false),
+							Port = metadata?.Port ?? 0,
+							TransportKind = metadata?.TransportKind ?? default,
+							DeviceFamily = metadata?.DeviceFamily ?? default,
+							EncryptionKind = metadata?.EncryptionKind ?? default,
+							LoginVersion = metadata?.LoginVersion,
+							UseHttps = metadata?.UseHttps ?? false,
+							HttpPort = metadata?.HttpPort,
+							UseSsl = metadata?.UseSsl ?? false,
+							UseDefaultCredentials = metadata?.UseDefaultCredentials ?? false,
+							DefaultCredentialProfile = metadata?.DefaultCredentialProfile ?? default,
+							ApplicationPath = metadata?.ApplicationPath ?? string.Empty,
+							UseSecurePassthrough = metadata?.UseSecurePassthrough ?? false,
+							TpapKeepAliveIntervalMs = metadata?.TpapKeepAliveIntervalMs
+							};
 							})
 						.ToList ()
 					};
