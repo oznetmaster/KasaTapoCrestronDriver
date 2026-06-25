@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -233,9 +234,9 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		}
 
 	private const string TP_LINK_MANUFACTURER = "TP-Link";
-	private const string PersistentStorageRoot = "/user/Data/ThirdParty/NeilColvin/KasaTapoCrestronDriver";
-	private const string ManagedDeviceCacheFileName = "managed-devices-cache.json";
-	private const int ManagedDeviceCacheVersion = 3;
+	private const string PERSISTENT_STORAGE_ROOT = "/user/Data/ThirdParty/NeilColvin/KasaTapoCrestronDriver";
+	private const string MANAGED_DEVICE_CACHE_FILE_NAME = "managed-devices-cache.json";
+	private const int MANAGED_DEVICE_CACHE_VERSION = 3;
 
 	private static readonly TimeSpan InitialDiscoveryRefreshInterval = TimeSpan.FromSeconds (5);
 	private static readonly TimeSpan DefaultDiscoveryTimeout = TimeSpan.FromSeconds (8);
@@ -253,7 +254,6 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private readonly Dictionary<string, ManagedLightDescriptor> _knownDescriptors = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, ManagedDeviceCacheEntry> _managedDeviceCacheMetadata = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, string> _resolvedDeviceNames = new (StringComparer.OrdinalIgnoreCase);
-	private readonly Dictionary<string, IDriverConfigurationController> _childConfigurationControllers = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, IKasaManagedLightEntity> _lightEntities = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, int> _pendingRemovalMissCounts = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _configuredChildControllerIds = new (StringComparer.OrdinalIgnoreCase);
@@ -566,6 +566,14 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 		IReadOnlyList<DiscoveryResult> discoveredDevices = await DiscoverDevicesAsync (timeout, isInitialLoad, cancellationToken).ConfigureAwait (false);
 		LogInfo ($"RefreshPlatformAsync: timeoutSeconds={timeout.TotalSeconds:0.###}, discoveredDeviceCount={discoveredDevices.Count}, hasTapoCredentials={hasTapoCredentials}.");
+
+		if (discoveredDevices.Count == 0)
+			{
+			LogInfo ("RefreshPlatformAsync: discovery returned 0 devices; treating pass as a no-op and retrying in 5 seconds without mutating discovery state.");
+			RestartDiscoveryRefreshLoop (InitialDiscoveryRefreshInterval);
+			return;
+			}
+
 		foreach (DiscoveryResult discoveredDevice in discoveredDevices)
 			{
 			LogInfo ($"Discovery result: host='{discoveredDevice.Host}', type={discoveredDevice.DeviceType}, alias='{discoveredDevice.Alias ?? "<null>"}', model='{discoveredDevice.Model ?? "<null>"}', deviceId='{discoveredDevice.DeviceId ?? "<null>"}'.");
@@ -590,10 +598,11 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 		foreach (DiscoveryResult discoveryResult in discoveredDevices.OrderBy (ResolveDiscoveryName, StringComparer.OrdinalIgnoreCase))
 			{
-			_discoveryResults[CreateControllerId (discoveryResult)] = discoveryResult;
+			string controllerId = CreateControllerId (discoveryResult);
+			_discoveryResults[controllerId] = discoveryResult;
 
 			DeviceConfiguration configuration = CreateDeviceConfiguration (discoveryResult, credentials, timeout);
-			_deviceConfigurations[CreateControllerId (discoveryResult)] = configuration;
+			_deviceConfigurations[controllerId] = configuration;
 
 			if (discoveryResult.DeviceId is string discoveryDeviceId && !string.IsNullOrWhiteSpace (discoveryDeviceId))
 				{
@@ -611,7 +620,15 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				{
 				if (IsTapoDiscoveryResult (discoveryResult) && string.IsNullOrWhiteSpace (discoveryResult.Alias))
 					{
-					_ = StartAliasEnrichmentAsync (discoveryResult, configuration);
+					string resolvedDiscoveryName = ResolveManagedDeviceName (controllerId, ResolveDiscoveryName (discoveryResult), discoveryResult.DeviceId, discoveryResult.Host);
+					if (IsResolvedFriendlyDeviceName (controllerId, resolvedDiscoveryName, discoveryResult.DeviceId, discoveryResult.Host))
+						{
+						LogInfo ($"EnrichDiscoveryResultAliasAsync: skipped one-shot alias fetch for controllerId='{controllerId}', host='{discoveryResult.Host}' because the resolved discovery name '{resolvedDiscoveryName}' is already friendly/publishable.");
+						}
+					else
+						{
+						_ = StartAliasEnrichmentAsync (discoveryResult, configuration);
+						}
 					}
 
 				foreach (ManagedLightDescriptor descriptor in CreateManagedLightDescriptors (discoveryResult))
@@ -878,7 +895,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 								}
 
 							lightEntity.SetConfigured (_configuredChildControllerIds.Contains (controllerId), "materialization-complete");
-							var controller = new ConfigurableDriverEntity (controllerId, (ReflectedAttributeDriverEntity)lightEntity, GetOrCreateChildConfigurationController (pendingMaterialization.Descriptor));
+							var controller = new ConfigurableDriverEntity (controllerId, (ReflectedAttributeDriverEntity)lightEntity, CreateChildConfigurationController (pendingMaterialization.Descriptor));
 							_lightEntities[controllerId] = lightEntity;
 							_childControllers[controllerId] = controller;
 							if (HasManagedDeviceEntry (controllerId))
@@ -1151,13 +1168,8 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			_driverLogId);
 		}
 
-	private IDriverConfigurationController GetOrCreateChildConfigurationController (ManagedLightDescriptor descriptor)
+	private IDriverConfigurationController CreateChildConfigurationController (ManagedLightDescriptor descriptor)
 		{
-		if (_childConfigurationControllers.TryGetValue (descriptor.ControllerId, out IDriverConfigurationController? existingController))
-			{
-			return existingController;
-			}
-
 		var definition = new ConfigurationStepsDefinition
 			{
 			Items = new List<ConfigurationItemDefinition>
@@ -1210,7 +1222,6 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			null,
 			null);
 
-		_childConfigurationControllers[descriptor.ControllerId] = controller;
 		LogInfo ($"Child configuration controller created for controllerId='{descriptor.ControllerId}', model='{descriptor.ModelName}'.");
 		return controller;
 		}
@@ -1575,16 +1586,20 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		{
 		var discoveredDevices = new Dictionary<string, DiscoveryResult> (StringComparer.OrdinalIgnoreCase);
 
+		var passStopwatch = Stopwatch.StartNew ();
 		IReadOnlyList<DiscoveryResult> passResults = await Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken).ConfigureAwait (false);
-		LogInfo ($"DiscoverDevicesAsync: pass=1/1, resultCount={passResults.Count}, isInitialLoad={isInitialLoad}.");
+		passStopwatch.Stop ();
+		LogDiscoveryPassResults (passResults, passNumber: 1, totalPasses: 1, timeout, passStopwatch.Elapsed, isInitialLoad, retryAfterZero: false);
 
 		if (isInitialLoad && passResults.Count == 0)
 			{
 			cancellationToken.ThrowIfCancellationRequested ();
 			LogInfo ("DiscoverDevicesAsync: initial load found 0 devices; retrying one immediate discovery pass.");
 
+			passStopwatch.Restart ();
 			passResults = await Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken).ConfigureAwait (false);
-			LogInfo ($"DiscoverDevicesAsync: pass=2/2, resultCount={passResults.Count}, retryAfterZero=true.");
+			passStopwatch.Stop ();
+			LogDiscoveryPassResults (passResults, passNumber: 2, totalPasses: 2, timeout, passStopwatch.Elapsed, isInitialLoad, retryAfterZero: true);
 			}
 
 		foreach (DiscoveryResult discoveryResult in passResults)
@@ -1601,7 +1616,66 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				}
 			}
 
+		LogInfo ($"DiscoverDevicesAsync: mergedResultCount={discoveredDevices.Count}, rawResultCount={passResults.Count}, mergeStrategy=deviceIdOrHost, isInitialLoad={isInitialLoad}.");
+
 		return discoveredDevices.Values.ToArray ();
+		}
+
+	private void LogDiscoveryPassResults (IReadOnlyList<DiscoveryResult> passResults, int passNumber, int totalPasses, TimeSpan timeout, TimeSpan elapsed, bool isInitialLoad, bool retryAfterZero)
+		{
+		int missingAliasCount = 0;
+		int missingDeviceIdCount = 0;
+		int missingModelCount = 0;
+		int bulbs = 0;
+		int plugs = 0;
+		int strips = 0;
+		int hubs = 0;
+		int others = 0;
+
+		for (int index = 0; index < passResults.Count; index++)
+			{
+			DiscoveryResult result = passResults[index];
+
+			if (string.IsNullOrWhiteSpace (result.Alias))
+				{
+				missingAliasCount++;
+				}
+
+			if (string.IsNullOrWhiteSpace (result.DeviceId))
+				{
+				missingDeviceIdCount++;
+				}
+
+			if (string.IsNullOrWhiteSpace (result.Model))
+				{
+				missingModelCount++;
+				}
+
+			switch (result.DeviceType)
+				{
+				case KasaDeviceType.Bulb:
+					bulbs++;
+					break;
+
+				case KasaDeviceType.Plug:
+					plugs++;
+					break;
+
+				case KasaDeviceType.Strip:
+					strips++;
+					break;
+
+				case KasaDeviceType.Hub:
+					hubs++;
+					break;
+
+				default:
+					others++;
+					break;
+				}
+			}
+
+		LogInfo ($"DiscoverDevicesAsync: pass={passNumber}/{totalPasses}, resultCount={passResults.Count}, elapsedMs={elapsed.TotalMilliseconds:0}, timeoutMs={timeout.TotalMilliseconds:0}, isInitialLoad={isInitialLoad}, retryAfterZero={retryAfterZero}, typeCounts={{Bulb:{bulbs}, Plug:{plugs}, Strip:{strips}, Hub:{hubs}, Other:{others}}}, missingFields={{Alias:{missingAliasCount}, DeviceId:{missingDeviceIdCount}, Model:{missingModelCount}}}.");
 		}
 
 	private bool HasTapoCredentials ()
@@ -1813,13 +1887,13 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					return;
 					}
 
-				if (document.Version <= 0 || document.Version > ManagedDeviceCacheVersion)
+				if (document.Version <= 0 || document.Version > MANAGED_DEVICE_CACHE_VERSION)
 					{
-					LogInfo ($"Managed-device cache load skipped because version '{document.Version}' is unsupported; expected version '{ManagedDeviceCacheVersion}'.");
+					LogInfo ($"Managed-device cache load skipped because version '{document.Version}' is unsupported; expected version '{MANAGED_DEVICE_CACHE_VERSION}'.");
 					return;
 					}
 
-				bool requiresUpgradeRewrite = document.Version < ManagedDeviceCacheVersion;
+				bool requiresUpgradeRewrite = document.Version < MANAGED_DEVICE_CACHE_VERSION;
 
 				bool skippedInvalidEntries = false;
 
@@ -1860,7 +1934,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					{
 					PersistManagedDeviceCache ();
 					LogInfo (requiresUpgradeRewrite
-						? $"Managed-device cache was upgraded from version '{document.Version}' to '{ManagedDeviceCacheVersion}'."
+						? $"Managed-device cache was upgraded from version '{document.Version}' to '{MANAGED_DEVICE_CACHE_VERSION}'."
 						: "Managed-device cache was rewritten after dropping invalid cached names.");
 					}
 			}
@@ -1872,7 +1946,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 	private string GetManagedDeviceCachePath ()
 		{
-		return Path.Combine (PersistentStorageRoot, ManagedDeviceCacheFileName);
+		return Path.Combine (PERSISTENT_STORAGE_ROOT, MANAGED_DEVICE_CACHE_FILE_NAME);
 		}
 
 	private string ResolveManagedDeviceName (string controllerId, string? candidateName, string? deviceId, string? host)
@@ -2027,7 +2101,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 				var document = new ManagedDeviceCacheDocument
 					{
-					Version = ManagedDeviceCacheVersion,
+					Version = MANAGED_DEVICE_CACHE_VERSION,
 					Devices = cacheableDevices
 						.Select (entry => new ManagedDeviceCacheEntry
 							{
