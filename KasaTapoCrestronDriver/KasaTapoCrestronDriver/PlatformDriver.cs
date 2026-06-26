@@ -64,6 +64,134 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			}
 		}
 
+	private sealed class LoggingDriverConfigurationController : IDriverConfigurationController
+		{
+		private readonly string _controllerId;
+		private readonly IDriverConfigurationController _inner;
+		private readonly Action<string> _logInfo;
+
+		public LoggingDriverConfigurationController (string controllerId, IDriverConfigurationController inner, Action<string> logInfo)
+			{
+			_controllerId = controllerId;
+			_inner = inner;
+			_logInfo = logInfo;
+
+			_inner.ConfigurationItemsUpdated += HandleConfigurationItemsUpdated;
+			_inner.ConfigurationListChanged += HandleConfigurationListChanged;
+			_inner.StatusChanged += HandleStatusChanged;
+			}
+
+		public event EventHandler<ConfigurationItemsUpdatedEventArgs> ConfigurationItemsUpdated
+			{
+			add => _inner.ConfigurationItemsUpdated += value;
+			remove => _inner.ConfigurationItemsUpdated -= value;
+			}
+
+		public event EventHandler<ConfigurationListChangedEventArgs> ConfigurationListChanged
+			{
+			add => _inner.ConfigurationListChanged += value;
+			remove => _inner.ConfigurationListChanged -= value;
+			}
+
+		public event EventHandler<StatusChangedEventArgs> StatusChanged
+			{
+			add => _inner.StatusChanged += value;
+			remove => _inner.StatusChanged -= value;
+			}
+
+		public Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ApplyConfigurationResult ApplyConfiguration (IDictionary<string, string> values)
+			{
+			Log ($"ApplyConfiguration called with keys=[{FormatKeys (values?.Keys)}].");
+			Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ApplyConfigurationResult result = _inner.ApplyConfiguration (values);
+			Log ($"ApplyConfiguration returned remainingItems={result?.RemainingConfigurationItemsToSet?.Count ?? 0}, invalidIds={FormatKeys (result?.InvalidConfigurationItemIdsReceived)}, errorKeys={FormatKeys (result?.ConfigurationErrorsByItemId?.Keys)}.");
+			return result!;
+			}
+
+		public Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ApplyConfigurationStepResult ApplyConfigurationStep (string stepId, IDictionary<string, string> values)
+			{
+			Log ($"ApplyConfigurationStep called for stepId='{stepId}' with keys=[{FormatKeys (values?.Keys)}].");
+			Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ApplyConfigurationStepResult result = _inner.ApplyConfigurationStep (stepId, values);
+			Log ($"ApplyConfigurationStep returned nextStep='{result?.NextConfigurationStep?.Id}', invalidIds={FormatKeys (result?.InvalidConfigurationItemIdsReceived)}, errorKeys={FormatKeys (result?.ConfigurationErrorsByItemId?.Keys)}, errorMessage='{result?.ErrorMessage ?? string.Empty}'.");
+			return result!;
+			}
+
+		public Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationValueCollection GetAllConfigurationValues ()
+			{
+			Log ("GetAllConfigurationValues called.");
+			Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationValueCollection values = _inner.GetAllConfigurationValues ();
+			Log ($"GetAllConfigurationValues returned keys=[{FormatKeys (values?.ConfigurationSettings?.Keys)}].");
+			return values!;
+			}
+
+		public Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationStep GetFirstConfigurationStep ()
+			{
+			Log ("GetFirstConfigurationStep called.");
+			Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationStep step = _inner.GetFirstConfigurationStep ();
+			Log ($"GetFirstConfigurationStep returned stepId='{step?.Id}', itemCount={step?.ConfigurationItems?.Count ?? 0}.");
+			return step!;
+			}
+
+		public DriverControllerStatus GetStatus ()
+			{
+			Log ("GetStatus called.");
+			DriverControllerStatus status = _inner.GetStatus ();
+			Log ($"GetStatus returned '{status}'.");
+			return status;
+			}
+
+		public DriverControllerStatus PeekStatus ()
+			{
+			DriverControllerStatus status = _inner.GetStatus ();
+			Log ($"PeekStatus returned '{status}'.");
+			return status;
+			}
+
+		public void SetTransportImplementation (
+			TransportTx transportTx,
+			Action<string, Action<string>> sendAction,
+			Action<string, Action<string>> subscribeAction)
+			{
+			Log ($"SetTransportImplementation called for transportType='{transportTx?.GetType ().FullName ?? string.Empty}'.");
+			_inner.SetTransportImplementation (transportTx, sendAction, subscribeAction);
+			}
+
+		public void UnsetTransportImplementation ()
+			{
+			Log ("UnsetTransportImplementation called.");
+			_inner.UnsetTransportImplementation ();
+			}
+
+		private void HandleConfigurationItemsUpdated (object? sender, ConfigurationItemsUpdatedEventArgs args)
+			{
+			Log ($"ConfigurationItemsUpdated event: controllerId='{args?.ControllerId}', itemIds=[{FormatKeys (args?.ConfigurationItems?.Select (item => item.Id))}].");
+			}
+
+		private void HandleConfigurationListChanged (object? sender, ConfigurationListChangedEventArgs args)
+			{
+			Log ($"ConfigurationListChanged event: controllerId='{args?.ControllerId}', added=[{FormatKeys (args?.ConfigurationItemsAdded?.Select (item => item.Id))}], removed=[{FormatKeys (args?.ConfigurationItemIdsRemoved)}].");
+			}
+
+		private void HandleStatusChanged (object? sender, StatusChangedEventArgs args)
+			{
+			Log ($"StatusChanged event: controllerId='{args?.ControllerId}', status='{args?.Status}'.");
+			}
+
+		private void Log (string message)
+			{
+			_logInfo ($"Child configuration controller [{_controllerId}]: {message}");
+			}
+
+		private static string FormatKeys (IEnumerable<string>? keys)
+			{
+			if (keys is null)
+				{
+				return string.Empty;
+				}
+
+			return string.Join (", ", keys.Where (key => !string.IsNullOrWhiteSpace (key)).OrderBy (key => key, StringComparer.OrdinalIgnoreCase));
+			}
+		}
+
 	[DataContract]
 	private sealed class ManagedDeviceCacheDocument
 		{
@@ -270,6 +398,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private readonly DriverControllerLogger _logger;
 	private readonly string _driverLogId;
 	private readonly Dictionary<string, ConfigurableDriverEntity> _childControllers = new (StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, LoggingDriverConfigurationController> _childConfigurationControllers = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, DeviceConfiguration> _deviceConfigurations = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, DiscoveryResult> _discoveryResults = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, ManagedLightDescriptor> _knownDescriptors = new (StringComparer.OrdinalIgnoreCase);
@@ -666,7 +795,15 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 						{
 						existingLightEntity.UpdateDescriptor (descriptor, configuration);
 						existingLightEntity.UpdateConfiguration (configuration);
-						existingLightEntity.SetConfigured (_configuredChildControllerIds.Contains (descriptor.ControllerId), "rediscovery-existing-child");
+						bool childConfigurationRunning = _childControllers.TryGetValue (descriptor.ControllerId, out ConfigurableDriverEntity? existingController)
+							&& IsChildConfigurationControllerRunning (existingController);
+						if (!childConfigurationRunning)
+							{
+							_configuredChildControllerIds.Remove (descriptor.ControllerId);
+							_inUseChildControllerIds.Remove (descriptor.ControllerId);
+							}
+
+						existingLightEntity.SetConfigured (childConfigurationRunning, "rediscovery-existing-child");
 						if (!descriptor.AwaitingConnectedIdentity)
 							{
 							HandleManagedLightDescriptorNameChanged (descriptor);
@@ -834,9 +971,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					removedEntity.Dispose ();
 					}
 
-				_pendingRemovalMissCounts.Remove (existingControllerId);
-				_childControllers.Remove (existingControllerId);
-				_lightEntities.Remove (existingControllerId);
+				ClearChildRuntimeState (existingControllerId, "managed-device-removal");
 				controllersToRemove ??= new List<string> ();
 				controllersToRemove.Add (existingControllerId);
 				}
@@ -921,9 +1056,12 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 								}
 
 							lightEntity.SetConfigured (_configuredChildControllerIds.Contains (controllerId), "materialization-complete");
-							var controller = new ConfigurableDriverEntity (controllerId, (ReflectedAttributeDriverEntity)lightEntity, CreateChildConfigurationController (pendingMaterialization.Descriptor));
+							LoggingDriverConfigurationController childConfigurationController = CreateChildConfigurationController (pendingMaterialization.Descriptor);
+							var controller = new ConfigurableDriverEntity (controllerId, (ReflectedAttributeDriverEntity)lightEntity, childConfigurationController);
 							_lightEntities[controllerId] = lightEntity;
 							_childControllers[controllerId] = controller;
+							_childConfigurationControllers[controllerId] = childConfigurationController;
+							LogChildPublicationState ("Async materialization stored child publication state", controllerId);
 							if (HasManagedDeviceEntry (controllerId))
 								{
 								controllersToAdd ??= new List<ConfigurableDriverEntity> ();
@@ -949,10 +1087,15 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					if ((controllersToAdd?.Count ?? 0) > 0)
 						{
 						List<ConfigurableDriverEntity> controllersToPublish = controllersToAdd!;
+						foreach (ConfigurableDriverEntity controller in controllersToPublish)
+							{
+							LogChildPublicationState ("Before UpdateSubControllers async publish", controller.ControllerId);
+							}
 						UpdateSubControllers (controllersToPublish, null);
 
 						foreach (ConfigurableDriverEntity controller in controllersToPublish)
 							{
+							LogChildPublicationState ("After UpdateSubControllers async publish", controller.ControllerId);
 							if (_lightEntities.TryGetValue (controller.ControllerId, out IKasaManagedLightEntity? lightEntity))
 								{
 								lightEntity.PublishStateSnapshot ();
@@ -1012,6 +1155,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		RememberResolvedDeviceName (controllerId, name, descriptor.DiscoveryDeviceId ?? descriptor.SerialNumber, descriptor.Host);
 		PersistManagedDeviceCache ();
 		LogInfo ($"Managed-device entry added: controllerId='{controllerId}', name='{name}', model='{modelName}', serial='{serialNumber}'.");
+		LogChildPublicationState ("Managed-device entry added state", controllerId);
 		return true;
 		}
 
@@ -1091,9 +1235,12 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			IKasaManagedLightEntity lightEntity = CreateManagedLightEntity (descriptor, deviceConfiguration);
 			lightEntity.SetConfigured (_configuredChildControllerIds.Contains (descriptor.ControllerId), "cached-child-controller-publication");
 
-			var controller = new ConfigurableDriverEntity (descriptor.ControllerId, (ReflectedAttributeDriverEntity)lightEntity, CreateChildConfigurationController (descriptor));
+			LoggingDriverConfigurationController childConfigurationController = CreateChildConfigurationController (descriptor);
+			var controller = new ConfigurableDriverEntity (descriptor.ControllerId, (ReflectedAttributeDriverEntity)lightEntity, childConfigurationController);
 			_lightEntities[descriptor.ControllerId] = lightEntity;
 			_childControllers[descriptor.ControllerId] = controller;
+			_childConfigurationControllers[descriptor.ControllerId] = childConfigurationController;
+			LogChildPublicationState ("Cached child controller staged for publication", descriptor.ControllerId);
 			controllersToAdd ??= new List<ConfigurableDriverEntity> ();
 			controllersToAdd.Add (controller);
 			LogInfo ($"Cached child controller published early for controllerId='{descriptor.ControllerId}', name='{descriptor.Name}', model='{descriptor.ModelName}', host='{descriptor.Host}'.");
@@ -1101,7 +1248,16 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 		if ((controllersToAdd?.Count ?? 0) > 0)
 			{
-			UpdateSubControllers (controllersToAdd, null);
+			List<ConfigurableDriverEntity> controllersToPublish = controllersToAdd!;
+			foreach (ConfigurableDriverEntity controller in controllersToPublish)
+				{
+				LogChildPublicationState ("Before UpdateSubControllers cached publish", controller.ControllerId);
+				}
+			UpdateSubControllers (controllersToPublish, null);
+			foreach (ConfigurableDriverEntity controller in controllersToPublish)
+				{
+				LogChildPublicationState ("After UpdateSubControllers cached publish", controller.ControllerId);
+				}
 			}
 		}
 
@@ -1266,6 +1422,18 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		LogInfo ($"{context}: entries=[{string.Join (", ", entries.OrderBy (entry => entry.Key, StringComparer.OrdinalIgnoreCase).Select (entry => $"{entry.Key}='{entry.Value.Name}'"))}].");
 		}
 
+	private void LogChildPublicationState (string context, string controllerId)
+		{
+		bool hasManagedDevice = _managedDevices.TryGetValue (controllerId, out PlatformManagedDevice? managedDevice);
+		bool hasChildController = _childControllers.TryGetValue (controllerId, out ConfigurableDriverEntity? childController);
+		bool hasLightEntity = _lightEntities.TryGetValue (controllerId, out IKasaManagedLightEntity? lightEntity);
+		bool isConfigured = _configuredChildControllerIds.Contains (controllerId);
+		bool isInUse = _inUseChildControllerIds.Contains (controllerId);
+
+		LogInfo (
+			$"{context}: controllerId='{controllerId}', hasManagedDevice={hasManagedDevice}, managedDeviceName='{managedDevice?.Name ?? string.Empty}', managedDeviceModel='{managedDevice?.Model ?? string.Empty}', hasChildController={hasChildController}, childControllerType='{childController?.GetType ().FullName ?? string.Empty}', hasLightEntity={hasLightEntity}, lightEntityType='{lightEntity?.GetType ().FullName ?? string.Empty}', isConfigured={isConfigured}, isInUse={isInUse}.");
+		}
+
 	private async Task RefreshPlatformSafelyAsync (CancellationToken cancellationToken)
 		{
 		LogInfo ("RefreshPlatformSafelyAsync: waiting for refresh gate.");
@@ -1372,7 +1540,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			_driverLogId);
 		}
 
-	private IDriverConfigurationController CreateChildConfigurationController (ManagedLightDescriptor descriptor)
+	private LoggingDriverConfigurationController CreateChildConfigurationController (ManagedLightDescriptor descriptor)
 		{
 		var definition = new ConfigurationStepsDefinition
 			{
@@ -1427,7 +1595,13 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			null);
 
 		LogInfo ($"Child configuration controller created for controllerId='{descriptor.ControllerId}', model='{descriptor.ModelName}'.");
-		return controller;
+		return new LoggingDriverConfigurationController (descriptor.ControllerId, controller, LogInfo);
+		}
+
+	private bool IsChildConfigurationControllerRunning (ConfigurableDriverEntity controller)
+		{
+		return _childConfigurationControllers.TryGetValue (controller.ControllerId, out LoggingDriverConfigurationController? loggingController)
+			&& loggingController.PeekStatus () == DriverControllerStatus.Running;
 		}
 
 	private ConfigurationItemErrors? ApplyChildConfigurationItems (
@@ -1437,6 +1611,18 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		IDictionary<string, DriverEntityValue?> values)
 		{
 		LogInfo ($"ApplyChildConfigurationItems: controllerId='{controllerId}', action='{action}', stepId='{stepId}', hasExistingLightEntity={_lightEntities.ContainsKey (controllerId)}, valueKeys=[{string.Join (", ", values.Keys.OrderBy (key => key, StringComparer.OrdinalIgnoreCase))}].");
+		if (action == DataDrivenConfigurationController.ApplyConfigurationAction.ClearValues)
+			{
+			LogInfo ($"ApplyChildConfigurationItems: ClearValues for controllerId='{controllerId}' resets the specified child configuration values to their defaults; no install-state side effects are required for ActivationMarker.");
+			return null;
+			}
+
+		if (action != DataDrivenConfigurationController.ApplyConfigurationAction.ApplyStep)
+			{
+			LogInfo ($"ApplyChildConfigurationItems: ignoring non-step child configuration replay for controllerId='{controllerId}', action='{action}'. Child activation requires the install-time configuration step.");
+			return null;
+			}
+
 		_configuredChildControllerIds.Add (controllerId);
 		_inUseChildControllerIds.Add (controllerId);
 		_pendingRemovalMissCounts.Remove (controllerId);
@@ -1474,6 +1660,25 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		LogInfo ($"MarkChildConfiguredInCache: persisted configured child marker for controllerId='{controllerId}'.");
 		}
 
+	private void ClearChildRuntimeState (string controllerId, string context)
+		{
+		bool removedConfigured = _configuredChildControllerIds.Remove (controllerId);
+		bool removedInUse = _inUseChildControllerIds.Remove (controllerId);
+		bool removedPendingMiss = _pendingRemovalMissCounts.Remove (controllerId);
+		bool removedController = _childControllers.Remove (controllerId);
+		bool removedConfigurationController = _childConfigurationControllers.Remove (controllerId);
+		bool removedLightEntity = _lightEntities.Remove (controllerId);
+		bool removedMaterialization = _materializationInFlightControllerIds.Remove (controllerId);
+
+		if (_managedDeviceCacheMetadata.TryGetValue (controllerId, out ManagedDeviceCacheEntry? entry) && entry.IsConfigured)
+			{
+			entry.IsConfigured = false;
+			PersistManagedDeviceCache ();
+			}
+
+		LogInfo ($"ClearChildRuntimeState: controllerId='{controllerId}', context='{context}', removedConfigured={removedConfigured}, removedInUse={removedInUse}, removedPendingMiss={removedPendingMiss}, removedController={removedController}, removedConfigurationController={removedConfigurationController}, removedLightEntity={removedLightEntity}, removedMaterialization={removedMaterialization}; discovery and managed-device availability metadata preserved.");
+		}
+
 	private void HandleManagedLightDescriptorNameChanged (ManagedLightDescriptor descriptor)
 		{
 		LogInfo ($"HandleManagedLightDescriptorNameChanged: controllerId='{descriptor.ControllerId}', incomingName='{descriptor.Name}', hasExistingEntry={_managedDevices.ContainsKey (descriptor.ControllerId)}, currentCount={_managedDevices.Count}.");
@@ -1490,7 +1695,9 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 			if (_childControllers.TryGetValue (descriptor.ControllerId, out ConfigurableDriverEntity? deferredController))
 				{
+							LogChildPublicationState ("Before UpdateSubControllers deferred publish", descriptor.ControllerId);
 				UpdateSubControllers (new[] { deferredController }, null);
+							LogChildPublicationState ("After UpdateSubControllers deferred publish", descriptor.ControllerId);
 				if (_lightEntities.TryGetValue (descriptor.ControllerId, out IKasaManagedLightEntity? lightEntity))
 					{
 					lightEntity.PublishStateSnapshot ();
@@ -2119,7 +2326,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				bool requiresUpgradeRewrite = document.Version < MANAGED_DEVICE_CACHE_VERSION;
 
 				bool skippedInvalidEntries = false;
-				int configuredEntryCount = 0;
+				int cachedConfiguredEntryCount = 0;
 
 				foreach (ManagedDeviceCacheEntry entry in document.Devices)
 					{
@@ -2150,17 +2357,16 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 							entry.Model,
 							cacheSerialNumber);
 					_managedDeviceCacheMetadata[entry.ControllerId] = entry;
+					LogChildPublicationState ("Managed-device cache seeded state", entry.ControllerId);
 					if (entry.IsConfigured)
 						{
-						_configuredChildControllerIds.Add (entry.ControllerId);
-						_inUseChildControllerIds.Add (entry.ControllerId);
-						configuredEntryCount++;
+						cachedConfiguredEntryCount++;
 						}
 
 					RememberResolvedDeviceName (entry.ControllerId, entry.Name, cacheSerialNumber, entry.Host);
 					}
 
-				LogInfo ($"Managed-device cache seeded {_managedDevices.Count} device entries from '{cachePath}', configuredChildCount={configuredEntryCount}.");
+				LogInfo ($"Managed-device cache seeded {_managedDevices.Count} device entries from '{cachePath}', cachedConfiguredChildCount={cachedConfiguredEntryCount}; current session child configuration state will be established only by child configuration callbacks.");
 				if (skippedInvalidEntries || requiresUpgradeRewrite)
 					{
 					PersistManagedDeviceCache ();
