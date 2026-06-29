@@ -8,6 +8,7 @@ namespace KasaTapoCrestronDriver;
 
 internal enum ManagedLightKind
 	{
+	Unknown,
 	Dimmable,
 	TunableWhite,
 	Color,
@@ -34,7 +35,10 @@ internal sealed class ManagedLightDescriptor
 		Name = name;
 		ModelName = modelName;
 		SerialNumber = serialNumber;
-		Kind = kind;
+		if (kind != ManagedLightKind.Unknown)
+			{
+			Kind = kind;
+			}
 		AwaitingConnectedIdentity = awaitingConnectedIdentity;
 		DiscoveryDeviceId = discoveryDeviceId;
 		ChildId = childId;
@@ -73,7 +77,27 @@ internal sealed class ManagedLightDescriptor
 
 	public ManagedLightKind Kind
 		{
-		get;
+		get
+			;
+		internal set
+			{
+			if (value == ManagedLightKind.Unknown)
+				{
+				throw new InvalidOperationException ($"Managed light kind for controllerId='{ControllerId}' cannot be set to Unknown.");
+				}
+
+			if (field == value)
+				{
+				return;
+				}
+
+			if (field != ManagedLightKind.Unknown)
+				{
+				throw new InvalidOperationException ($"Managed light kind for controllerId='{ControllerId}' cannot be changed from {field} to {value} after initialization.");
+				}
+
+			field = value;
+			}
 		}
 
 	public bool AwaitingConnectedIdentity
@@ -116,11 +140,15 @@ internal interface IKasaManagedLightEntity : IDisposable
 
 	void SetConfigured (bool configured, string context);
 
+	Task SetConfiguredAsync (bool configured, string context, CancellationToken cancellationToken);
+
 	void ApplyRuntimeConfiguration (PlatformSharedConfigurationSnapshot previousConfiguration, PlatformSharedConfigurationSnapshot currentConfiguration);
 
 	void Stop ();
 
 	Task RefreshAsync (CancellationToken cancellationToken);
+
+	void NotifyChildPublished ();
 
 	void PublishStateSnapshot ();
 	}

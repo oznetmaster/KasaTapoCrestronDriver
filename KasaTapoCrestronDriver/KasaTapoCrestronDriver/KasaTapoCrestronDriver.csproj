@@ -51,7 +51,7 @@
   <ItemGroup>
 	 <PackageReference Include="Crestron.DeviceDrivers.DevKit" Version="27.0.24" />
 	 <PackageReference Include="Hafner.Compatibility.MetaPackage" Version="1.9.0" />
-	 <PackageReference Include="KasaTapoClient" Version="1.0.3" />
+	 <PackageReference Include="KasaTapoClient" Version="1.1.0" />
   </ItemGroup>
 
   <ItemGroup>

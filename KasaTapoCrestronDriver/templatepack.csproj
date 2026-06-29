@@ -38,6 +38,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="KasaLightEntity.cs" />
+    <Compile Include="ManagedLightDescriptor.cs" />
     <Compile Include="PlatformDriver.cs" />
   </ItemGroup>
 </Project>

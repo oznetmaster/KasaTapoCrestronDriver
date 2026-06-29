@@ -178,6 +178,11 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 		private void Log (string message)
 			{
+			if (!PlatformDriver.IsDebugLoggingEnabled ())
+				{
+				return;
+				}
+
 			_logInfo ($"Child configuration controller [{_controllerId}]: {message}");
 			}
 
@@ -597,6 +602,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			_treatPlugsAsLights);
 
 		PlatformSharedConfigurationSnapshot currentConfiguration = _sharedConfiguration.Snapshot ();
+		LogInfo ($"ApplyConfigurationItems resolved configuration: mode={applyMode}, timeoutSeconds={currentConfiguration.DiscoveryTimeout.TotalSeconds:0.###}, enableLightPolling={currentConfiguration.EnableLightPolling}, lightPollIntervalSeconds={currentConfiguration.LightPollInterval.TotalSeconds:0.###}, sensorPollIntervalSeconds={currentConfiguration.SensorPollInterval.TotalSeconds:0.###}, treatPlugsAsLights={currentConfiguration.TreatPlugsAsLights}, hasTapoCredentials={HasTapoCredentials ()}.");
 
 		switch (applyMode)
 			{
@@ -1098,7 +1104,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 							LogChildPublicationState ("After UpdateSubControllers async publish", controller.ControllerId);
 							if (_lightEntities.TryGetValue (controller.ControllerId, out IKasaManagedLightEntity? lightEntity))
 								{
-								lightEntity.PublishStateSnapshot ();
+								lightEntity.NotifyChildPublished ();
 								}
 							}
 						}
@@ -1143,6 +1149,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		string modelName = descriptor.ModelName;
 		string serialNumber = descriptor.SerialNumber;
 		string name = ResolveManagedDeviceName (controllerId, descriptor.Name, descriptor.DiscoveryDeviceId ?? descriptor.SerialNumber, descriptor.Host);
+		LogInfo ($"AddInitialManagedDeviceEntry: controllerId='{controllerId}', descriptorName='{descriptor.Name}', resolvedName='{name}', model='{modelName}', serial='{serialNumber}', host='{descriptor.Host}', awaitingConnectedIdentity={descriptor.AwaitingConnectedIdentity}.");
 
 		if (string.IsNullOrWhiteSpace (name))
 			{
@@ -1210,6 +1217,22 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			};
 		}
 
+	private void PublishManagedDeviceEntryUpdate (string controllerId, string context)
+		{
+		if (!_managedDevices.TryGetValue (controllerId, out PlatformManagedDevice? existingEntry))
+			{
+			LogInfo ($"PublishManagedDeviceEntryUpdate: no managed-device entry exists for controllerId='{controllerId}', context='{context}'; this is expected after a child has been added to a room.");
+			return;
+			}
+
+		PlatformManagedDevice updatedEntry = CreateManagedDeviceEntry (controllerId, existingEntry.Name, existingEntry.Model, existingEntry.SerialNumber);
+		_managedDevices[controllerId] = updatedEntry;
+		DriverEntityValueUpdate managedDevicesChange = DriverEntityValueUpdate.Create (
+			DriverEntityValueUpdate.Create (controllerId, CreateValueForObject (updatedEntry)));
+		NotifyPropertyChanged ("platform:managedDevices", managedDevicesChange);
+		LogInfo ($"PublishManagedDeviceEntryUpdate: published managed-device entry update for controllerId='{controllerId}', configured={_configuredChildControllerIds.Contains (controllerId)}, context='{context}'.");
+		}
+
 	private bool HasManagedDeviceEntry (string controllerId)
 		{
 		return _managedDevices.ContainsKey (controllerId);
@@ -1257,6 +1280,10 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			foreach (ConfigurableDriverEntity controller in controllersToPublish)
 				{
 				LogChildPublicationState ("After UpdateSubControllers cached publish", controller.ControllerId);
+				if (_lightEntities.TryGetValue (controller.ControllerId, out IKasaManagedLightEntity? lightEntity))
+					{
+					lightEntity.NotifyChildPublished ();
+					}
 				}
 			}
 		}
@@ -1397,9 +1424,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			return ManagedLightKind.OnOff;
 			}
 
-		return entry.ManagedLightKind == default
-			? ManagedLightKind.Dimmable
-			: entry.ManagedLightKind;
+		return entry.ManagedLightKind;
 		}
 
 	private bool IsMaterializationInFlight (string controllerId)
@@ -1594,8 +1619,25 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			null,
 			null);
 
+		var loggingController = new LoggingDriverConfigurationController (descriptor.ControllerId, controller, LogInfoCore);
+		loggingController.StatusChanged += HandleChildConfigurationControllerStatusChanged;
 		LogInfo ($"Child configuration controller created for controllerId='{descriptor.ControllerId}', model='{descriptor.ModelName}'.");
-		return new LoggingDriverConfigurationController (descriptor.ControllerId, controller, LogInfo);
+		return loggingController;
+		}
+
+	private void HandleChildConfigurationControllerStatusChanged (object? sender, StatusChangedEventArgs args)
+		{
+		string controllerId = args?.ControllerId ?? string.Empty;
+		DriverControllerStatus? status = args?.Status;
+		LogInfo ($"HandleChildConfigurationControllerStatusChanged: controllerId='{controllerId}', status='{status}'.");
+
+		if (string.IsNullOrWhiteSpace (controllerId)
+			|| status != DriverControllerStatus.Running)
+			{
+			return;
+			}
+
+		ActivateChildController (controllerId, "child-controller-status-running");
 		}
 
 	private bool IsChildConfigurationControllerRunning (ConfigurableDriverEntity controller)
@@ -1617,29 +1659,79 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			return null;
 			}
 
-		if (action != DataDrivenConfigurationController.ApplyConfigurationAction.ApplyStep)
+		bool isActivationApply = action == DataDrivenConfigurationController.ApplyConfigurationAction.ApplyStep
+			|| (action == DataDrivenConfigurationController.ApplyConfigurationAction.ApplyAll && values.ContainsKey ("ActivationMarker"));
+
+		if (!isActivationApply)
 			{
-			LogInfo ($"ApplyChildConfigurationItems: ignoring non-step child configuration replay for controllerId='{controllerId}', action='{action}'. Child activation requires the install-time configuration step.");
+			LogInfo ($"ApplyChildConfigurationItems: ignoring child configuration action for controllerId='{controllerId}', action='{action}', stepId='{stepId}'. Child activation requires ActivationMarker configuration.");
 			return null;
 			}
 
-		_configuredChildControllerIds.Add (controllerId);
-		_inUseChildControllerIds.Add (controllerId);
-		_pendingRemovalMissCounts.Remove (controllerId);
-		MarkChildConfiguredInCache (controllerId);
 
-		if (_lightEntities.TryGetValue (controllerId, out IKasaManagedLightEntity? lightEntity))
+		try
 			{
-			lightEntity.SetConfigured (true, $"child-config-callback:{action}");
-						lightEntity.PublishStateSnapshot ();
-						LogInfo ($"ApplyChildConfigurationItems: published initial state snapshot for configured child controllerId='{controllerId}'.");
+			ActivateChildControllerAsync (controllerId, $"child-config-callback:{action}", _runtimeCancellationSource.Token).GetAwaiter ().GetResult ();
 			}
-		else
+		catch (OperationCanceledException)
 			{
-			LogInfo ($"ApplyChildConfigurationItems: controllerId='{controllerId}' has no materialized light entity yet; activation will occur after discovery/materialization.");
+			return new ConfigurationItemErrors (
+				new Dictionary<string, string>
+					{
+					["ActivationMarker"] = "Activation was canceled."
+					},
+				string.Empty);
+			}
+		catch (Exception ex)
+			{
+			LogError ($"ApplyChildConfigurationItems: activation failed for controllerId='{controllerId}': {ex}");
+			return new ConfigurationItemErrors (
+				new Dictionary<string, string>
+					{
+					["ActivationMarker"] = ex.Message
+					},
+				string.Empty);
 			}
 
 		return null;
+		}
+
+	private async Task ActivateChildControllerAsync (string controllerId, string context, CancellationToken cancellationToken)
+		{
+		bool addedConfigured = _configuredChildControllerIds.Add (controllerId);
+		bool addedInUse = _inUseChildControllerIds.Add (controllerId);
+		_pendingRemovalMissCounts.Remove (controllerId);
+		MarkChildConfiguredInCache (controllerId);
+
+		LogInfo ($"ActivateChildControllerAsync: controllerId='{controllerId}', context='{context}', addedConfigured={addedConfigured}, addedInUse={addedInUse}.");
+		if (_lightEntities.TryGetValue (controllerId, out IKasaManagedLightEntity? lightEntity))
+			{
+			await lightEntity.SetConfiguredAsync (true, context, cancellationToken).ConfigureAwait (false);
+			LogInfo ($"ActivateChildControllerAsync: activated controllerId='{controllerId}', context='{context}'; initial definition and state were prepared during child configuration.");
+			}
+		else
+			{
+			LogInfo ($"ActivateChildControllerAsync: controllerId='{controllerId}' has no materialized light entity yet; activation will occur after discovery/materialization.");
+			}
+		}
+
+	private void ActivateChildController (string controllerId, string context)
+		{
+		bool addedConfigured = _configuredChildControllerIds.Add (controllerId);
+		bool addedInUse = _inUseChildControllerIds.Add (controllerId);
+		_pendingRemovalMissCounts.Remove (controllerId);
+		MarkChildConfiguredInCache (controllerId);
+
+		LogInfo ($"ActivateChildController: controllerId='{controllerId}', context='{context}', addedConfigured={addedConfigured}, addedInUse={addedInUse}.");
+		if (_lightEntities.TryGetValue (controllerId, out IKasaManagedLightEntity? lightEntity))
+			{
+			lightEntity.SetConfigured (true, context);
+			LogInfo ($"ActivateChildController: activated controllerId='{controllerId}', context='{context}'; initial state snapshot will publish after connected device state is applied.");
+			}
+		else
+			{
+			LogInfo ($"ActivateChildController: controllerId='{controllerId}' has no materialized light entity yet; activation will occur after discovery/materialization.");
+			}
 		}
 
 	private void MarkChildConfiguredInCache (string controllerId)
@@ -1681,7 +1773,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 	private void HandleManagedLightDescriptorNameChanged (ManagedLightDescriptor descriptor)
 		{
-		LogInfo ($"HandleManagedLightDescriptorNameChanged: controllerId='{descriptor.ControllerId}', incomingName='{descriptor.Name}', hasExistingEntry={_managedDevices.ContainsKey (descriptor.ControllerId)}, currentCount={_managedDevices.Count}.");
+		LogInfo ($"HandleManagedLightDescriptorNameChanged: controllerId='{descriptor.ControllerId}', incomingName='{descriptor.Name}', incomingKind={descriptor.Kind}, hasExistingEntry={_managedDevices.ContainsKey (descriptor.ControllerId)}, currentCount={_managedDevices.Count}.");
 		_connectedIdentityResolvedControllerIds.Add (descriptor.ControllerId);
 		RememberResolvedDeviceName (descriptor.ControllerId, descriptor.Name, descriptor.DiscoveryDeviceId ?? descriptor.SerialNumber, descriptor.Host);
 
@@ -1700,7 +1792,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 							LogChildPublicationState ("After UpdateSubControllers deferred publish", descriptor.ControllerId);
 				if (_lightEntities.TryGetValue (descriptor.ControllerId, out IKasaManagedLightEntity? lightEntity))
 					{
-					lightEntity.PublishStateSnapshot ();
+					lightEntity.NotifyChildPublished ();
 					}
 				}
 			}
@@ -1711,15 +1803,22 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			return;
 			}
 
-		if (string.Equals (existingEntry.Name, descriptor.Name, StringComparison.Ordinal))
+		_managedDeviceCacheMetadata.TryGetValue (descriptor.ControllerId, out ManagedDeviceCacheEntry? existingMetadata);
+		bool kindChanged = existingMetadata is null || existingMetadata.ManagedLightKind != descriptor.Kind;
+
+		if (string.Equals (existingEntry.Name, descriptor.Name, StringComparison.Ordinal) && !kindChanged)
 			{
 			descriptor.AwaitingConnectedIdentity = false;
-			LogInfo ($"HandleManagedLightDescriptorNameChanged: no effective managed-device name change for controllerId='{descriptor.ControllerId}'.");
+			LogInfo ($"HandleManagedLightDescriptorNameChanged: no effective managed-device identity change for controllerId='{descriptor.ControllerId}'.");
 			return;
 			}
 
 		existingEntry.Name = descriptor.Name;
 		descriptor.AwaitingConnectedIdentity = false;
+		if (existingMetadata is not null)
+			{
+			existingMetadata.ManagedLightKind = descriptor.Kind;
+			}
 		PersistManagedDeviceCache ();
 
 		try
@@ -1737,7 +1836,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			return;
 			}
 
-		LogInfo ($"HandleManagedLightDescriptorNameChanged: published updated managed-device name for controllerId='{descriptor.ControllerId}', name='{descriptor.Name}'.");
+		LogInfo ($"HandleManagedLightDescriptorNameChanged: published updated managed-device identity for controllerId='{descriptor.ControllerId}', name='{descriptor.Name}', kind={descriptor.Kind}, kindChanged={kindChanged}.");
 		LogManagedDeviceSnapshot ("HandleManagedLightDescriptorNameChanged snapshot", _managedDevices);
 		}
 
@@ -1786,6 +1885,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		string rootName = ResolveManagedDeviceName (controllerId, ResolveDiscoveryName (discoveryResult), discoveryResult.DeviceId, discoveryResult.Host);
 		string rootModel = discoveryResult.Model ?? "Kasa/Tapo Device";
 		string rootSerial = discoveryResult.DeviceId ?? discoveryResult.Host;
+		ManagedLightKind cachedManagedLightKind = ResolveKnownManagedLightKind (controllerId, discoveryResult.DeviceType);
 
 		switch (discoveryResult.DeviceType)
 			{
@@ -1799,7 +1899,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					rootName,
 					rootModel,
 					rootSerial,
-					ManagedLightKind.Dimmable,
+					cachedManagedLightKind == ManagedLightKind.Unknown ? ManagedLightKind.Unknown : cachedManagedLightKind,
 						awaitingConnectedIdentity: IsTapoDiscoveryResult (discoveryResult) && string.IsNullOrWhiteSpace (discoveryResult.Alias),
 					discoveryResult.DeviceId);
 				yield break;
@@ -1831,6 +1931,22 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					discoveryResult.DeviceId);
 				yield break;
 			}
+		}
+
+	private ManagedLightKind ResolveKnownManagedLightKind (string controllerId, KasaDeviceType deviceType)
+		{
+		if (_managedDeviceCacheMetadata.TryGetValue (controllerId, out ManagedDeviceCacheEntry? metadata))
+			{
+			ManagedLightKind cachedLightKind = ResolveCachedLightKind (metadata, deviceType);
+			if (cachedLightKind != ManagedLightKind.Unknown)
+				{
+				return cachedLightKind;
+				}
+			}
+
+		return deviceType == KasaDeviceType.Plug || deviceType == KasaDeviceType.Strip
+			? ManagedLightKind.OnOff
+			: ManagedLightKind.Unknown;
 		}
 
 	private static DeviceConfiguration CreateDeviceConfiguration (DiscoveryResult discoveryResult, DeviceCredentials? credentials, TimeSpan timeout)
@@ -1932,15 +2048,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 	private static bool HasFeature (IReadOnlyList<DeviceFeature> features, string featureId)
 		{
-		for (int index = 0; index < features.Count; index++)
-			{
-			if (string.Equals (features[index].Id, featureId, StringComparison.Ordinal))
-				{
-				return true;
-				}
-			}
-
-		return false;
+		return features.Any (feature => string.Equals (feature.Id, featureId, StringComparison.Ordinal));
 		}
 
 	private static string ResolveDiscoveryName (DiscoveryResult discoveryResult)
@@ -2053,57 +2161,14 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 	private void LogDiscoveryPassResults (IReadOnlyList<DiscoveryResult> passResults, int passNumber, int totalPasses, TimeSpan timeout, TimeSpan elapsed, bool isInitialLoad, bool retryAfterZero)
 		{
-		int missingAliasCount = 0;
-		int missingDeviceIdCount = 0;
-		int missingModelCount = 0;
-		int bulbs = 0;
-		int plugs = 0;
-		int strips = 0;
-		int hubs = 0;
-		int others = 0;
-
-		for (int index = 0; index < passResults.Count; index++)
-			{
-			DiscoveryResult result = passResults[index];
-
-			if (string.IsNullOrWhiteSpace (result.Alias))
-				{
-				missingAliasCount++;
-				}
-
-			if (string.IsNullOrWhiteSpace (result.DeviceId))
-				{
-				missingDeviceIdCount++;
-				}
-
-			if (string.IsNullOrWhiteSpace (result.Model))
-				{
-				missingModelCount++;
-				}
-
-			switch (result.DeviceType)
-				{
-				case KasaDeviceType.Bulb:
-					bulbs++;
-					break;
-
-				case KasaDeviceType.Plug:
-					plugs++;
-					break;
-
-				case KasaDeviceType.Strip:
-					strips++;
-					break;
-
-				case KasaDeviceType.Hub:
-					hubs++;
-					break;
-
-				default:
-					others++;
-					break;
-				}
-			}
+		int missingAliasCount = passResults.Count (result => string.IsNullOrWhiteSpace (result.Alias));
+		int missingDeviceIdCount = passResults.Count (result => string.IsNullOrWhiteSpace (result.DeviceId));
+		int missingModelCount = passResults.Count (result => string.IsNullOrWhiteSpace (result.Model));
+		int bulbs = passResults.Count (result => result.DeviceType == KasaDeviceType.Bulb);
+		int plugs = passResults.Count (result => result.DeviceType == KasaDeviceType.Plug);
+		int strips = passResults.Count (result => result.DeviceType == KasaDeviceType.Strip);
+		int hubs = passResults.Count (result => result.DeviceType == KasaDeviceType.Hub);
+		int others = passResults.Count - bulbs - plugs - strips - hubs;
 
 		LogInfo ($"DiscoverDevicesAsync: pass={passNumber}/{totalPasses}, resultCount={passResults.Count}, elapsedMs={elapsed.TotalMilliseconds:0}, timeoutMs={timeout.TotalMilliseconds:0}, isInitialLoad={isInitialLoad}, retryAfterZero={retryAfterZero}, typeCounts={{Bulb:{bulbs}, Plug:{plugs}, Strip:{strips}, Hub:{hubs}, Other:{others}}}, missingFields={{Alias:{missingAliasCount}, DeviceId:{missingDeviceIdCount}, Model:{missingModelCount}}}.");
 		}
@@ -2591,9 +2656,24 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			}
 		}
 
+	[Conditional ("DEBUG")]
 	private void LogInfo (string message)
 		{
+		LogInfoCore (message);
+		}
+
+	private void LogInfoCore (string message)
+		{
 		_logger?.Log (_driverLogId, LogEntryLevel.Info, message);
+		}
+
+	private static bool IsDebugLoggingEnabled ()
+		{
+#if DEBUG
+		return true;
+#else
+		return false;
+#endif
 		}
 
 	private void LogError (string message)
