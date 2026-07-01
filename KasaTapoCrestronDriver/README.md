@@ -1,27 +1,43 @@
-# KasaTapoCrestronDriver
+# Kasa/Tapo Crestron Driver
 
-`KasaTapoCrestronDriver` is a starter scaffold for building a **Crestron Home SDK V2** device driver targeting **.NET Framework 4.7.2**.
+`KasaTapoCrestronDriver` is a Crestron Home platform driver for TP-Link Kasa and Tapo devices. It discovers supported devices, publishes them as managed child devices, and exposes supported lights, strips, and optionally plugs through Crestron Home.
 
-## What this template gives you
+## Features
 
-- SDK-style `net472` project structure
-- Crestron Home driver manifest and NuGet wrapper manifest
-- ILRepack merge and post-merge assembly patch pipeline
-- Optional deploy and log helper scripts
-- Sample platform and managed-child entity structure
-- Starter UI definition and translation assets
+- Discovers TP-Link Kasa devices on the local network.
+- Discovers Tapo devices when optional Tapo account credentials are configured.
+- Publishes supported bulbs, light strips, and plugs as managed child devices.
+- Optionally exposes plugs as light entities for lighting loads.
+- Supports light brightness, color, and color-temperature capabilities when available from the device.
+- Persists discovered managed-device metadata so child devices can be republished quickly after a reload.
+- Starts child device physical connections in the background so Crestron child configuration callbacks return quickly during driver reloads.
 
-## Immediate follow-up after project creation
+## Configuration
 
-1. Update the placeholder metadata in the driver manifest and package manifest.
-2. Add your device SDK or API package references to the project.
-3. Replace the sample platform and child entity logic with your device-specific implementation.
-4. Update the UI definition XML and translations to match your properties and commands.
-5. Set the local SDK paths in `*.Local.targets`.
-6. Set optional deployment credentials in `*.csproj.user`.
+The platform driver exposes these configuration items in Crestron Home:
+
+- **Tapo User Name** and **Tapo Password**: optional Tapo credentials. Leave blank to discover only local Kasa devices.
+- **Discovery Timeout (Seconds)**: timeout for discovery and per-device connection attempts.
+- **Treat Plugs As Lights**: exposes supported smart plugs as light entities.
+- **Enable Light Polling**: enables polling for external light-state changes.
+- **Light Poll Interval (Seconds)**: polling interval used when light polling is enabled.
+- **Sensor/Button Poll Interval (Seconds)**: reserved for future sensor and button entities.
 
 ## Build
 
+From the repository root:
+
 ```powershell
-dotnet build .\KasaTapoCrestronDriver\KasaTapoCrestronDriver.csproj -c Debug
+dotnet build .\KasaTapoCrestronDriver\KasaTapoCrestronDriver\KasaTapoCrestronDriver.csproj -c Release
 ```
+
+The project targets Crestron Home driver runtime requirements and uses the Crestron DeviceDrivers DevKit package plus `KasaTapoClient` for TP-Link communication.
+
+## Release notes
+
+### 1.0.001.0001
+
+- Improved driver reload behavior by making child-device activation nonblocking from Crestron child configuration callbacks.
+- Republished cached managed child devices early during startup so installed child devices can reattach after reload.
+- Kept physical device connection and state initialization in the background, allowing the platform driver to come online while child devices finish connecting.
+- Added logging around discovery, cache seeding, child configuration status, activation, and startup connection timing.

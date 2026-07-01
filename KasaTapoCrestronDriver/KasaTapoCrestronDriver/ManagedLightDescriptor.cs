@@ -138,6 +138,8 @@ internal interface IKasaManagedLightEntity : IDisposable
 
 	void UpdateConfiguration (DeviceConfiguration configuration);
 
+	bool TryAttachConnectedDevice (KasaDevice device, string context);
+
 	void SetConfigured (bool configured, string context);
 
 	Task SetConfiguredAsync (bool configured, string context, CancellationToken cancellationToken);
@@ -149,6 +151,8 @@ internal interface IKasaManagedLightEntity : IDisposable
 	Task RefreshAsync (CancellationToken cancellationToken);
 
 	void NotifyChildPublished ();
+
+	void NotifyChildRunning (string context);
 
 	void PublishStateSnapshot ();
 	}
