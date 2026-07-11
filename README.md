@@ -1,6 +1,6 @@
 # Kasa/Tapo Crestron Driver
 
-`KasaTapoCrestronDriver` is a Crestron Home platform driver for TP-Link Kasa and Tapo devices. It discovers supported devices, publishes them as managed child devices, and exposes supported lights, strips, and optionally plugs through Crestron Home.
+`KasaTapoCrestronDriver` is a **Crestron Home Entity V2** platform driver for TP-Link Kasa and Tapo devices. It discovers supported devices, publishes them as managed child devices, and exposes supported lights, strips, and optionally plugs through Crestron Home.
 
 ## Features
 
@@ -31,7 +31,7 @@ From the repository root:
 dotnet build .\KasaTapoCrestronDriver\KasaTapoCrestronDriver\KasaTapoCrestronDriver.csproj -c Release
 ```
 
-The project targets Crestron Home driver runtime requirements and uses the Crestron DeviceDrivers DevKit package plus `KasaTapoClient` for TP-Link communication.
+The project targets the Crestron Home **Entity V2** driver runtime requirements and uses the Crestron DeviceDrivers DevKit package plus `KasaTapoClient` for TP-Link communication.
 
 ## Release notes
 
