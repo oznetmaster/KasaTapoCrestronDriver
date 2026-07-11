@@ -41,3 +41,13 @@ The project targets the Crestron Home **Entity V2** driver runtime requirements 
 - Republished cached managed child devices early during startup so installed child devices can reattach after reload.
 - Kept physical device connection and state initialization in the background, allowing the platform driver to come online while child devices finish connecting.
 - Added logging around discovery, cache seeding, child configuration status, activation, and startup connection timing.
+
+## Trademark and Non-Association Notice
+
+TP-Link, Kasa, and Tapo are trademarks of their respective owners. This project is an independent, unofficial Crestron Home driver and is not affiliated with, endorsed by, or sponsored by TP-Link.
+
+This driver communicates with TP-Link Kasa and Tapo devices using the independent [`KasaTapoClient`](https://github.com/oznetmaster/KasaTapoClient) .NET library, which is itself an independent, unofficial implementation and is not affiliated with or endorsed by TP-Link.
+
+> **Note:** This project references [Crestron.DeviceDrivers.DevKit](https://www.nuget.org/packages/Crestron.DeviceDrivers.DevKit),
+> which is subject to Crestron's SDK license agreement. That license governs the SDK libraries only;
+> the source code in this repository is licensed independently under the terms in [LICENSE](KasaTapoCrestronDriver/LICENSE).
