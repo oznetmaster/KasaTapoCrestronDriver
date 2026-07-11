@@ -46,6 +46,8 @@ The project targets the Crestron Home **Entity V2** driver runtime requirements 
 
 TP-Link, Kasa, and Tapo are trademarks of their respective owners. This project is an independent, unofficial Crestron Home driver and is not affiliated with, endorsed by, or sponsored by TP-Link.
 
+Crestron, Crestron Home, and related marks are trademarks of Crestron Electronics, Inc. This project is an independent, unofficial driver built against publicly available Crestron Home Entity V2 driver SDK components and is not affiliated with, endorsed by, or sponsored by Crestron Electronics, Inc.
+
 This driver communicates with TP-Link Kasa and Tapo devices using the independent [`KasaTapoClient`](https://github.com/oznetmaster/KasaTapoClient) .NET library, which is itself an independent, unofficial implementation and is not affiliated with or endorsed by TP-Link.
 
 > **Note:** This project references [Crestron.DeviceDrivers.DevKit](https://www.nuget.org/packages/Crestron.DeviceDrivers.DevKit),
