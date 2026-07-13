@@ -558,9 +558,11 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private const string MANAGED_DEVICE_CACHE_FILE_NAME = "managed-devices-cache.json";
 	private const int MANAGED_DEVICE_CACHE_VERSION = 6;
 
-	private static readonly TimeSpan InitialDiscoveryRefreshInterval = TimeSpan.FromSeconds (5);
-	private static readonly TimeSpan DefaultDiscoveryTimeout = TimeSpan.FromSeconds (8);
-	private static readonly TimeSpan DefaultDiscoveryRefreshInterval = TimeSpan.FromMinutes (10);
+	private static readonly TimeSpan InitialDiscoveryRefreshInterval = TimeSpan.FromSeconds (10);
+	private static readonly TimeSpan DefaultDiscoveryTimeout = TimeSpan.FromSeconds (20);
+	private static readonly TimeSpan DefaultDiscoveryRefreshInterval = TimeSpan.FromMinutes (5);
+	private const int MAX_FAST_REFRESH_SHRINK_RETRIES = 6;
+	private const int MANAGED_DEVICE_REMOVAL_MISS_THRESHOLD = 6;
 	private static readonly TimeSpan DefaultLightPollInterval = TimeSpan.FromSeconds (15);
 	private static readonly TimeSpan DefaultSensorPollInterval = TimeSpan.FromSeconds (3);
 
@@ -605,6 +607,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private bool _initialShortRefreshPending = true;
 	private bool _initialMaterializationStageActive = true;
 	private bool _normalRemovalRefreshPhaseReached;
+	private int _fastRefreshShrinkRetryCount;
 	private bool _runtimeDiscoveryStarted;
 	private readonly CancellationTokenSource _runtimeCancellationSource = new ();
 	private int _discoveryRefreshGeneration;
@@ -644,6 +647,11 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		_driverLogId = args.DriverId;
 
 		LogInfo ($"Platform driver instance starting: driverId='{_driverLogId}', dataDirectory='{_args.DriverDataDirectoryPath}'.");
+
+		ThreadPool.GetMinThreads (out int minWorkerThreads, out int minIoThreads);
+		ThreadPool.GetMaxThreads (out int maxWorkerThreads, out int maxIoThreads);
+		ThreadPool.GetAvailableThreads (out int availableWorkerThreads, out int availableIoThreads);
+		LogInfo ($"ThreadPool state at driver startup: processorCount={Environment.ProcessorCount}, minWorkerThreads={minWorkerThreads}, minIoThreads={minIoThreads}, maxWorkerThreads={maxWorkerThreads}, maxIoThreads={maxIoThreads}, availableWorkerThreads={availableWorkerThreads}, availableIoThreads={availableIoThreads}.");
 
 		_configurationArgs = DataDrivenConfigurationControllerArgs.FromResources (args, resources, ControllerId);
 		_conditionLookup = _configurationArgs.ConditionLookup;
@@ -968,15 +976,27 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 						{
 						existingLightEntity.UpdateDescriptor (descriptor, configuration);
 						existingLightEntity.UpdateConfiguration (configuration);
-						bool childConfigurationRunning = _childControllers.TryGetValue (descriptor.ControllerId, out ConfigurableDriverEntity? existingController)
-							&& IsChildConfigurationControllerRunning (existingController);
-						if (!childConfigurationRunning)
+
+						// Once a child has been configured/activated, do not re-derive its configured
+						// state from a point-in-time PeekStatus() snapshot on every rediscovery pass.
+						// Doing so could transiently observe a non-Running status (a race, not an actual
+						// deactivation) and tear down an otherwise healthy connection, leaving the device
+						// disconnected until an unrelated status-changed event happened to fire again.
+						// Only newly-discovered/never-configured children need their configured state
+						// derived from the child configuration controller here.
+						if (!_configuredChildControllerIds.Contains (descriptor.ControllerId))
 							{
-							_configuredChildControllerIds.Remove (descriptor.ControllerId);
-							_inUseChildControllerIds.Remove (descriptor.ControllerId);
+							bool childConfigurationRunning = _childControllers.TryGetValue (descriptor.ControllerId, out ConfigurableDriverEntity? existingController)
+								&& IsChildConfigurationControllerRunning (existingController);
+							if (childConfigurationRunning)
+								{
+								_configuredChildControllerIds.Add (descriptor.ControllerId);
+								_inUseChildControllerIds.Add (descriptor.ControllerId);
+								}
+
+							existingLightEntity.SetConfigured (childConfigurationRunning, "rediscovery-existing-child");
 							}
 
-						existingLightEntity.SetConfigured (childConfigurationRunning, "rediscovery-existing-child");
 						if (!descriptor.AwaitingConnectedIdentity)
 							{
 							HandleManagedLightDescriptorNameChanged (descriptor);
@@ -1059,6 +1079,24 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		bool hasRemovedDiscoveryChange = previousDiscoveredControllerIds.Except (discoveredControllerIds, StringComparer.OrdinalIgnoreCase).Any ();
 		bool ignoreRemovalSignalsThisPass = isFastRefreshPhase && hasRemovedDiscoveryChange;
 
+		if (hasAddedDiscoveryChange)
+			{
+			_fastRefreshShrinkRetryCount = 0;
+			}
+		else if (ignoreRemovalSignalsThisPass)
+			{
+			_fastRefreshShrinkRetryCount++;
+			if (_fastRefreshShrinkRetryCount > MAX_FAST_REFRESH_SHRINK_RETRIES)
+				{
+				ignoreRemovalSignalsThisPass = false;
+				LogInfo ($"RefreshPlatformAsync: fast-refresh shrink retry limit ({MAX_FAST_REFRESH_SHRINK_RETRIES}) reached for this missing-device streak; allowing the normal removal-refresh phase to proceed instead of continuing indefinite fast retries.");
+				}
+			}
+		else
+			{
+			_fastRefreshShrinkRetryCount = 0;
+			}
+
 		if (ignoreRemovalSignalsThisPass)
 			{
 			_previousDiscoveredControllerIds.UnionWith (discoveredControllerIds);
@@ -1085,7 +1123,8 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			}
 		else if (ignoreRemovalSignalsThisPass)
 			{
-			LogInfo ($"RefreshPlatformAsync: ignoring shrinking fast-refresh pass from {previousDiscoveredCount} discovered devices to {discoveredControllerIds.Count}; removals remain deferred until the 10-minute two-strike cycle.");
+			nextRefreshInterval = InitialDiscoveryRefreshInterval;
+			LogInfo ($"RefreshPlatformAsync: ignoring shrinking fast-refresh pass from {previousDiscoveredCount} discovered devices to {discoveredControllerIds.Count}; removals remain deferred until the 5-minute two-strike cycle, and the fast-refresh interval is retained so still-missing devices keep being retried quickly.");
 			}
 		else
 			{
@@ -1127,9 +1166,9 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					: 1;
 				_pendingRemovalMissCounts[existingControllerId] = missedCount;
 
-				if (missedCount < 3)
+				if (missedCount < MANAGED_DEVICE_REMOVAL_MISS_THRESHOLD)
 					{
-					LogInfo ($"Managed-device removal deferred for controllerId='{existingControllerId}' after miss {missedCount}/3 on the normal 10-minute refresh cycle.");
+					LogInfo ($"Managed-device removal deferred for controllerId='{existingControllerId}' after miss {missedCount}/{MANAGED_DEVICE_REMOVAL_MISS_THRESHOLD} on the normal 5-minute refresh cycle.");
 					continue;
 					}
 
@@ -2180,10 +2219,17 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				LogInfo ($"EnrichDiscoveryResultAliasAsync: controllerId='{controllerId}', host='{discoveryResult.Host}', port={configuration.Port}, timeoutMs={aliasTimeout.TotalMilliseconds:0}, transport={configuration.ConnectionOptions.TransportKind}, appPath='{configuration.ConnectionOptions.ApplicationPath ?? string.Empty}'.");
 				aliasTimeoutSource.CancelAfter (aliasTimeout);
 
+			LogInfo ($"EnrichDiscoveryResultAliasAsync: controllerId='{controllerId}' waiting on connection gate.");
+			Stopwatch aliasGateWaitStopwatch = Stopwatch.StartNew ();
 			await connectionGate.WaitAsync (aliasTimeoutSource.Token).ConfigureAwait (false);
+			aliasGateWaitStopwatch.Stop ();
+			LogInfo ($"EnrichDiscoveryResultAliasAsync: controllerId='{controllerId}' acquired connection gate after {aliasGateWaitStopwatch.Elapsed.TotalMilliseconds:0} ms.");
 			try
 				{
+				Stopwatch aliasConnectStopwatch = Stopwatch.StartNew ();
 				KasaDevice? device = await Discover.ConnectAsync (configuration, updateState: true, cancellationToken: aliasTimeoutSource.Token).ConfigureAwait (false);
+				aliasConnectStopwatch.Stop ();
+				LogInfo ($"EnrichDiscoveryResultAliasAsync: controllerId='{controllerId}' Discover.ConnectAsync completed after {aliasConnectStopwatch.Elapsed.TotalMilliseconds:0} ms.");
 				bool deviceAdopted = false;
 				try
 					{
@@ -2351,20 +2397,16 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		var discoveredDevices = new Dictionary<string, DiscoveryResult> (StringComparer.OrdinalIgnoreCase);
 
 		var passStopwatch = Stopwatch.StartNew ();
+#if DEBUG
+		IReadOnlyList<DiscoveryResult> passResults = await Discover.DiscoverWithDiagnosticsAsync (
+			message => LogInfo ($"DiscoveryDiagnostic pass=1: {message}"),
+			timeout,
+			cancellationToken: cancellationToken).ConfigureAwait (false);
+#else
 		IReadOnlyList<DiscoveryResult> passResults = await Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken).ConfigureAwait (false);
+#endif
 		passStopwatch.Stop ();
-		LogDiscoveryPassResults (passResults, passNumber: 1, totalPasses: 1, timeout, passStopwatch.Elapsed, isInitialLoad, retryAfterZero: false);
-
-		if (isInitialLoad && passResults.Count == 0)
-			{
-			cancellationToken.ThrowIfCancellationRequested ();
-			LogInfo ("DiscoverDevicesAsync: initial load found 0 devices; retrying one immediate discovery pass.");
-
-			passStopwatch.Restart ();
-			passResults = await Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken).ConfigureAwait (false);
-			passStopwatch.Stop ();
-			LogDiscoveryPassResults (passResults, passNumber: 2, totalPasses: 2, timeout, passStopwatch.Elapsed, isInitialLoad, retryAfterZero: true);
-			}
+		LogDiscoveryPassResults (passResults, passNumber: 1, totalPasses: 2, timeout, passStopwatch.Elapsed, isInitialLoad, retryAfterZero: false);
 
 		foreach (DiscoveryResult discoveryResult in passResults)
 			{
@@ -2380,7 +2422,39 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				}
 			}
 
-		LogInfo ($"DiscoverDevicesAsync: mergedResultCount={discoveredDevices.Count}, rawResultCount={passResults.Count}, mergeStrategy=deviceIdOrHost, isInitialLoad={isInitialLoad}.");
+		// UDP broadcast discovery is inherently lossy; always run a second pass and merge its
+		// results in, rather than only retrying when the initial load found zero devices. This
+		// significantly reduces single-pass misses (e.g. bulbs intermittently not responding
+		// within the timeout window) that previously led to transient removals from the room.
+		cancellationToken.ThrowIfCancellationRequested ();
+
+		passStopwatch.Restart ();
+#if DEBUG
+		IReadOnlyList<DiscoveryResult> secondPassResults = await Discover.DiscoverWithDiagnosticsAsync (
+			message => LogInfo ($"DiscoveryDiagnostic pass=2: {message}"),
+			timeout,
+			cancellationToken: cancellationToken).ConfigureAwait (false);
+#else
+		IReadOnlyList<DiscoveryResult> secondPassResults = await Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken).ConfigureAwait (false);
+#endif
+		passStopwatch.Stop ();
+		LogDiscoveryPassResults (secondPassResults, passNumber: 2, totalPasses: 2, timeout, passStopwatch.Elapsed, isInitialLoad, retryAfterZero: passResults.Count == 0);
+
+		foreach (DiscoveryResult discoveryResult in secondPassResults)
+			{
+			string key = CreateDiscoveryMergeKey (discoveryResult);
+
+			if (discoveredDevices.TryGetValue (key, out DiscoveryResult? current))
+				{
+				discoveredDevices[key] = MergeDiscoveryResult (current, discoveryResult);
+				}
+			else
+				{
+				discoveredDevices[key] = discoveryResult;
+				}
+			}
+
+		LogInfo ($"DiscoverDevicesAsync: mergedResultCount={discoveredDevices.Count}, rawResultCount={passResults.Count + secondPassResults.Count}, mergeStrategy=deviceIdOrHost, isInitialLoad={isInitialLoad}.");
 
 		return discoveredDevices.Values.ToArray ();
 		}

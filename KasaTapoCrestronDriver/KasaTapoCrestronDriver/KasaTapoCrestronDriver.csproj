@@ -51,7 +51,20 @@
   <ItemGroup>
 	 <PackageReference Include="Crestron.DeviceDrivers.DevKit" Version="27.0.24" />
 	 <PackageReference Include="Hafner.Compatibility.MetaPackage" Version="1.9.0" />
-	 <PackageReference Include="KasaTapoClient" Version="1.1.0" />
+	 <PackageReference Include="KasaTapoClient" Version="1.1.9" Condition="'$(Configuration)' != 'Debug'" />
+  </ItemGroup>
+
+  <!-- DEBUG-only: use the local KasaClient Debug build directly (instead of the published NuGet package) so
+		internal discovery diagnostics (Discover.DiscoverWithDiagnosticsAsync) are available for local troubleshooting.
+		Must never affect Release builds. Requires KasaClient checked out as a sibling at C:\Projects\KasaClient. -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug' AND Exists('C:\Projects\KasaClient\KasaClient\bin\Debug\net472\KasaTapoClient.dll')">
+	 <Reference Include="KasaTapoClient">
+		<HintPath>C:\Projects\KasaClient\KasaClient\bin\Debug\net472\KasaTapoClient.dll</HintPath>
+		<Private>true</Private>
+	 </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Debug' AND !Exists('C:\Projects\KasaClient\KasaClient\bin\Debug\net472\KasaTapoClient.dll')">
+	 <PackageReference Include="KasaTapoClient" Version="1.1.9" />
   </ItemGroup>
 
   <ItemGroup>

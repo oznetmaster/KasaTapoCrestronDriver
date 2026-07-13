@@ -37,12 +37,6 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		Hsv
 		}
 
-	private enum LightTunableTuningMode
-		{
-		Color,
-		White
-		}
-
 	private readonly struct DesiredLightCommand
 		{
 		public DesiredLightCommand (DesiredLightMode mode, double level, double hue, double saturation, long colorTemperature)
@@ -76,17 +70,41 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		}
 
-	private sealed class WhiteLightColorTemperatureMembers
+	// Kasa/Tapo devices expose color_temp, hue, and saturation as independent device-level fields;
+	// setting color_temp never causes the device to recompute hue/saturation (confirmed against the
+	// KasaTapoClient transport, which passes these three fields through unmodified). Even so, per the
+	// Crestron Lights API docs, lightEmulatedColorTemperature is the correct capability to register for
+	// lights that support hue/saturation but also have a color-temperature control that overrides the
+	// displayed color (Color-kind bulbs here), while lightColorTemperature remains correct for lights
+	// that only support color temperature and not hue/saturation at all (TunableWhite-kind bulbs).
+	// Shared abstraction over the two mutually-exclusive color-temperature capability shapes we can
+	// register (lightColorTemperature vs lightEmulatedColorTemperature - see ConfigureDynamicFeatures),
+	// so the owner class can publish/read/write the active level without needing to know which
+	// concrete capability is currently registered.
+	private interface IColorTemperatureLevelHolder
+		{
+		string LevelPropertyId { get; }
+		long LightColorTemperatureLevel { get; set; }
+		}
+
+	// Per the Crestron Lights API docs, lightColorTemperature is intended for lights where color
+	// temperature operates in combination with hue/saturation (e.g. saturation blends between hue and
+	// color temperature), or for lights that only support color temperature and not hue/saturation at
+	// all. This capability is therefore only registered for TunableWhite-kind lights (CT only, no
+	// hue/saturation) - see ConfigureDynamicFeatures.
+	private sealed class ColorTemperatureMembers : IColorTemperatureLevelHolder
 		{
 		private readonly KasaLightEntity _owner;
 		private long _lightColorTemperatureLevel;
 
-		public WhiteLightColorTemperatureMembers (KasaLightEntity owner, DriverEntityValueRange range, long level)
+		public ColorTemperatureMembers (KasaLightEntity owner, DriverEntityValueRange range, long level)
 			{
 			_owner = owner;
 			LightColorTemperatureRange = range;
 			_lightColorTemperatureLevel = level;
 			}
+
+		string IColorTemperatureLevelHolder.LevelPropertyId => "lightColorTemperature:level";
 
 		[EntityProperty (Id = "lightColorTemperature:range", Units = "Kelvin")]
 		public DriverEntityValueRange LightColorTemperatureRange { get; set; } = new DriverEntityValueRange (0, 0, 1);
@@ -103,37 +121,44 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			{
 			_owner.SetColorTemperatureLevel ("lightColorTemperature:setLevel", level);
 			}
-
 		}
 
-	private sealed class ColorLightEmulatedColorTemperatureMembers
+	// Per the Crestron Lights API docs, lightEmulatedColorTemperature is intended for lights that
+	// support hue/saturation but also have a color-temperature control that overrides/supersedes the
+	// displayed hue/saturation color. This is a much closer structural match than lightColorTemperature
+	// for Color-kind Kasa/Tapo bulbs (KL130, L530, L900, etc.), which independently retain HSV and
+	// color-temperature values, but only ever display one or the other at a time. This capability is
+	// therefore registered instead of lightColorTemperature whenever full color is also supported - see
+	// ConfigureDynamicFeatures.
+	private sealed class EmulatedColorTemperatureMembers : IColorTemperatureLevelHolder
 		{
 		private readonly KasaLightEntity _owner;
-		private long _lightEmulatedColorTemperatureLevel;
+		private long _lightColorTemperatureLevel;
 
-		public ColorLightEmulatedColorTemperatureMembers (KasaLightEntity owner, DriverEntityValueRange range, long level)
+		public EmulatedColorTemperatureMembers (KasaLightEntity owner, DriverEntityValueRange range, long level)
 			{
 			_owner = owner;
 			LightEmulatedColorTemperatureRange = range;
-			_lightEmulatedColorTemperatureLevel = level;
+			_lightColorTemperatureLevel = level;
 			}
+
+		string IColorTemperatureLevelHolder.LevelPropertyId => "lightEmulatedColorTemperature:level";
 
 		[EntityProperty (Id = "lightEmulatedColorTemperature:range", Units = "Kelvin")]
 		public DriverEntityValueRange LightEmulatedColorTemperatureRange { get; set; } = new DriverEntityValueRange (0, 0, 1);
 
 		[EntityProperty (Id = "lightEmulatedColorTemperature:level", RangeProperty = "lightEmulatedColorTemperature:range", Units = "Kelvin")]
-		public long LightEmulatedColorTemperatureLevel
+		public long LightColorTemperatureLevel
 			{
-			get => _lightEmulatedColorTemperatureLevel;
-			set => _owner.SetAndNotify ("lightEmulatedColorTemperature:level", value, ref _lightEmulatedColorTemperatureLevel);
+			get => _lightColorTemperatureLevel;
+			set => _owner.SetAndNotify ("lightEmulatedColorTemperature:level", value, ref _lightColorTemperatureLevel);
 			}
 
 		[EntityCommand (Id = "lightEmulatedColorTemperature:setLevel")]
-		public void SetEmulatedColorTemperatureLevel ([EntityParameter (RangeProperty = "lightEmulatedColorTemperature:range", Units = "Kelvin")] long level)
+		public void SetColorTemperatureLevel ([EntityParameter (RangeProperty = "lightEmulatedColorTemperature:range", Units = "Kelvin")] long level)
 			{
 			_owner.SetColorTemperatureLevel ("lightEmulatedColorTemperature:setLevel", level);
 			}
-
 		}
 
 	private sealed class FullColorMembers
@@ -183,6 +208,72 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		}
 
+	// Registered only for lights that report brightness support; mutually exclusive with
+	// OnOffMembers - see ConfigureDynamicFeatures. Kept as its own dynamic object (rather than static
+	// reflected members on the owner) so nothing ever needs to be added/removed after connect.
+	private sealed class DimmableMembers
+		{
+		private readonly KasaLightEntity _owner;
+		private double _lightDimmerLevel;
+
+		public DimmableMembers (KasaLightEntity owner, double initialLevel)
+			{
+			_owner = owner;
+			_lightDimmerLevel = initialLevel;
+			}
+
+		[EntityProperty (Id = "lightDimmer:levelRange")]
+		public DriverEntityValueRelativeRange LightDimmerLevelRange { get; } = new (0.01);
+
+		[EntityProperty (Id = "lightDimmer:level", RelativeRangeProperty = "lightDimmer:levelRange")]
+		public double LightDimmerLevel
+			{
+			get => _lightDimmerLevel;
+			set => _owner.SetAndNotify ("lightDimmer:level", value, ref _lightDimmerLevel);
+			}
+
+		[EntityCommand (Id = "lightDimmer:setLevel")]
+		public void LightDimmerSetLevel ([EntityParameter (RangeMinimum = 0, RangeMaximum = 1, RangeStepSize = 0.01)] double level)
+			{
+			_owner.LightDimmerSetLevel (level);
+			}
+		}
+
+	// Registered only for lights that do not report brightness support (simple on/off lights);
+	// mutually exclusive with DimmableMembers - see ConfigureDynamicFeatures. Kept as its own dynamic
+	// object (rather than static reflected members on the owner) so nothing ever needs to be
+	// added/removed after connect.
+	private sealed class OnOffMembers
+		{
+		private readonly KasaLightEntity _owner;
+		private bool _lightIsOn;
+
+		public OnOffMembers (KasaLightEntity owner, bool initialIsOn)
+			{
+			_owner = owner;
+			_lightIsOn = initialIsOn;
+			}
+
+		[EntityProperty (Id = "light:isOn")]
+		public bool LightIsOn
+			{
+			get => _lightIsOn;
+			set => _owner.SetAndNotify ("light:isOn", value, ref _lightIsOn);
+			}
+
+		[EntityCommand (Id = "light:off")]
+		public void LightOff ()
+			{
+			_owner.LightOff ();
+			}
+
+		[EntityCommand (Id = "light:on")]
+		public void LightOn ()
+			{
+			_owner.LightOn ();
+			}
+		}
+
 	private void SetColorTemperatureLevelSilently (long value)
 		{
 		WithSuppressedPropertyNotifications (() => SetActiveColorTemperatureLevel (value));
@@ -204,13 +295,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private void SetActiveColorTemperatureLevel (long value)
 		{
-		if (_usesEmulatedColorTemperature)
-			{
-			_registeredEmulatedColorTemperatureMembers!.LightEmulatedColorTemperatureLevel = value;
-			return;
-			}
-
-		_registeredWhiteLightColorTemperatureMembers!.LightColorTemperatureLevel = value;
+		_registeredColorTemperatureMembers!.LightColorTemperatureLevel = value;
 		}
 
 	private double LightColorHue
@@ -237,12 +322,35 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		}
 
+	private double LightDimmerLevel
+		{
+		get => _registeredDimmableMembers?.LightDimmerLevel ?? 0d;
+		set
+			{
+			if (_registeredDimmableMembers is not null)
+				{
+				_registeredDimmableMembers.LightDimmerLevel = value;
+				}
+			}
+		}
+
+	private bool LightIsOn
+		{
+		get => _registeredOnOffMembers?.LightIsOn ?? false;
+		set
+			{
+			if (_registeredOnOffMembers is not null)
+				{
+				_registeredOnOffMembers.LightIsOn = value;
+				}
+			}
+		}
+
 	private static readonly TimeSpan SliderDebounceInterval = TimeSpan.FromMilliseconds (250);
 	private static int _dynamicFeatureStateDiagnosticLogged;
 
 	private SemaphoreSlim _connectionGate { get; }
 	private object _sliderGate { get; } = new ();
-	protected WorkQueue<KasaDevice> DeviceQueue { get; } = new ();
 	private DriverControllerLogger _logger { get; }
 	private string _driverLogId { get; }
 	private Action<ManagedLightDescriptor>? _descriptorUpdated { get; }
@@ -256,16 +364,12 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private ManagedLightKind Kind { get; set; }
 	private string? ChildId { get; set; }
 	private bool _supportsBrightness { get; set; }
-	private bool _supportsBaseLight { get; set; } = true;
 	private bool _supportsFullColor { get; set; }
 	private bool _supportsColorTemperature { get; set; }
-	private bool _supportsTunable { get; set; }
-	private LightTunableTuningMode _lightTunableMode;
-	private bool _usesEmulatedColorTemperature { get; set; }
-	private bool _usesWhiteLightTunableSetLevels { get; set; }
-	private bool _lightIsOn;
+	private bool _isColorTemperatureUiModeActive { get; set; }
 	private int _dynamicFeaturesConfigured;
-	private static readonly TimeSpan StartupConnectRetryInterval = TimeSpan.FromSeconds (5);
+	private static readonly TimeSpan StartupConnectRetryInterval = TimeSpan.FromSeconds (10);
+	private static readonly TimeSpan StartupConnectTimeout = TimeSpan.FromSeconds (8);
 	private DesiredLightCommand? _pendingSliderCommand { get; set; }
 	private CancellationTokenSource? _sliderCommandCancellationSource { get; set; }
 	private bool _suppressPropertyNotifications { get; set; } = true;
@@ -273,10 +377,11 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private bool _childPublished { get; set; }
 	private bool _pendingStartupSnapshotAfterConnectedState { get; set; }
 	private bool _deferredDeviceStatePending { get; set; }
-	private bool _forceColorModeTransitionOnNextPowerOnStateApply { get; set; }
 	private FullColorMembers? _registeredFullColorMembers { get; set; }
-	private WhiteLightColorTemperatureMembers? _registeredWhiteLightColorTemperatureMembers { get; set; }
-	private ColorLightEmulatedColorTemperatureMembers? _registeredEmulatedColorTemperatureMembers { get; set; }
+	private IColorTemperatureLevelHolder? _registeredColorTemperatureMembers { get; set; }
+	private DriverEntityValueRange? _colorTemperatureLevelRange { get; set; }
+	private DimmableMembers? _registeredDimmableMembers { get; set; }
+	private OnOffMembers? _registeredOnOffMembers { get; set; }
 	private int _stopState;
 	private int _pollingGeneration;
 	private bool _disposed { get; set; }
@@ -335,7 +440,6 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 				}
 
 			_connectedDevice = device;
-			DeviceQueue.SetClient (device);
 			UpdateDescriptorFromConnectedDevice (device);
 			LogInfo ($"Light entity '{ControllerId}' adopted connected device from context='{context}'.");
 			return true;
@@ -344,23 +448,6 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			{
 			_ = _connectionGate.Release ();
 			}
-		}
-
-	[EntityProperty (Id = "lightDimmer:levelRange")]
-	public DriverEntityValueRelativeRange LightDimmerLevelRange { get; } = new (0.01);
-
-	[EntityProperty (Id = "lightDimmer:level", RelativeRangeProperty = "lightDimmer:levelRange")]
-	public double LightDimmerLevel
-		{
-		get;
-		private set => SetAndNotify ("lightDimmer:level", value, ref field);
-		}
-
-	[EntityProperty (Id = "light:isOn")]
-	public bool LightIsOn
-		{
-		get => _lightIsOn;
-		private set => SetLightIsOn (value);
 		}
 
 	[EntityProperty (Id = "onlineIndicator:isOnline")]
@@ -386,7 +473,11 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			return;
 			}
 
-		ClearColorTemperatureUiMode ();
+		_isColorTemperatureUiModeActive = false;
+		if (_supportsColorTemperature)
+			{
+			ReconcileColorTemperatureCapability (hasActiveColorTemperature: false, colorTemperature: null);
+			}
 		LightColorHue = hueLevel;
 		PublishActiveColorModeProperties ("lightColor:setHue");
 
@@ -402,15 +493,18 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			return;
 			}
 
-		ClearColorTemperatureUiMode ();
+		_isColorTemperatureUiModeActive = false;
+		if (_supportsColorTemperature)
+			{
+			ReconcileColorTemperatureCapability (hasActiveColorTemperature: false, colorTemperature: null);
+			}
 		LightColorSaturation = saturationLevel;
 		PublishActiveColorModeProperties ("lightColor:setSaturation");
 
 		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, GetEffectiveOnLevel (), LightColorHue, saturationLevel, 0L));
 		}
 
-	[EntityCommand (Id = "lightDimmer:setLevel")]
-	public void LightDimmerSetLevel ([EntityParameter (RangeMinimum = 0, RangeMaximum = 1, RangeStepSize = 0.01)] double level)
+	private void LightDimmerSetLevel (double level)
 		{
 		double relativeLevel = Clamp01 (level);
 		LogCommandInvocation ("lightDimmer:setLevel", $"level={relativeLevel:0.####}");
@@ -419,186 +513,21 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Brightness, relativeLevel, 0d, 0d, 0L));
 		}
 
-	[EntityCommand (Id = "light:off")]
-	public void LightOff ()
+	private void LightOff ()
 		{
 		LogCommandInvocation ("light:off", "requested power off");
 
 		CancelSliderInteraction ();
-		StartBackgroundOperation (() => ExecuteDeviceCommandAsync (device => ExecutePowerAsync (device, false)), "light:off");
+		LightIsOn = false;
+		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, false, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token), "light:off");
 		}
 
-	[EntityCommand (Id = "light:on")]
-	public void LightOn ()
+	private void LightOn ()
 		{
 		LogCommandInvocation ("light:on", "requested power on");
 
-		StartBackgroundOperation (() => ExecuteDeviceCommandAsync (device => ExecutePowerAsync (device, true)), "light:on");
-		}
-
-	private void HandleColorLightTunableSetLevels (
-		double? hue,
-		double? saturation,
-		double? intensity,
-		long? emulatedColorTemperature)
-		{
-		LogCommandInvocation ("lightTunable:setLevels", $"mode=color, hue={hue?.ToString ("0.####") ?? "<null>"}, saturation={saturation?.ToString ("0.####") ?? "<null>"}, intensity={intensity?.ToString ("0.####") ?? "<null>"}, emulatedColorTemperature={emulatedColorTemperature?.ToString () ?? "<null>"}");
-		if (IgnoreValueCommandWhileOff ("lightTunable:setLevels.Color"))
-			{
-			return;
-			}
-
-		bool wasOn = LightIsOn;
-
-		if (TryApplyTunableIntensityOff (intensity, "lightTunable:setLevels.off"))
-			{
-			return;
-			}
-
-		if (intensity.HasValue)
-			{
-			ApplyTunableIntensityLevel (intensity.Value);
-			}
-
-		bool hasColorCommand = hue.HasValue || saturation.HasValue;
-		bool hasModeOnlyColorRequest = emulatedColorTemperature.HasValue && !hasColorCommand;
-		long requestedColorTemperature = hasModeOnlyColorRequest
-			? 0L
-			: Math.Max (0L, emulatedColorTemperature.GetValueOrDefault (0L));
-		bool hasActiveColorTemperatureRequest = requestedColorTemperature > 0L;
-		bool preserveCurrentColorModeOnPowerRestore = !wasOn
-			&& intensity.HasValue
-			&& intensity.Value > 0d
-			&& !hasColorCommand
-			&& hasActiveColorTemperatureRequest
-			&& GetLightTunableMode () == LightTunableTuningMode.Color;
-
-		if (hue.HasValue)
-			{
-			LightColorHue = Clamp01 (hue.Value);
-			}
-
-		if (saturation.HasValue)
-			{
-			LightColorSaturation = Clamp01 (saturation.Value);
-			}
-
-		if (preserveCurrentColorModeOnPowerRestore)
-			{
-			QueueSliderCommand (CreateCurrentModeCommand (GetEffectiveOnLevel ()));
-			return;
-			}
-
-		if (hasActiveColorTemperatureRequest)
-			{
-			SetActiveColorTemperatureLevel (requestedColorTemperature);
-			SetLightTunableMode (LightTunableTuningMode.White);
-			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, GetEffectiveOnLevel (), 0d, 0d, requestedColorTemperature));
-			return;
-			}
-
-		if (emulatedColorTemperature.HasValue)
-			{
-			SetColorTemperatureLevelSilently (Math.Max (0L, emulatedColorTemperature.Value));
-			}
-
-		if (hasColorCommand || hasModeOnlyColorRequest)
-			{
-			ClearColorTemperatureUiMode ();
-			SetLightTunableMode (LightTunableTuningMode.Color);
-			PublishActiveColorModeProperties ("lightTunable:setLevels.Color");
-			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, GetEffectiveOnLevel (), LightColorHue, LightColorSaturation, 0L));
-			return;
-			}
-
-		if (intensity.HasValue)
-			{
-			QueueSliderCommand (CreateCurrentModeCommand (GetEffectiveOnLevel ()));
-			}
-		}
-
-	private void HandleWhiteLightTunableSetLevels (
-		double? intensity,
-		long? colorTemperature)
-		{
-		LogCommandInvocation ("lightTunable:setLevels", $"mode=white, intensity={intensity?.ToString ("0.####") ?? "<null>"}, colorTemperature={colorTemperature?.ToString () ?? "<null>"}");
-		if (IgnoreValueCommandWhileOff ("lightTunable:setLevels.White"))
-			{
-			return;
-			}
-
-		if (TryApplyTunableIntensityOff (intensity, "lightTunable:setLevels.off"))
-			{
-			return;
-			}
-
-		if (intensity.HasValue)
-			{
-			ApplyTunableIntensityLevel (intensity.Value);
-			}
-
-		long requestedColorTemperature = Math.Max (0L, colorTemperature.GetValueOrDefault (0L));
-		if (requestedColorTemperature > 0L)
-			{
-			LightColorHue = 0d;
-			LightColorSaturation = 0d;
-			SetActiveColorTemperatureLevel (requestedColorTemperature);
-			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, GetEffectiveOnLevel (), 0d, 0d, requestedColorTemperature));
-			return;
-			}
-
-		if (colorTemperature.HasValue)
-			{
-			SetColorTemperatureLevelSilently (0L);
-			}
-
-		if (intensity.HasValue)
-			{
-			QueueSliderCommand (CreateWhiteModeCommand (GetEffectiveOnLevel ())); 
-			}
-		}
-
-	private bool TryApplyTunableIntensityOff (double? intensity, string operationName)
-		{
-		if (!intensity.HasValue)
-			{
-			return false;
-			}
-
-		double dimmerLevel = Clamp01 (intensity.Value);
-		if (dimmerLevel > 0d)
-			{
-			return false;
-			}
-
-		LightDimmerLevel = 0d;
-		CancelSliderInteraction ();
-		StartBackgroundOperation (() => ExecuteDeviceCommandAsync (device => ExecutePowerAsync (device, false)), operationName);
-		return true;
-		}
-
-	private void ApplyTunableIntensityLevel (double intensity)
-		{
-		double dimmerLevel = Clamp01 (intensity);
-		LightDimmerLevel = dimmerLevel;
-		}
-
-	private DesiredLightCommand CreateCurrentModeCommand (double level)
-		{
-		if (_supportsColorTemperature && IsCurrentColorTemperatureUiMode ())
-			{
-			return new DesiredLightCommand (DesiredLightMode.ColorTemperature, level, 0d, 0d, GetActiveColorTemperatureLevel ());
-			}
-
-		return new DesiredLightCommand (DesiredLightMode.Hsv, level, LightColorHue, LightColorSaturation, 0L);
-		}
-
-	private DesiredLightCommand CreateWhiteModeCommand (double level)
-		{
-		long activeColorTemperature = GetActiveColorTemperatureLevel ();
-		return activeColorTemperature > 0L
-			? new DesiredLightCommand (DesiredLightMode.ColorTemperature, level, 0d, 0d, activeColorTemperature)
-			: new DesiredLightCommand (DesiredLightMode.Brightness, level, 0d, 0d, 0L);
+		LightIsOn = true;
+		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, true, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token), "light:on");
 		}
 
 	private void SetColorTemperatureLevel (string commandId, long level)
@@ -609,29 +538,10 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			return;
 			}
 
-		if (level <= 0L)
-			{
-			SetColorTemperatureLevelSilently (0L);
-
-			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, GetEffectiveOnLevel (), LightColorHue, LightColorSaturation, 0L));
-			return;
-			}
-
 		long temperatureLevel = Math.Max (1L, level);
-		bool applyPreCommandStateSilently = !LightIsOn && GetLightTunableMode () == LightTunableTuningMode.Color;
-		if (applyPreCommandStateSilently)
-			{
-			WithSuppressedPropertyNotifications (() =>
-				{
-				SetLightTunableMode (LightTunableTuningMode.White);
-				SetActiveColorTemperatureLevel (temperatureLevel);
-				});
-			}
-		else
-			{
-			SetLightTunableMode (LightTunableTuningMode.White);
-			SetActiveColorTemperatureLevel (temperatureLevel);
-			}
+		_isColorTemperatureUiModeActive = true;
+		ReconcileColorTemperatureCapability (hasActiveColorTemperature: true, colorTemperature: (int)temperatureLevel);
+		SetActiveColorTemperatureLevel (temperatureLevel);
 
 		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, GetEffectiveOnLevel (), 0d, 0d, temperatureLevel));
 		}
@@ -643,23 +553,14 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			return false;
 			}
 
-		if (_usesEmulatedColorTemperature
-			&& GetLightTunableMode () == LightTunableTuningMode.Color
-			&& IsColorTemperatureCommand (commandId))
-			{
-			_forceColorModeTransitionOnNextPowerOnStateApply = true;
-			LogInfo ($"Light entity '{ControllerId}' armed forced color-mode transition after ignored off-state color-temperature command '{commandId}'.");
-			}
-
 		LogInfo ($"Light entity '{ControllerId}' ignoring value command '{commandId}' while off; waiting for dimmer power-on command.");
-		return true;
-		}
 
-	private static bool IsColorTemperatureCommand (string commandId)
-		{
-		return commandId.StartsWith ("lightEmulatedColorTemperature:", StringComparison.Ordinal)
-			|| commandId.StartsWith ("lightColorTemperature:", StringComparison.Ordinal)
-			|| string.Equals (commandId, "lightTunable:setLevels.White", StringComparison.Ordinal);
+		// The UI (e.g. a slider) may optimistically switch its displayed mode before the command
+		// result is known. Since this command is being dropped rather than applied, republish the
+		// current authoritative mode/property state so the UI reverts to reality instead of being
+		// left showing a mode the device never actually entered.
+		PublishCurrentLightModeProperties ($"IgnoreValueCommandWhileOff:{commandId}");
+		return true;
 		}
 
 	private void QueueSliderCommand (DesiredLightCommand command)
@@ -732,25 +633,32 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 				return;
 				}
 
+			// Once the debounce window has elapsed we are committed to dispatching this
+			// command to the physical device. From this point on, a newly superseding
+			// slider command must NOT cancel this in-flight hardware call — only entity
+			// lifetime/disposal (via _lifetimeCancellationSource) may cancel it. The
+			// KasaTapoClient device itself already serializes concurrent operations, so
+			// no additional dispatch gate is needed here.
+			CancellationToken lifetimeToken = _lifetimeCancellationSource.Token;
+			lifetimeToken.ThrowIfCancellationRequested ();
+
 			LogInfo ($"Light entity '{ControllerId}' dispatch slider command: {FormatDesiredLightCommand (command.Value)}.");
 
 			await ExecuteDeviceCommandAsync (
-				async device =>
+				async (device, innerCancellationToken) =>
 					{
-						cancellationToken.ThrowIfCancellationRequested ();
-						await ApplyDesiredLightCommandAsync (device, command.Value).ConfigureAwait (false);
+						innerCancellationToken.ThrowIfCancellationRequested ();
+						await ApplyDesiredLightCommandAsync (device, command.Value, innerCancellationToken).ConfigureAwait (false);
 					},
 				refreshAfterCommand: true,
-				cancellationToken).ConfigureAwait (false);
-
+				lifetimeToken).ConfigureAwait (false);
 			}
 		catch (OperationCanceledException)
 			{
 			}
 		catch (Exception ex)
 			{
-			OnlineIndicatorIsOnline = false;
-			ReadyIndicatorIsReady = false;
+			ResetConnectionState ();
 			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' slider command failed: {ex}");
 			}
 		finally
@@ -798,33 +706,34 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		}
 
-	private async Task ApplyDesiredLightCommandAsync (KasaDevice device, DesiredLightCommand command)
+	private async Task ApplyDesiredLightCommandAsync (KasaDevice device, DesiredLightCommand command, CancellationToken cancellationToken)
 		{
 		switch (command.Mode)
 			{
 			case DesiredLightMode.Off:
-				await device.TurnLightOffAsync ().ConfigureAwait (false);
+				await device.TurnLightOffAsync (cancellationToken).ConfigureAwait (false);
 				return;
 
 			case DesiredLightMode.On:
-				await device.TurnLightOnAsync ().ConfigureAwait (false);
+				await device.TurnLightOnAsync (cancellationToken).ConfigureAwait (false);
 				return;
 
 			case DesiredLightMode.Hsv:
 				await device.SetHsvAsync (
 					(int)Math.Round (Clamp01 (command.Hue) * HUE_MAX_DEGREES, MidpointRounding.AwayFromZero),
 					(int)Math.Round (Clamp01 (command.Saturation) * 100d, MidpointRounding.AwayFromZero),
-					ToBrightnessPercent (command.Level)).ConfigureAwait (false);
+					ToBrightnessPercent (command.Level),
+					cancellationToken).ConfigureAwait (false);
 				return;
 
 			case DesiredLightMode.ColorTemperature:
-				await EnsurePoweredForLevelAsync (device, command.Level).ConfigureAwait (false);
-				await device.SetBrightnessAsync (ToBrightnessPercent (command.Level)).ConfigureAwait (false);
-				await device.SetColorTemperatureAsync ((int)Math.Max (1L, command.ColorTemperature)).ConfigureAwait (false);
+				await EnsurePoweredForLevelAsync (device, command.Level, cancellationToken).ConfigureAwait (false);
+				await device.SetBrightnessAsync (ToBrightnessPercent (command.Level), cancellationToken).ConfigureAwait (false);
+				await device.SetColorTemperatureAsync ((int)Math.Max (1L, command.ColorTemperature), cancellationToken).ConfigureAwait (false);
 				return;
 
 			case DesiredLightMode.Brightness:
-				await ApplyBrightnessCommandAsync (device, command.Level).ConfigureAwait (false);
+				await ApplyBrightnessCommandAsync (device, command.Level, cancellationToken).ConfigureAwait (false);
 				return;
 			}
 		}
@@ -992,7 +901,6 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		_lifetimeCancellationSource.Cancel ();
 		Interlocked.Increment (ref _pollingGeneration);
 		_pollingTask = null;
-		DeviceQueue.Stop ();
 		}
 
 	public override void Dispose ()
@@ -1004,7 +912,6 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		Stop ();
 		_lifetimeCancellationSource.Dispose ();
-		DeviceQueue.Dispose ();
 		_disposed = true;
 		}
 
@@ -1029,8 +936,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 				}
 			catch (Exception reconnectException)
 				{
-				OnlineIndicatorIsOnline = false;
-				ReadyIndicatorIsReady = false;
+				ResetConnectionState ();
 				_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' reconnect after refresh timeout failed: {reconnectException}");
 				return;
 				}
@@ -1041,8 +947,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		catch (Exception ex)
 			{
-			OnlineIndicatorIsOnline = false;
-			ReadyIndicatorIsReady = false;
+			ResetConnectionState ();
 			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' refresh failed: {ex}");
 			}
 		}
@@ -1072,12 +977,24 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private void ResetConnectionState ()
 		{
-		LogInfo ($"Light entity '{ControllerId}' ResetConnectionState: hadConnectedDevice={_connectedDevice is not null}.");
+		KasaDevice? staleDevice = _connectedDevice;
+		LogInfo ($"Light entity '{ControllerId}' ResetConnectionState: hadConnectedDevice={staleDevice is not null}.");
 		_connectedDevice = null;
-		DeviceQueue.ClearClient ();
 		_pendingStartupSnapshotAfterConnectedState = false;
 		OnlineIndicatorIsOnline = false;
 		ReadyIndicatorIsReady = false;
+
+		if (staleDevice is not null)
+			{
+			try
+				{
+				staleDevice.Dispose ();
+				}
+			catch (Exception ex)
+				{
+				_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' failed to dispose stale connected device: {ex}");
+				}
+			}
 		}
 
 	private void TryPublishDeferredStartupSnapshot (string context)
@@ -1099,13 +1016,15 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			return;
 			}
 
-		DeviceQueue.EnqueueAsync (device =>
+		KasaDevice? connectedDevice = _connectedDevice;
+		if (connectedDevice is null)
 			{
-				ApplyState (device, allowDeferredDeviceStateDuringSliderInteraction: true);
-				LogEntityStateSnapshot ($"{context}.AfterDeferredApplyState");
-				LogInfo ($"Light entity '{ControllerId}' applied deferred device-driven state after slider interaction settled; context='{context}'.");
-				return Task.CompletedTask;
-			}).GetAwaiter ().GetResult ();
+			return;
+			}
+
+		ApplyState (connectedDevice, allowDeferredDeviceStateDuringSliderInteraction: true);
+		LogEntityStateSnapshot ($"{context}.AfterDeferredApplyState");
+		LogInfo ($"Light entity '{ControllerId}' applied deferred device-driven state after slider interaction settled; context='{context}'.");
 		}
 
 	private static bool HasMaterialConfigurationChange (DeviceConfiguration previousConfiguration, DeviceConfiguration currentConfiguration)
@@ -1195,7 +1114,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		PublishProperty ("onlineIndicator:isOnline", new DriverEntityValue (OnlineIndicatorIsOnline), "PublishStateSnapshot");
 		PublishProperty ("readyIndicator:isReady", new DriverEntityValue (ReadyIndicatorIsReady), "PublishStateSnapshot");
-		if (_supportsBaseLight)
+		if (_registeredOnOffMembers is not null)
 			{
 			PublishProperty ("light:isOn", new DriverEntityValue (LightIsOn), "PublishStateSnapshot");
 			}
@@ -1205,14 +1124,14 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			PublishProperty ("lightDimmer:level", new DriverEntityValue (LightDimmerLevel), "PublishStateSnapshot");
 			}
 
-		PublishTunableModeStateProperties ("PublishStateSnapshot", IsCurrentColorTemperatureUiMode ());
+		PublishColorModeStateProperties ("PublishStateSnapshot");
 
 		}
 
 	private async Task ExecuteWithConnectedDeviceAsync (Func<KasaDevice, Task> work, CancellationToken cancellationToken)
 		{
-		await EnsureConnectedAsync (cancellationToken).ConfigureAwait (false);
-		await DeviceQueue.EnqueueAsync (work).ConfigureAwait (false);
+		KasaDevice device = await EnsureConnectedAsync (cancellationToken).ConfigureAwait (false);
+		await work (device).ConfigureAwait (false);
 		}
 
 	private async Task InitializeConnectedStateAsync (CancellationToken cancellationToken)
@@ -1236,6 +1155,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		ReadyIndicatorIsReady = true;
 		PublishCurrentLightModeProperties ("InitializeConnectedStateAsync.AfterOnlineReady");
 		_pendingStartupSnapshotAfterConnectedState = true;
+		TryPublishDeferredStartupSnapshot ("InitializeConnectedStateAsync");
 		}
 
 	private async Task InitializeStartupAsync ()
@@ -1245,7 +1165,11 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			try
 				{
 				LogInfo ($"Light entity '{ControllerId}' startup connecting to discovered host '{_descriptor.Host}' as {_descriptor.DiscoveredDeviceType}; driverId='{_driverLogId}'.");
-				await InitializeConnectedStateAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
+				using (CancellationTokenSource timeoutCancellationSource = CancellationTokenSource.CreateLinkedTokenSource (_lifetimeCancellationSource.Token))
+					{
+					timeoutCancellationSource.CancelAfter (StartupConnectTimeout);
+					await InitializeConnectedStateAsync (timeoutCancellationSource.Token).ConfigureAwait (false);
+					}
 				return;
 				}
 			catch (OperationCanceledException) when (!_disposed && Volatile.Read (ref _stopState) == 0)
@@ -1286,7 +1210,11 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		_lifetimeCancellationSource.Token.ThrowIfCancellationRequested ();
 
 		using var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken, _lifetimeCancellationSource.Token);
+		LogInfo ($"Light entity '{ControllerId}' EnsureConnectedAsync waiting on connection gate.");
+		Stopwatch gateWaitStopwatch = Stopwatch.StartNew ();
 		await _connectionGate.WaitAsync (linkedCancellationSource.Token).ConfigureAwait (false);
+		gateWaitStopwatch.Stop ();
+		LogInfo ($"Light entity '{ControllerId}' EnsureConnectedAsync acquired connection gate after {gateWaitStopwatch.Elapsed.TotalMilliseconds:0} ms.");
 		try
 			{
 			existingDevice = _connectedDevice;
@@ -1295,12 +1223,13 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 				return existingDevice;
 				}
 
+			Stopwatch connectStopwatch = Stopwatch.StartNew ();
 			KasaDevice connectedDevice = await ConnectFromConfigurationAsync (updateState: true, linkedCancellationSource.Token).ConfigureAwait (false);
+			connectStopwatch.Stop ();
 
-			LogInfo ($"Light entity '{ControllerId}' connect succeeded: deviceAlias='{connectedDevice.Alias ?? "<null>"}', systemInfoAlias='{connectedDevice.SystemInfo?.Alias ?? "<null>"}', model='{connectedDevice.SystemInfo?.Model ?? "<null>"}', deviceId='{connectedDevice.SystemInfo?.DeviceId ?? "<null>"}'.");
+			LogInfo ($"Light entity '{ControllerId}' connect succeeded after {connectStopwatch.Elapsed.TotalMilliseconds:0} ms: deviceAlias='{connectedDevice.Alias ?? "<null>"}', systemInfoAlias='{connectedDevice.SystemInfo?.Alias ?? "<null>"}', model='{connectedDevice.SystemInfo?.Model ?? "<null>"}', deviceId='{connectedDevice.SystemInfo?.DeviceId ?? "<null>"}'.");
 
 			_connectedDevice = connectedDevice;
-			DeviceQueue.SetClient (connectedDevice);
 			UpdateDescriptorFromConnectedDevice (connectedDevice);
 			return connectedDevice;
 			}
@@ -1392,49 +1321,55 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 				}
 			}
 		_supportsColorTemperature = supportsColorTemperatureApi;
-		_usesEmulatedColorTemperature = _supportsFullColor && _supportsColorTemperature;
-		_supportsTunable = _supportsColorTemperature;
-		_usesWhiteLightTunableSetLevels = _supportsColorTemperature && !_usesEmulatedColorTemperature;
-		LogInfo ($"Light entity '{ControllerId}' dynamic features: descriptorKind={descriptor.Kind}, supportsLightControls={supportsLightControls}, featureCount={device.Features.Count}, supportsBrightness={_supportsBrightness}, supportsFullColor={_supportsFullColor}, supportsColorTemperatureApi={supportsColorTemperatureApi}, supportsColorTemperature={_supportsColorTemperature}, usesEmulatedColorTemperature={_usesEmulatedColorTemperature}, supportsTunable={_supportsTunable}, usesWhiteLightTunableSetLevels={_usesWhiteLightTunableSetLevels}, colorTemperatureRange={FormatRange (lightColorTemperatureRange)}.");
+		LogInfo ($"Light entity '{ControllerId}' dynamic features: descriptorKind={descriptor.Kind}, supportsLightControls={supportsLightControls}, featureCount={device.Features.Count}, supportsBrightness={_supportsBrightness}, supportsFullColor={_supportsFullColor}, supportsColorTemperatureApi={supportsColorTemperatureApi}, supportsColorTemperature={_supportsColorTemperature}, colorTemperatureRange={FormatRange (lightColorTemperatureRange)}.");
 
-		if (!_supportsBrightness)
+		if (_supportsBrightness)
 			{
-			RemoveProperty ("lightDimmer:level");
-			RemoveCommand ("lightDimmer:setLevel");
+			int? brightness = device.LightState?.Brightness;
+			bool isOnAtConnect = ResolvePowerState (device);
+			double initialDimmerLevel = isOnAtConnect && brightness.HasValue
+				? Clamp01 (brightness.Value / 100d)
+				: 0d;
+			_registeredDimmableMembers = new DimmableMembers (this, initialDimmerLevel);
+			RegisterObjectWithAttributes (_registeredDimmableMembers);
 			}
 		else
 			{
-			_supportsBaseLight = false;
-			RemoveProperty ("light:isOn");
-			RemoveCommand ("light:on");
-			RemoveCommand ("light:off");
+			_registeredOnOffMembers = new OnOffMembers (this, ResolvePowerState (device));
+			RegisterObjectWithAttributes (_registeredOnOffMembers);
 			}
 
-		if (_supportsColorTemperature && _usesEmulatedColorTemperature)
+		if (_supportsColorTemperature)
 			{
 			bool hasActiveColorTemperature = HasCurrentColorTemperatureState (device.LightState);
-			_lightTunableMode = hasActiveColorTemperature
-				? LightTunableTuningMode.White
-				: LightTunableTuningMode.Color;
-			long initialColorTemperatureLevel = hasActiveColorTemperature
-				? device.LightState!.ColorTemperature!.Value
-				: 0L;
-			int? initialHue = device.LightState?.Hue ?? device.LightState?.Hsv?.Hue;
-			int? initialSaturation = device.LightState?.Saturation ?? device.LightState?.Hsv?.Saturation;
-			LogInfo ($"Light entity '{ControllerId}' initializing color dynamic members before registration without setter notification: hasActiveColorTemperature={hasActiveColorTemperature}, initialMode={_lightTunableMode}, initialEmulatedColorTemperatureLevel={initialColorTemperatureLevel}, hue={initialHue?.ToString () ?? "<null>"}, saturation={initialSaturation?.ToString () ?? "<null>"}.");
-			_registeredEmulatedColorTemperatureMembers = new ColorLightEmulatedColorTemperatureMembers (this, lightColorTemperatureRange!, initialColorTemperatureLevel);
-			RegisterObjectWithAttributes (_registeredEmulatedColorTemperatureMembers);
-			LogInfo ($"Light entity '{ControllerId}' registered color dynamic members: initialMode={_lightTunableMode}, initialEmulatedColorTemperatureLevel={initialColorTemperatureLevel}.");
-			}
+			_isColorTemperatureUiModeActive = hasActiveColorTemperature;
 
-		if (_usesWhiteLightTunableSetLevels)
-			{
-			bool hasActiveColorTemperature = HasCurrentColorTemperatureState (device.LightState);
+			// When the device is not currently in color-temperature mode (e.g. it is in HSV/color
+			// mode), Kasa/Tapo devices report color_temp=0, which is out of range of the device's
+			// declared lightColorTemperature:range (e.g. 2500-9000K). Publishing an out-of-range
+			// level causes the Crestron Home UI to misinterpret/clamp the value. Since there is no
+			// device-side "last known" color-temperature value to fall back on at initial connect,
+			// use the range minimum as an in-range placeholder; the UI mode itself is tracked
+			// separately via _isColorTemperatureUiModeActive, not inferred from this level.
 			long initialColorTemperatureLevel = hasActiveColorTemperature
 				? device.LightState!.ColorTemperature!.Value
-				: 0L;
-			_registeredWhiteLightColorTemperatureMembers = new WhiteLightColorTemperatureMembers (this, lightColorTemperatureRange!, initialColorTemperatureLevel);
-			RegisterObjectWithAttributes (_registeredWhiteLightColorTemperatureMembers);
+				: (long)(lightColorTemperatureRange!.Minimum ?? 0d);
+
+			// The capability shape is chosen from the bulb's *current* mode, not its static kind: a
+			// bulb that supports full color and is currently in color mode (no active color
+			// temperature) needs lightEmulatedColorTemperature so the CT slider is understood as an
+			// override of the displayed color, while a bulb currently in white/CT mode needs plain
+			// lightColorTemperature so the persisted-but-currently-irrelevant HSV values are not
+			// mistaken for the active mode. Bulbs without full color (TunableWhite) always use the
+			// plain capability. This selection is re-evaluated on every mode change - see
+			// ReconcileColorTemperatureCapability.
+			bool useEmulatedColorTemperature = _supportsFullColor && !hasActiveColorTemperature;
+			_colorTemperatureLevelRange = lightColorTemperatureRange;
+			_registeredColorTemperatureMembers = useEmulatedColorTemperature
+				? new EmulatedColorTemperatureMembers (this, lightColorTemperatureRange!, initialColorTemperatureLevel)
+				: new ColorTemperatureMembers (this, lightColorTemperatureRange!, initialColorTemperatureLevel);
+			RegisterObjectWithAttributes (_registeredColorTemperatureMembers);
+			LogInfo ($"Light entity '{ControllerId}' registered color-temperature dynamic members: useEmulatedColorTemperature={useEmulatedColorTemperature}, initialColorTemperatureLevel={initialColorTemperatureLevel}.");
 			}
 
 		if (!_supportsFullColor)
@@ -1443,21 +1378,18 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		else
 			{
-			bool hasActiveColorTemperature = HasCurrentColorTemperatureState (device.LightState);
-			double initialHue = 0d;
-			double initialSaturation = 0d;
-			if (!hasActiveColorTemperature)
-				{
-				int? hue = device.LightState?.Hue ?? device.LightState?.Hsv?.Hue;
-				int? saturation = device.LightState?.Saturation ?? device.LightState?.Hsv?.Saturation;
-				initialHue = hue.HasValue ? Clamp01 (hue.Value / HUE_MAX_DEGREES) : 0d;
-				initialSaturation = saturation.HasValue ? Clamp01 (saturation.Value / 100d) : 0d;
-
-				}
+			// The device reports real hue/saturation values regardless of whether color temperature is
+			// currently active (color temperature only overrides the displayed color while active; it
+			// does not clear or alter the stored hue/saturation), so always seed the initial members
+			// from those real values.
+			int? hue = device.LightState?.Hue ?? device.LightState?.Hsv?.Hue;
+			int? saturation = device.LightState?.Saturation ?? device.LightState?.Hsv?.Saturation;
+			double initialHue = hue.HasValue ? Clamp01 (hue.Value / HUE_MAX_DEGREES) : 0d;
+			double initialSaturation = saturation.HasValue ? Clamp01 (saturation.Value / 100d) : 0d;
 
 			_registeredFullColorMembers = new FullColorMembers (this, initialHue, initialSaturation);
 			RegisterObjectWithAttributes (_registeredFullColorMembers);
-			LogInfo ($"Light entity '{ControllerId}' registered full-color dynamic members: hasActiveColorTemperature={hasActiveColorTemperature}, initialHue={initialHue:0.####}, initialSaturation={initialSaturation:0.####}.");
+			LogInfo ($"Light entity '{ControllerId}' registered full-color dynamic members: initialHue={initialHue:0.####}, initialSaturation={initialSaturation:0.####}.");
 			}
 
 		RaiseDefinitionChangedEvent ();
@@ -1465,44 +1397,117 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		}
 
-	protected Task ExecuteDeviceCommandAsync (Func<KasaDevice, Task> action, bool refreshAfterCommand = true, CancellationToken cancellationToken = default)
+	// Bulbs that support both full color and color temperature (Color-kind Kasa/Tapo bulbs) can be
+	// switched between color mode and white/CT mode at any time, and Crestron Home infers which mode a
+	// light is in from which color-temperature capability is currently registered rather than from the
+	// bulb kind. lightEmulatedColorTemperature signals "this is a color light; CT overrides the
+	// displayed color", which is correct while the bulb is in color mode. lightColorTemperature signals
+	// "this light's color state is defined purely by CT", which is correct while the bulb is in
+	// white/CT mode - any persisted HSV is irrelevant to the UI until the bulb returns to color mode.
+	// This method re-registers the appropriate capability whenever the device's active mode has
+	// flipped since the last time dynamic features were configured/reconciled.
+	private void ReconcileColorTemperatureCapability (bool hasActiveColorTemperature, int? colorTemperature)
+		{
+		if (_registeredColorTemperatureMembers is null || _colorTemperatureLevelRange is null)
+			{
+			return;
+			}
+
+		bool shouldUseEmulatedColorTemperature = _supportsFullColor && !hasActiveColorTemperature;
+		bool isCurrentlyEmulated = _registeredColorTemperatureMembers is EmulatedColorTemperatureMembers;
+		if (shouldUseEmulatedColorTemperature == isCurrentlyEmulated)
+			{
+			return;
+			}
+
+		long currentLevel = hasActiveColorTemperature && colorTemperature.HasValue
+			? colorTemperature.Value
+			: _registeredColorTemperatureMembers.LightColorTemperatureLevel;
+
+		UnregisterObjectWithAttributes (_registeredColorTemperatureMembers);
+
+		_registeredColorTemperatureMembers = shouldUseEmulatedColorTemperature
+			? new EmulatedColorTemperatureMembers (this, _colorTemperatureLevelRange, currentLevel)
+			: new ColorTemperatureMembers (this, _colorTemperatureLevelRange, currentLevel);
+		RegisterObjectWithAttributes (_registeredColorTemperatureMembers);
+		RaiseDefinitionChangedEvent ();
+
+		LogInfo ($"Light entity '{ControllerId}' switched color-temperature capability: useEmulatedColorTemperature={shouldUseEmulatedColorTemperature}, currentLevel={currentLevel}.");
+		}
+
+	private static readonly TimeSpan DeviceCommandTimeout = TimeSpan.FromSeconds (8);
+	private static readonly TimeSpan DeviceCommandRetryDelay = TimeSpan.FromSeconds (1);
+	private const int DEVICE_COMMAND_MAX_ATTEMPTS = 2;
+
+	protected async Task ExecuteDeviceCommandAsync (Func<KasaDevice, CancellationToken, Task> action, bool refreshAfterCommand = true, CancellationToken cancellationToken = default)
+		{
+		for (int attempt = 1; ; attempt++)
+			{
+			try
+				{
+				await ExecuteDeviceCommandAttemptAsync (action, refreshAfterCommand, cancellationToken).ConfigureAwait (false);
+				return;
+				}
+			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+				{
+				throw;
+				}
+			catch (Exception ex) when (attempt < DEVICE_COMMAND_MAX_ATTEMPTS)
+				{
+				_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' command attempt {attempt} of {DEVICE_COMMAND_MAX_ATTEMPTS} failed; retrying after {DeviceCommandRetryDelay.TotalSeconds:0} second(s): {ex}");
+				await Task.Delay (DeviceCommandRetryDelay, cancellationToken).ConfigureAwait (false);
+				}
+			}
+		}
+
+	private async Task ExecuteDeviceCommandAttemptAsync (Func<KasaDevice, CancellationToken, Task> action, bool refreshAfterCommand, CancellationToken cancellationToken)
 		{
 		try
 			{
-			return ExecuteWithConnectedDeviceAsync (async device =>
+			using CancellationTokenSource timeoutCancellationSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken);
+			timeoutCancellationSource.CancelAfter (DeviceCommandTimeout);
+			CancellationToken timeoutToken = timeoutCancellationSource.Token;
+
+			try
 				{
-					cancellationToken.ThrowIfCancellationRequested ();
-					await action (device).ConfigureAwait (false);
+				await ExecuteWithConnectedDeviceAsync (async device =>
+					{
+						timeoutToken.ThrowIfCancellationRequested ();
+						await action (device, timeoutToken).ConfigureAwait (false);
 
-					if (refreshAfterCommand)
-						{
-						await device.UpdateAsync (cancellationToken).ConfigureAwait (false);
-						LogReportedState ("ExecuteDeviceCommandAsync.AfterCommand", device);
-						}
+						if (refreshAfterCommand)
+							{
+							await device.UpdateAsync (timeoutToken).ConfigureAwait (false);
+							LogReportedState ("ExecuteDeviceCommandAsync.AfterCommand", device);
+							}
 
-					ApplyState (device);
-					OnlineIndicatorIsOnline = true;
-					ReadyIndicatorIsReady = true;
-				}, cancellationToken);
+						ApplyState (device);
+						OnlineIndicatorIsOnline = true;
+						ReadyIndicatorIsReady = true;
+					}, timeoutToken).ConfigureAwait (false);
+				}
+			catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutToken.IsCancellationRequested)
+				{
+				throw new TimeoutException ($"Light entity '{ControllerId}' command timed out after {DeviceCommandTimeout.TotalSeconds:0} seconds.");
+				}
 			}
 		catch (Exception ex)
 			{
-			OnlineIndicatorIsOnline = false;
-			ReadyIndicatorIsReady = false;
+			ResetConnectionState ();
 			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' command failed: {ex}");
-			return Task.FromException (ex);
+			throw;
 			}
 		}
 
-	private static Task SetBrightnessAsync (KasaDevice device, double relativeLevel)
+	private static Task SetBrightnessAsync (KasaDevice device, double relativeLevel, CancellationToken cancellationToken)
 		{
 		int brightness = (int)Math.Round (relativeLevel * 100d, MidpointRounding.AwayFromZero);
 		return brightness <= 0
-			? device.TurnLightOffAsync ()
-			: device.SetBrightnessAsync (brightness);
+			? device.TurnLightOffAsync (cancellationToken)
+			: device.SetBrightnessAsync (brightness, cancellationToken);
 		}
 
-	private async Task ExecutePowerAsync (KasaDevice device, bool on)
+	private async Task ExecutePowerAsync (KasaDevice device, bool on, CancellationToken cancellationToken)
 		{
 		string? childId = ChildId;
 		if (!string.IsNullOrWhiteSpace (childId))
@@ -1510,11 +1515,11 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			string resolvedChildId = childId!;
 			if (on)
 				{
-				await device.TurnChildOnAsync (resolvedChildId).ConfigureAwait (false);
+				await device.TurnChildOnAsync (resolvedChildId, cancellationToken).ConfigureAwait (false);
 				}
 			else
 				{
-				await device.TurnChildOffAsync (resolvedChildId).ConfigureAwait (false);
+				await device.TurnChildOffAsync (resolvedChildId, cancellationToken).ConfigureAwait (false);
 				}
 
 			return;
@@ -1524,11 +1529,11 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			{
 			if (on)
 				{
-				await device.TurnOnAsync ().ConfigureAwait (false);
+				await device.TurnOnAsync (cancellationToken).ConfigureAwait (false);
 				}
 			else
 				{
-				await device.TurnOffAsync ().ConfigureAwait (false);
+				await device.TurnOffAsync (cancellationToken).ConfigureAwait (false);
 				}
 
 			return;
@@ -1536,11 +1541,11 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		if (!on)
 			{
-			await device.TurnLightOffAsync ().ConfigureAwait (false);
+			await device.TurnLightOffAsync (cancellationToken).ConfigureAwait (false);
 			return;
 			}
 
-		await device.TurnLightOnAsync ().ConfigureAwait (false);
+		await device.TurnLightOnAsync (cancellationToken).ConfigureAwait (false);
 		}
 
 	private void ApplyState (KasaDevice device, bool allowDeferredDeviceStateDuringSliderInteraction = false)
@@ -1555,14 +1560,13 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		_deferredDeviceStatePending = false;
 		using (PropertyChangeTracker.StartBatchedUpdate (true))
 			{
-			PrepareForcedColorModeTransitionIfNeeded (device);
 			ApplyStateCore (device);
 			}
 
 		if (!_suppressPropertyNotifications)
 			{
 			PublishCurrentLightModeProperties ("ApplyState");
-			if (_supportsBaseLight)
+			if (_registeredOnOffMembers is not null)
 				{
 				PublishProperty ("light:isOn", new DriverEntityValue (LightIsOn), "ApplyState");
 				}
@@ -1580,6 +1584,19 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		LightIsOn = isOn;
 
+		// Kasa/Tapo devices report the real, current color-temperature mode regardless of power state
+		// (colorTemperature is 0 while in HSV/color mode and a real Kelvin value while in white/CT
+		// mode, whether the bulb is on or off), so the reconciliation always uses the live reading
+		// rather than being gated on isOn. Gating this on isOn previously allowed a stale/deferred
+		// state apply from an earlier command to be applied after a fresher one, causing the
+		// capability to flip to the wrong shape and then immediately flip back.
+		if (_supportsColorTemperature)
+			{
+			ReconcileColorTemperatureCapability (hasActiveColorTemperature, colorTemperature);
+			}
+
+		_isColorTemperatureUiModeActive = _supportsColorTemperature && hasActiveColorTemperature;
+
 		if (_supportsBrightness)
 			{
 			LightDimmerLevel = isOn && brightness.HasValue
@@ -1587,22 +1604,27 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 				: 0d;
 			}
 
-		if (_supportsColorTemperature)
+		if (_supportsColorTemperature && hasActiveColorTemperature)
 			{
-			SetColorTemperatureLevelSilently (hasActiveColorTemperature
-				? colorTemperature!.Value
-				: 0L);
+			// Kasa/Tapo devices report color_temp=0 whenever the bulb is in HSV/color mode; unlike
+			// hue/saturation, the device does not retain a "last known" color-temperature value that
+			// can be read back once color mode is active. The Crestron lightColorTemperature:level
+			// property must always stay within the declared lightColorTemperature:range (e.g.
+			// 2500-9000K); publishing 0 while in color mode is out of range and causes the Crestron
+			// Home UI to misinterpret/clamp the value, displaying the light as white/CCT mode even
+			// though it is actually in color mode. So retain the last known valid level locally and
+			// only update it when the device actually reports an active color-temperature value.
+			SetColorTemperatureLevelSilently (colorTemperature!.Value);
 			}
 
-		if (_supportsTunable)
+		if (_supportsFullColor)
 			{
-			SetLightTunableMode (hasActiveColorTemperature
-				? LightTunableTuningMode.White
-				: LightTunableTuningMode.Color);
-			}
-
-		if (_supportsFullColor && !hasActiveColorTemperature)
-			{
+			// Kasa/Tapo devices retain their hue/saturation values independently of color temperature -
+			// color temperature simply overrides the displayed color while active, without clearing or
+			// altering the stored hue/saturation. The device reports the real hue/saturation values
+			// regardless of whether color temperature is currently active, so always surface those
+			// real values here; it is the color-temperature capability's job (lightEmulatedColorTemperature
+			// for Color-kind bulbs) to signal the override to the Crestron Home UI, not zeroing hue/saturation.
 			if (hue.HasValue)
 				{
 				LightColorHue = Clamp01 (hue.Value / HUE_MAX_DEGREES);
@@ -1615,29 +1637,6 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 
 		OnStateApplied (device);
-		}
-
-	private void PrepareForcedColorModeTransitionIfNeeded (KasaDevice device)
-		{
-		if (!_forceColorModeTransitionOnNextPowerOnStateApply)
-			{
-			return;
-			}
-
-		bool isOn = ResolvePowerState (device);
-		bool hasActiveColorTemperature = HasCurrentColorTemperatureState (device.LightState);
-		if (isOn)
-			{
-			_forceColorModeTransitionOnNextPowerOnStateApply = false;
-			}
-
-		if (!isOn || hasActiveColorTemperature || !_usesEmulatedColorTemperature)
-			{
-			return;
-			}
-
-		WithSuppressedPropertyNotifications (() => SetLightTunableMode (LightTunableTuningMode.White));
-		LogInfo ($"Light entity '{ControllerId}' prepared forced color-mode transition for authoritative power-on state apply.");
 		}
 
 	private static bool HasCurrentColorTemperatureState (LightState? lightState)
@@ -1657,78 +1656,19 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			|| lightState?.Saturation is not null;
 		}
 
-	private bool IsCurrentUiColorMode ()
-		{
-		return _supportsFullColor && LightColorSaturation > 0d;
-		}
-
 	private bool IsCurrentColorTemperatureUiMode ()
 		{
-		if (!_supportsColorTemperature)
-			{
-			return false;
-			}
-
-		if (_usesEmulatedColorTemperature && GetLightTunableMode () != LightTunableTuningMode.White)
-			{
-			return false;
-			}
-
-		return GetActiveColorTemperatureLevel () > 0L;
-		}
-
-	private void ClearColorTemperatureUiMode ()
-		{
-		if (_usesEmulatedColorTemperature)
-			{
-			SetLightTunableMode (LightTunableTuningMode.Color);
-			return;
-			}
-
-		bool hasColorTemperatureLevel = _supportsColorTemperature && GetActiveColorTemperatureLevel () > 0L;
-		if (!hasColorTemperatureLevel)
-			{
-			return;
-			}
-
-		SetColorTemperatureLevelSilently (0L);
-		}
-
-	private LightTunableTuningMode GetLightTunableMode ()
-		{
-		if (!_supportsColorTemperature)
-			{
-			return LightTunableTuningMode.Color;
-			}
-
-		if (!_usesEmulatedColorTemperature)
-			{
-			return LightTunableTuningMode.White;
-			}
-
-		return _lightTunableMode;
-		}
-
-	private void SetLightTunableMode (LightTunableTuningMode mode)
-		{
-		if (!_supportsTunable || !_usesEmulatedColorTemperature)
-			{
-			return;
-			}
-
-		_lightTunableMode = mode;
+		return _supportsColorTemperature && _isColorTemperatureUiModeActive;
 		}
 
 	private void PublishCurrentLightModeProperties (string context)
 		{
-		bool hasActiveColorTemperature = IsCurrentColorTemperatureUiMode ();
-
 		if (_supportsBrightness)
 			{
 			PublishProperty ("lightDimmer:level", new DriverEntityValue (LightDimmerLevel), context);
 			}
 
-		PublishTunableModeStateProperties (context, hasActiveColorTemperature);
+		PublishColorModeStateProperties (context);
 		}
 
 	private long GetActiveColorTemperatureLevel ()
@@ -1738,33 +1678,52 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			return 0L;
 			}
 
-		return _usesEmulatedColorTemperature
-			? _registeredEmulatedColorTemperatureMembers!.LightEmulatedColorTemperatureLevel
-			: _registeredWhiteLightColorTemperatureMembers!.LightColorTemperatureLevel;
+		return _registeredColorTemperatureMembers!.LightColorTemperatureLevel;
 		}
 
-	private void PublishTunableModeStateProperties (string context, bool hasActiveColorTemperature)
+	private void PublishColorModeStateProperties (string context)
 		{
-		if (_supportsFullColor && !hasActiveColorTemperature)
-			{
-			PublishProperty ("lightColor:saturation", new DriverEntityValue (LightColorSaturation), context);
-			PublishProperty ("lightColor:hue", new DriverEntityValue (LightColorHue), context);
-			}
+		// The Crestron Home UI infers whether a light is currently in "color" or "white/CCT" mode from
+		// whichever of lightColor:*/lightColorTemperature:level was most recently published, so the
+		// publish order here must reflect the device's actual active mode (see IsCurrentColorTemperatureUiMode),
+		// matching the convention used by PublishActiveColorModeProperties. Publishing them in a fixed
+		// order regardless of active mode causes the UI to always show the last-published mode (white)
+		// on reload even when the bulb is actually in color mode.
+		bool colorTemperatureUiModeActive = IsCurrentColorTemperatureUiMode ();
 
-		if (_supportsColorTemperature)
+		if (colorTemperatureUiModeActive)
 			{
-			if (!_usesEmulatedColorTemperature || hasActiveColorTemperature)
+			if (_supportsFullColor)
 				{
-				PublishProperty (_usesEmulatedColorTemperature ? "lightEmulatedColorTemperature:level" : "lightColorTemperature:level", new DriverEntityValue (GetActiveColorTemperatureLevel ()), context);
+				PublishProperty ("lightColor:saturation", new DriverEntityValue (LightColorSaturation), context);
+				PublishProperty ("lightColor:hue", new DriverEntityValue (LightColorHue), context);
+				}
+
+			if (_supportsColorTemperature)
+				{
+				PublishProperty (_registeredColorTemperatureMembers!.LevelPropertyId, new DriverEntityValue (GetActiveColorTemperatureLevel ()), context);
+				}
+			}
+		else
+			{
+			if (_supportsColorTemperature)
+				{
+				PublishProperty (_registeredColorTemperatureMembers!.LevelPropertyId, new DriverEntityValue (GetActiveColorTemperatureLevel ()), context);
+				}
+
+			if (_supportsFullColor)
+				{
+				PublishProperty ("lightColor:saturation", new DriverEntityValue (LightColorSaturation), context);
+				PublishProperty ("lightColor:hue", new DriverEntityValue (LightColorHue), context);
 				}
 			}
 		}
 
 	private void PublishActiveColorModeProperties (string context)
 		{
-		if (_usesEmulatedColorTemperature)
+		if (_supportsColorTemperature)
 			{
-			PublishProperty ("lightEmulatedColorTemperature:level", new DriverEntityValue (_registeredEmulatedColorTemperatureMembers!.LightEmulatedColorTemperatureLevel), context);
+			PublishProperty (_registeredColorTemperatureMembers!.LevelPropertyId, new DriverEntityValue (_registeredColorTemperatureMembers!.LightColorTemperatureLevel), context);
 			}
 
 		if (_supportsFullColor)
@@ -1991,8 +1950,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		{
 		return propertyId.StartsWith ("lightColor:", StringComparison.Ordinal)
 			|| propertyId.StartsWith ("lightColorTemperature:", StringComparison.Ordinal)
-			|| propertyId.StartsWith ("lightEmulatedColorTemperature:", StringComparison.Ordinal)
-			|| propertyId.StartsWith ("lightTunable:", StringComparison.Ordinal);
+			|| propertyId.StartsWith ("lightEmulatedColorTemperature:", StringComparison.Ordinal);
 		}
 
 	private async Task RefreshAndApplyStateAsync (CancellationToken cancellationToken)
@@ -2027,7 +1985,6 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 				LogInfo ($"Light entity '{ControllerId}' refresh timeout; reconnecting fresh client to host '{host}'. Original error: {timeoutException.Message}");
 
 				KasaDevice reconnectedDevice = await ConnectFromConfigurationAsync (updateState: true, cancellationToken).ConfigureAwait (false);
-				DeviceQueue.SetClient (reconnectedDevice);
 				_connectedDevice = reconnectedDevice;
 				RefreshDescriptorFromConnectedDevice (reconnectedDevice, "ReconnectRefresh.AfterConnect");
 				LogReportedState ("ReconnectRefresh.AfterConnect", reconnectedDevice);
@@ -2050,31 +2007,31 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		return new DesiredLightCommand (DesiredLightMode.Brightness, relativeLevel, 0d, 0d, 0L);
 		}
 
-	private async Task ApplyBrightnessCommandAsync (KasaDevice device, double relativeLevel)
+	private async Task ApplyBrightnessCommandAsync (KasaDevice device, double relativeLevel, CancellationToken cancellationToken)
 		{
 		if (relativeLevel <= 0d)
 			{
-			await device.TurnLightOffAsync ().ConfigureAwait (false);
+			await device.TurnLightOffAsync (cancellationToken).ConfigureAwait (false);
 			return;
 			}
 
 		if (device.LightState?.IsOn != true && device.IsOn != true)
 			{
-			await device.TurnLightOnAsync ().ConfigureAwait (false);
+			await device.TurnLightOnAsync (cancellationToken).ConfigureAwait (false);
 			return;
 			}
 
-		await device.SetBrightnessAsync (ToBrightnessPercent (relativeLevel)).ConfigureAwait (false);
+		await device.SetBrightnessAsync (ToBrightnessPercent (relativeLevel), cancellationToken).ConfigureAwait (false);
 		}
 
-	private static async Task EnsurePoweredForLevelAsync (KasaDevice device, double relativeLevel)
+	private static async Task EnsurePoweredForLevelAsync (KasaDevice device, double relativeLevel, CancellationToken cancellationToken)
 		{
 		if (relativeLevel <= 0d || device.LightState?.IsOn == true || device.IsOn == true)
 			{
 			return;
 			}
 
-		await device.TurnLightOnAsync ().ConfigureAwait (false);
+		await device.TurnLightOnAsync (cancellationToken).ConfigureAwait (false);
 		}
 
 	private double GetEffectiveOnLevel () => LightDimmerLevel > 0d ? LightDimmerLevel : 1d;
@@ -2114,7 +2071,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private void LogPublishedState ()
 		{
 		_ = IsCurrentColorTemperatureUiMode ();
-		LogInfo ($"Light entity '{ControllerId}' published snapshot: isOn={LightIsOn}, dimmer={LightDimmerLevel:0.####}, hue={LightColorHue:0.####}, saturation={LightColorSaturation:0.####}, colorTemperature={GetActiveColorTemperatureLevel ()}, tunableMode={GetLightTunableMode ()}, colorTemperatureUiMode={IsCurrentColorTemperatureUiMode ()}.");
+		LogInfo ($"Light entity '{ControllerId}' published snapshot: isOn={LightIsOn}, dimmer={LightDimmerLevel:0.####}, hue={LightColorHue:0.####}, saturation={LightColorSaturation:0.####}, colorTemperature={GetActiveColorTemperatureLevel ()}, colorTemperatureUiMode={IsCurrentColorTemperatureUiMode ()}.");
 		}
 
 	private string FormatDesiredLightCommand (DesiredLightCommand command)
@@ -2206,22 +2163,6 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 
 		return value;
-		}
-
-	private void SetLightIsOn (bool value)
-		{
-		if (_lightIsOn == value)
-			{
-			return;
-			}
-
-		_lightIsOn = value;
-		if (_suppressPropertyNotifications || !_supportsBaseLight)
-			{
-			return;
-			}
-
-		PublishProperty ("light:isOn", new DriverEntityValue (value), "SetLightIsOn");
 		}
 
 	private void SetAndNotify (string propertyId, bool value, ref bool field)
