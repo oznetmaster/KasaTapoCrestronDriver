@@ -369,7 +369,50 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private bool _isColorTemperatureUiModeActive { get; set; }
 	private int _dynamicFeaturesConfigured;
 	private static readonly TimeSpan StartupConnectRetryInterval = TimeSpan.FromSeconds (10);
-	private static readonly TimeSpan StartupConnectTimeout = TimeSpan.FromSeconds (8);
+	// Live logs show all light entities retrying in lockstep every cycle for minutes after a driver
+	// reload, with per-connect durations of 7000+ ms even for devices that succeed (observed: 7049 ms
+	// and 7104 ms) right up against the previous 8-second timeout, while other devices using a
+	// completely different transport (legacy XOR-encrypted TCP on port 9999 vs. TPAP over HTTP) show
+	// the identical stall pattern. Because the slowdown is common to unrelated transport
+	// implementations, it is network/OS-level contention on the Crestron processor immediately after
+	// reload (e.g. socket/ARP resolution), not a per-protocol handshake cost. Canceling a startup
+	// connect discards all progress and forces a full reconnect from scratch next attempt, so a
+	// timeout only slightly larger than the typical connect duration causes some devices to loop for
+	// minutes instead of connecting once. Using a longer timeout gives slower connects room to finish
+	// instead of being aborted just before completion.
+	private static readonly TimeSpan StartupConnectTimeout = TimeSpan.FromSeconds (20);
+	// Immediately after a processor reboot/program load, the Crestron network stack (link/ARP/routing)
+	// may not be fully settled yet, causing the first several TPAP connect attempts to time out even
+	// though the device itself is healthy. Rather than always waiting the full 10-second retry interval
+	// during this window, use a short ramp-up schedule so the driver reconnects quickly once the network
+	// stabilizes, falling back to the normal 10-second interval for any attempts beyond the ramp-up.
+	private static readonly TimeSpan[] StartupConnectRetryRampUp =
+		{
+		TimeSpan.FromSeconds (1),
+		TimeSpan.FromSeconds (2),
+		TimeSpan.FromSeconds (2),
+		TimeSpan.FromSeconds (5),
+		};
+	// Multiple light entities perform their very first startup connect at essentially the same
+	// instant after a driver reload (all triggered from the same child-configuration callback
+	// wave). This causes a burst of concurrent TCP connects/ARP resolutions to different hosts on
+	// the Crestron processor at once, which live logs show can make an arbitrary device's initial
+	// attempt stall for a long time despite the 8-second startup timeout. Staggering the very first
+	// attempt with a small random jitter spreads that initial burst out to reduce contention.
+	private static readonly Random StartupJitterRandom = new ();
+	private static readonly object StartupJitterRandomGate = new ();
+	private static readonly TimeSpan StartupJitterMax = TimeSpan.FromSeconds (3);
+
+	private static TimeSpan GetStartupJitterDelay ()
+		{
+		int jitterMs;
+		lock (StartupJitterRandomGate)
+			{
+			jitterMs = StartupJitterRandom.Next (0, (int)StartupJitterMax.TotalMilliseconds);
+			}
+
+		return TimeSpan.FromMilliseconds (jitterMs);
+		}
 	private DesiredLightCommand? _pendingSliderCommand { get; set; }
 	private CancellationTokenSource? _sliderCommandCancellationSource { get; set; }
 	private bool _suppressPropertyNotifications { get; set; } = true;
@@ -1160,8 +1203,28 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private async Task InitializeStartupAsync ()
 		{
+		TimeSpan startupJitterDelay = GetStartupJitterDelay ();
+		if (startupJitterDelay > TimeSpan.Zero)
+			{
+			LogInfo ($"Light entity '{ControllerId}' delaying initial startup connect to host '{_descriptor.Host}' by {startupJitterDelay.TotalMilliseconds:0} ms to stagger concurrent reload connects.");
+			try
+				{
+				await Task.Delay (startupJitterDelay, _lifetimeCancellationSource.Token).ConfigureAwait (false);
+				}
+			catch (OperationCanceledException) when (!_disposed && Volatile.Read (ref _stopState) == 0)
+				{
+				return;
+				}
+			}
+
+		int startupConnectAttempt = 0;
 		while (!_disposed && Volatile.Read (ref _stopState) == 0)
 			{
+			TimeSpan retryInterval = startupConnectAttempt < StartupConnectRetryRampUp.Length
+				? StartupConnectRetryRampUp[startupConnectAttempt]
+				: StartupConnectRetryInterval;
+			startupConnectAttempt++;
+
 			try
 				{
 				LogInfo ($"Light entity '{ControllerId}' startup connecting to discovered host '{_descriptor.Host}' as {_descriptor.DiscoveredDeviceType}; driverId='{_driverLogId}'.");
@@ -1174,7 +1237,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 				}
 			catch (OperationCanceledException) when (!_disposed && Volatile.Read (ref _stopState) == 0)
 				{
-				LogInfo ($"Light entity '{ControllerId}' startup connect canceled for host '{_descriptor.Host}'; retrying in {StartupConnectRetryInterval.TotalSeconds:0} seconds.");
+				LogInfo ($"Light entity '{ControllerId}' startup connect canceled for host '{_descriptor.Host}'; retrying in {retryInterval.TotalSeconds:0} seconds.");
 				OnlineIndicatorIsOnline = false;
 				ReadyIndicatorIsReady = false;
 				}
@@ -1184,12 +1247,12 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 				}
 			catch (Exception ex)
 				{
-				LogInfo ($"Light entity '{ControllerId}' startup connect failed for host '{_descriptor.Host}': {ex.Message}; retrying in {StartupConnectRetryInterval.TotalSeconds:0} seconds.");
+				LogInfo ($"Light entity '{ControllerId}' startup connect failed for host '{_descriptor.Host}': {ex.Message}; retrying in {retryInterval.TotalSeconds:0} seconds.");
 				OnlineIndicatorIsOnline = false;
 				ReadyIndicatorIsReady = false;
 				}
 
-			await Task.Delay (StartupConnectRetryInterval, _lifetimeCancellationSource.Token).ConfigureAwait (false);
+			await Task.Delay (retryInterval, _lifetimeCancellationSource.Token).ConfigureAwait (false);
 			}
 		}
 
@@ -1250,8 +1313,20 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		cancellationToken.ThrowIfCancellationRequested ();
 		_lifetimeCancellationSource.Token.ThrowIfCancellationRequested ();
 
+		// TpapTransport/LegacyTransport apply configuration.Timeout as their own internal per-request
+		// timeout (see TpapTransport.CreateOperationTimeoutSource), independent of the outer
+		// StartupConnectTimeout cancellation below. configuration.Timeout is bound to the user-facing
+		// DiscoveryTimeoutSeconds setting (commonly 10s), which is far shorter than StartupConnectTimeout
+		// and therefore always fires first, silently overriding the intended startup connect budget. Live
+		// logs confirmed connects being canceled at ~10s (the configured DiscoveryTimeoutSeconds) rather
+		// than at StartupConnectTimeout. Use a configuration with a timeout at least as long as
+		// StartupConnectTimeout for startup connects so the outer timeout is the one that actually governs.
+		DeviceConfiguration startupConfiguration = configuration.Timeout < StartupConnectTimeout
+			? new DeviceConfiguration (configuration.Host, configuration.Port, configuration.Credentials, configuration.ConnectionOptions, StartupConnectTimeout)
+			: configuration;
+
 		return await Discover.ConnectAsync (
-			configuration,
+			startupConfiguration,
 			updateState,
 			cancellationToken: cancellationToken).ConfigureAwait (false);
 		}

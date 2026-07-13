@@ -7,6 +7,7 @@ using System.Linq;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Diagnostics;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -646,6 +647,10 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		_logger = args.Logger;
 		_driverLogId = args.DriverId;
 
+		#if DEBUG
+		RegisterKasaClientDebugListener ();
+		#endif
+
 		LogInfo ($"Platform driver instance starting: driverId='{_driverLogId}', dataDirectory='{_args.DriverDataDirectoryPath}'.");
 
 		ThreadPool.GetMinThreads (out int minWorkerThreads, out int minIoThreads);
@@ -705,6 +710,43 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		_runtimeCancellationSource.Cancel ();
 		_discoveryRefreshTask = null;
 		}
+
+	#if DEBUG
+	private void RegisterKasaClientDebugListener ()
+		{
+		// KasaTapoClient routes its internal diagnostics (discovery, TPAP handshake, etc.) through
+		// System.Diagnostics.Debug.WriteLine, which is compiled out entirely in Release builds. In
+		// DEBUG builds we add a listener so those messages flow into the driver's own log instead of
+		// only being visible through OutputDebugString/attached debuggers.
+		Debug.Listeners.Add (new ForwardingTraceListener (message => LogInfo ($"KasaClientDiagnostic: {message}")));
+		}
+
+	private sealed class ForwardingTraceListener : TraceListener
+		{
+		private readonly Action<string> _forward;
+		private readonly StringBuilder _pendingLine = new ();
+
+		public ForwardingTraceListener (Action<string> forward)
+			{
+			_forward = forward;
+			}
+
+		public override void Write (string? message)
+			{
+			if (message is not null)
+				{
+				_pendingLine.Append (message);
+				}
+			}
+
+		public override void WriteLine (string? message)
+			{
+			_pendingLine.Append (message);
+			_forward (_pendingLine.ToString ());
+			_pendingLine.Clear ();
+			}
+		}
+	#endif
 
 	private ConfigurationItemErrors? ApplyConfigurationItems (
 		DataDrivenConfigurationController.ApplyConfigurationAction action,
@@ -956,6 +998,21 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					if (IsResolvedFriendlyDeviceName (controllerId, resolvedDiscoveryName, discoveryResult.DeviceId, discoveryResult.Host))
 						{
 						LogInfo ($"EnrichDiscoveryResultAliasAsync: skipped one-shot alias fetch for controllerId='{controllerId}', host='{discoveryResult.Host}' because the resolved discovery name '{resolvedDiscoveryName}' is already friendly/publishable.");
+						}
+					else if (_lightEntities.ContainsKey (controllerId))
+						{
+						// A materialized light entity already exists for this controller and will perform
+						// its own startup/reconnect (KasaLightEntity.InitializeStartupAsync), which acquires
+						// the SAME per-controller connection gate (GetConnectionGate) and resolves the alias
+						// itself via UpdateDescriptorFromConnectedDevice once connected. Starting a redundant
+						// background alias-enrichment connect here would compete for that gate: the
+						// enrichment connect can take up to DiscoveryTimeout+2s (~10s) to complete or time
+						// out, while the entity's own startup attempt only allows 8 seconds
+						// (StartupConnectTimeout) before canceling and backing off. With discovery refresh
+						// re-triggering this every ~10 seconds during the fast-refresh startup phase, the
+						// entity's connect attempts were repeatedly starved of the gate and canceled,
+						// producing a multi-minute delay before devices actually connected after a reload.
+						LogInfo ($"EnrichDiscoveryResultAliasAsync: skipped one-shot alias fetch for controllerId='{controllerId}', host='{discoveryResult.Host}' because a light entity already exists and will resolve its own alias via its startup connect.");
 						}
 					else
 						{
@@ -2397,14 +2454,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		var discoveredDevices = new Dictionary<string, DiscoveryResult> (StringComparer.OrdinalIgnoreCase);
 
 		var passStopwatch = Stopwatch.StartNew ();
-#if DEBUG
-		IReadOnlyList<DiscoveryResult> passResults = await Discover.DiscoverWithDiagnosticsAsync (
-			message => LogInfo ($"DiscoveryDiagnostic pass=1: {message}"),
-			timeout,
-			cancellationToken: cancellationToken).ConfigureAwait (false);
-#else
 		IReadOnlyList<DiscoveryResult> passResults = await Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken).ConfigureAwait (false);
-#endif
 		passStopwatch.Stop ();
 		LogDiscoveryPassResults (passResults, passNumber: 1, totalPasses: 2, timeout, passStopwatch.Elapsed, isInitialLoad, retryAfterZero: false);
 
@@ -2429,14 +2479,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		cancellationToken.ThrowIfCancellationRequested ();
 
 		passStopwatch.Restart ();
-#if DEBUG
-		IReadOnlyList<DiscoveryResult> secondPassResults = await Discover.DiscoverWithDiagnosticsAsync (
-			message => LogInfo ($"DiscoveryDiagnostic pass=2: {message}"),
-			timeout,
-			cancellationToken: cancellationToken).ConfigureAwait (false);
-#else
 		IReadOnlyList<DiscoveryResult> secondPassResults = await Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken).ConfigureAwait (false);
-#endif
 		passStopwatch.Stop ();
 		LogDiscoveryPassResults (secondPassResults, passNumber: 2, totalPasses: 2, timeout, passStopwatch.Elapsed, isInitialLoad, retryAfterZero: passResults.Count == 0);
 
