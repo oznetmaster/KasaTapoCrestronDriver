@@ -2453,10 +2453,25 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		{
 		var discoveredDevices = new Dictionary<string, DiscoveryResult> (StringComparer.OrdinalIgnoreCase);
 
+		// UDP broadcast discovery is inherently lossy; always run a second pass and merge its
+		// results in, rather than only retrying when the initial load found zero devices. This
+		// significantly reduces single-pass misses (e.g. bulbs intermittently not responding
+		// within the timeout window) that previously led to transient removals from the room.
+		// The two passes are independent broadcast listeners, so run them CONCURRENTLY rather
+		// than sequentially: back-to-back sequential passes each waiting the full timeout (e.g.
+		// 10s + 10s = 20s) doubled the time before any device could appear after a reload, which
+		// regressed the previously-observed ~10-second startup appearance.
 		var passStopwatch = Stopwatch.StartNew ();
-		IReadOnlyList<DiscoveryResult> passResults = await Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken).ConfigureAwait (false);
+		Task<IReadOnlyList<DiscoveryResult>> firstPassTask = Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken);
+		Task<IReadOnlyList<DiscoveryResult>> secondPassTask = Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken);
+		await Task.WhenAll (firstPassTask, secondPassTask).ConfigureAwait (false);
 		passStopwatch.Stop ();
+
+		IReadOnlyList<DiscoveryResult> passResults = firstPassTask.Result;
+		IReadOnlyList<DiscoveryResult> secondPassResults = secondPassTask.Result;
+
 		LogDiscoveryPassResults (passResults, passNumber: 1, totalPasses: 2, timeout, passStopwatch.Elapsed, isInitialLoad, retryAfterZero: false);
+		LogDiscoveryPassResults (secondPassResults, passNumber: 2, totalPasses: 2, timeout, passStopwatch.Elapsed, isInitialLoad, retryAfterZero: passResults.Count == 0);
 
 		foreach (DiscoveryResult discoveryResult in passResults)
 			{
@@ -2471,17 +2486,6 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				discoveredDevices[key] = discoveryResult;
 				}
 			}
-
-		// UDP broadcast discovery is inherently lossy; always run a second pass and merge its
-		// results in, rather than only retrying when the initial load found zero devices. This
-		// significantly reduces single-pass misses (e.g. bulbs intermittently not responding
-		// within the timeout window) that previously led to transient removals from the room.
-		cancellationToken.ThrowIfCancellationRequested ();
-
-		passStopwatch.Restart ();
-		IReadOnlyList<DiscoveryResult> secondPassResults = await Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken).ConfigureAwait (false);
-		passStopwatch.Stop ();
-		LogDiscoveryPassResults (secondPassResults, passNumber: 2, totalPasses: 2, timeout, passStopwatch.Elapsed, isInitialLoad, retryAfterZero: passResults.Count == 0);
 
 		foreach (DiscoveryResult discoveryResult in secondPassResults)
 			{
