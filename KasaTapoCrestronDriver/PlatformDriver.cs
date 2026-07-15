@@ -2453,14 +2453,15 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		{
 		var discoveredDevices = new Dictionary<string, DiscoveryResult> (StringComparer.OrdinalIgnoreCase);
 
-		// UDP broadcast discovery is inherently lossy; always run a second pass and merge its
-		// results in, rather than only retrying when the initial load found zero devices. This
-		// significantly reduces single-pass misses (e.g. bulbs intermittently not responding
-		// within the timeout window) that previously led to transient removals from the room.
-		// The two passes are independent broadcast listeners, so run them CONCURRENTLY rather
-		// than sequentially: back-to-back sequential passes each waiting the full timeout (e.g.
-		// 10s + 10s = 20s) doubled the time before any device could appear after a reload, which
-		// regressed the previously-observed ~10-second startup appearance.
+		// UDP broadcast discovery is inherently lossy, and crucially the loss differs between two
+		// independent listeners: live logs show two concurrent passes over the same window returning
+		// DIFFERENT device subsets (e.g. one pass resultCount=4 while the other resultCount=9 from the
+		// same ~9-11 received packets). A single pass therefore risks surfacing only a partial set,
+		// dropping devices out of the room. Run two independent passes and merge their results so a
+		// device missed by one pass is still recovered from the other. The passes are run CONCURRENTLY
+		// rather than sequentially: back-to-back passes each waiting the full timeout (e.g. 10s + 10s =
+		// 20s) doubled the time before any device could appear after a reload, which regressed the
+		// previously-observed ~10-second startup appearance.
 		var passStopwatch = Stopwatch.StartNew ();
 		Task<IReadOnlyList<DiscoveryResult>> firstPassTask = Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken);
 		Task<IReadOnlyList<DiscoveryResult>> secondPassTask = Discover.DiscoverAsync (timeout, cancellationToken: cancellationToken);

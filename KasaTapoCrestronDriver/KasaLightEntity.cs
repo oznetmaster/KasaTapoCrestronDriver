@@ -208,6 +208,30 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		}
 
+	// Registered for color-capable bulbs so the driver can report the authoritative Crestron Home
+	// tuning mode (color vs white/CCT) via lightTunable:mode. Crestron Home derives the color-picker
+	// vs color-temperature control from this property; when it is not published the UI infers the mode
+	// from the last color-temperature setLevel it injected on power-on and spuriously flips to white.
+	// Publishing lightTunable:mode explicitly keeps the UI in the mode the bulb is actually in.
+	private sealed class LightTunableMembers
+		{
+		private readonly KasaLightEntity _owner;
+		private LightTunableTuningMode _mode;
+
+		public LightTunableMembers (KasaLightEntity owner, LightTunableTuningMode mode)
+			{
+			_owner = owner;
+			_mode = mode;
+			}
+
+		[EntityProperty (Id = "lightTunable:mode")]
+		public LightTunableTuningMode LightTunableMode
+			{
+			get => _mode;
+			set => _owner.SetAndNotify ("lightTunable:mode", value, ref _mode);
+			}
+		}
+
 	// Registered only for lights that report brightness support; mutually exclusive with
 	// OnOffMembers - see ConfigureDynamicFeatures. Kept as its own dynamic object (rather than static
 	// reflected members on the owner) so nothing ever needs to be added/removed after connect.
@@ -335,7 +359,10 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		}
 
-	private static readonly TimeSpan SliderDebounceInterval = TimeSpan.FromMilliseconds (250);
+	// Optimistic slider tracking: while a slider is dragged the light follows it live. Streamed values
+	// are dispatched to the device throttled by this minimum interval (tracks visibly without flooding
+	// the device); once the slider settles a single authoritative final sync (with refresh) is sent.
+	private static readonly TimeSpan SliderTrackingDispatchInterval = TimeSpan.FromMilliseconds (150);
 	private static int _dynamicFeatureStateDiagnosticLogged;
 
 	// Process-wide startup connect serialization. The ServicePoint.ConnectionLimit fix only affects the
@@ -417,6 +444,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		return TimeSpan.FromMilliseconds (jitterMs);
 		}
 	private DesiredLightCommand? _pendingSliderCommand { get; set; }
+	private bool _sliderWorkerRunning { get; set; }
 	private CancellationTokenSource? _sliderCommandCancellationSource { get; set; }
 	private bool _suppressPropertyNotifications { get; set; } = true;
 	private bool _isConfigured { get; set; }
@@ -425,6 +453,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private bool _deferredDeviceStatePending { get; set; }
 	private FullColorMembers? _registeredFullColorMembers { get; set; }
 	private IColorTemperatureLevelHolder? _registeredColorTemperatureMembers { get; set; }
+	private LightTunableMembers? _registeredLightTunableMembers { get; set; }
 	private DriverEntityValueRange? _colorTemperatureLevelRange { get; set; }
 
 	// While a color-capable bulb is in color/HSV mode, the device has no active color-temperature
@@ -438,6 +467,16 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private long _colorTemperatureRangeMinimum { get; set; }
 	private DimmableMembers? _registeredDimmableMembers { get; set; }
 	private OnOffMembers? _registeredOnOffMembers { get; set; }
+
+	// The emulated<->plain color-temperature capability swap (see ReconcileColorTemperatureCapability)
+	// must NOT run while a color-temperature slider interaction is in flight: unregistering the DTO
+	// mid-command deletes the very property the UI-issued command is bound to, which makes Crestron's
+	// LightTunable capability fail to retrieve 'lightEmulatedColorTemperature:range'/':level' and the
+	// command times out. When a swap is requested during an active interaction we record it here and
+	// apply it once the interaction has settled - see ProcessSliderCommandAsync.
+	private bool _pendingColorTemperatureReconcile { get; set; }
+	private bool _pendingColorTemperatureReconcileHasActive { get; set; }
+	private int? _pendingColorTemperatureReconcileLevel { get; set; }
 	private int _stopState;
 	private int _pollingGeneration;
 	private bool _disposed { get; set; }
@@ -587,7 +626,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			{
 			CancelSliderInteraction ();
 			LightIsOn = true;
-			StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, true, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token), "lightDimmer:setLevel:on");
+			StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, true, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token, reassertColorModeAfterRefresh: true), "lightDimmer:setLevel:on");
 			return;
 			}
 
@@ -625,10 +664,18 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		long temperatureLevel = Math.Max (1L, level);
 		_isColorTemperatureUiModeActive = true;
-		ReconcileColorTemperatureCapability (hasActiveColorTemperature: true, colorTemperature: (int)temperatureLevel);
 		SetActiveColorTemperatureLevel (temperatureLevel);
 
+		// Publish the authoritative white/CCT tuning mode so the UI tile follows the mode switch the
+		// user just made through the color-temperature slider.
+		PublishTuningMode ("lightColorTemperature:setLevel");
+
+		// Queue the slider command first so the interaction is marked active before we request the
+		// capability swap. That guarantees ReconcileColorTemperatureCapability defers the emulated->plain
+		// DTO swap (rather than unregistering the property this very command is bound to) until the
+		// interaction settles; ProcessSliderCommandAsync applies the deferred swap afterward.
 		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, GetEffectiveOnLevel (), 0d, 0d, temperatureLevel));
+		ReconcileColorTemperatureCapability (hasActiveColorTemperature: true, colorTemperature: (int)temperatureLevel);
 		}
 
 	private bool IgnoreValueCommandWhileOff (string commandId)
@@ -650,17 +697,27 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private void QueueSliderCommand (DesiredLightCommand command)
 		{
-		CancellationTokenSource cancellationSource;
+		CancellationTokenSource? cancellationSource = null;
 		lock (_sliderGate)
 			{
+			// Always record the latest slider value; a running tracking worker will pick it up on its
+			// next iteration. Only spin up a new worker (and its cancellation source) when none is
+			// currently running, so a drag is served by a single long-lived worker that tracks the
+			// light live instead of a fresh cancel-per-value debounce that only fires once on release.
 			_pendingSliderCommand = command;
-			_sliderCommandCancellationSource?.Cancel ();
-			_sliderCommandCancellationSource?.Dispose ();
-			_sliderCommandCancellationSource = new CancellationTokenSource ();
-			cancellationSource = _sliderCommandCancellationSource;
+			if (!_sliderWorkerRunning)
+				{
+				_sliderWorkerRunning = true;
+				_sliderCommandCancellationSource?.Dispose ();
+				_sliderCommandCancellationSource = new CancellationTokenSource ();
+				cancellationSource = _sliderCommandCancellationSource;
+				}
 			}
 
-		_ = ProcessSliderCommandAsync (cancellationSource.Token);
+		if (cancellationSource is not null)
+			{
+			_ = ProcessSliderCommandAsync (cancellationSource.Token);
+			}
 		}
 
 	private void StartBackgroundOperation (Func<Task> operation, string operationName)
@@ -699,44 +756,62 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		bool reapplyResolvedState = false;
 		try
 			{
-			await Task.Delay (SliderDebounceInterval, cancellationToken).ConfigureAwait (false);
+			// Optimistic tracking loop: keep dispatching the latest slider value to the physical light
+			// as the drag progresses (throttled, no device refresh so we don't fight the incoming
+			// stream), and only exit when the slider has settled - i.e. no new value arrived during a
+			// full throttle interval. The final settled value is then dispatched authoritatively with a
+			// device refresh outside the loop.
+			DesiredLightCommand? finalCommand = null;
+			CancellationToken lifetimeToken = _lifetimeCancellationSource.Token;
 
-			DesiredLightCommand? command;
-			lock (_sliderGate)
+			while (true)
 				{
-				if (cancellationToken.IsCancellationRequested || _sliderCommandCancellationSource is null || _sliderCommandCancellationSource.Token != cancellationToken)
+				await Task.Delay (SliderTrackingDispatchInterval, cancellationToken).ConfigureAwait (false);
+
+				DesiredLightCommand? command;
+				bool settled;
+				lock (_sliderGate)
 					{
-					return;
+					if (cancellationToken.IsCancellationRequested || _sliderCommandCancellationSource is null || _sliderCommandCancellationSource.Token != cancellationToken)
+						{
+						return;
+						}
+
+					command = _pendingSliderCommand;
+					_pendingSliderCommand = null;
+
+					// No new value arrived during this interval: the slider has settled. Clear the
+					// worker flag atomically so a subsequent slider value starts a fresh worker, and
+					// exit the tracking loop to perform the final authoritative sync.
+					settled = !command.HasValue;
+					if (settled)
+						{
+						_sliderWorkerRunning = false;
+						reapplyResolvedState = true;
+						}
 					}
 
-				command = _pendingSliderCommand;
-				_pendingSliderCommand = null;
-				}
-
-			if (!command.HasValue)
-				{
-				return;
-				}
-
-			// Once the debounce window has elapsed we are committed to dispatching this
-			// command to the physical device. From this point on, a newly superseding
-			// slider command must NOT cancel this in-flight hardware call — only entity
-			// lifetime/disposal (via _lifetimeCancellationSource) may cancel it. The
-			// KasaTapoClient device itself already serializes concurrent operations, so
-			// no additional dispatch gate is needed here.
-			CancellationToken lifetimeToken = _lifetimeCancellationSource.Token;
-			lifetimeToken.ThrowIfCancellationRequested ();
-
-			LogInfo ($"Light entity '{ControllerId}' dispatch slider command: {FormatDesiredLightCommand (command.Value)}.");
-
-			await ExecuteDeviceCommandAsync (
-				async (device, innerCancellationToken) =>
+				if (settled)
 					{
-						innerCancellationToken.ThrowIfCancellationRequested ();
-						await ApplyDesiredLightCommandAsync (device, command.Value, innerCancellationToken).ConfigureAwait (false);
-					},
-				refreshAfterCommand: true,
-				lifetimeToken).ConfigureAwait (false);
+					break;
+					}
+
+				finalCommand = command;
+				lifetimeToken.ThrowIfCancellationRequested ();
+
+				// Intermediate live-tracking dispatch: drive the device without a follow-up refresh so
+				// the light visibly tracks the slider without the refresh fighting the ongoing drag.
+				await DispatchSliderCommandAsync (command!.Value, refreshAfterCommand: false, lifetimeToken).ConfigureAwait (false);
+				}
+
+			// Final authoritative sync of the settled value (with device refresh). finalCommand holds
+			// the last value we actually dispatched during the drag.
+			if (finalCommand.HasValue)
+				{
+				lifetimeToken.ThrowIfCancellationRequested ();
+				LogInfo ($"Light entity '{ControllerId}' final slider sync: {FormatDesiredLightCommand (finalCommand.Value)}.");
+				await DispatchSliderCommandAsync (finalCommand.Value, refreshAfterCommand: true, lifetimeToken).ConfigureAwait (false);
+				}
 			}
 		catch (OperationCanceledException)
 			{
@@ -752,7 +827,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 				{
 				if (_sliderCommandCancellationSource is not null && _sliderCommandCancellationSource.Token == cancellationToken)
 					{
-					reapplyResolvedState = _pendingSliderCommand is null;
+					_sliderWorkerRunning = false;
 					_sliderCommandCancellationSource.Dispose ();
 					_sliderCommandCancellationSource = null;
 					}
@@ -762,6 +837,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 				{
 				try
 					{
+					TryApplyDeferredColorTemperatureReconcile ("ProcessSliderCommandAsync");
 					TryApplyDeferredDeviceStateAfterSliderInteraction ("ProcessSliderCommandAsync");
 					}
 				catch (Exception ex)
@@ -772,11 +848,26 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		}
 
+	private async Task DispatchSliderCommandAsync (DesiredLightCommand command, bool refreshAfterCommand, CancellationToken lifetimeToken)
+		{
+		LogInfo ($"Light entity '{ControllerId}' dispatch slider command: {FormatDesiredLightCommand (command)} (refresh={refreshAfterCommand}).");
+
+		await ExecuteDeviceCommandAsync (
+			async (device, innerCancellationToken) =>
+				{
+					innerCancellationToken.ThrowIfCancellationRequested ();
+					await ApplyDesiredLightCommandAsync (device, command, innerCancellationToken).ConfigureAwait (false);
+				},
+			refreshAfterCommand: refreshAfterCommand,
+			lifetimeToken).ConfigureAwait (false);
+		}
+
 	private void CancelSliderInteraction ()
 		{
 		lock (_sliderGate)
 			{
 			_pendingSliderCommand = null;
+			_sliderWorkerRunning = false;
 			_sliderCommandCancellationSource?.Cancel ();
 			_sliderCommandCancellationSource?.Dispose ();
 			_sliderCommandCancellationSource = null;
@@ -1517,6 +1608,14 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			_registeredFullColorMembers = new FullColorMembers (this, initialHue, initialSaturation);
 			RegisterObjectWithAttributes (_registeredFullColorMembers);
 			LogInfo ($"Light entity '{ControllerId}' registered full-color dynamic members: initialHue={initialHue:0.####}, initialSaturation={initialSaturation:0.####}.");
+
+			// Color-capable bulbs also expose the authoritative Crestron Home tuning mode so the UI's
+			// color-vs-white tile is driven by an explicit mode signal rather than inferred from the
+			// emulated color-temperature setLevel the processor injects on power-on.
+			LightTunableTuningMode initialTuningMode = ComputeTuningMode ();
+			_registeredLightTunableMembers = new LightTunableMembers (this, initialTuningMode);
+			RegisterObjectWithAttributes (_registeredLightTunableMembers);
+			LogInfo ($"Light entity '{ControllerId}' registered lightTunable dynamic members: initialMode={initialTuningMode}.");
 			}
 
 		RaiseDefinitionChangedEvent ();
@@ -1547,6 +1646,22 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			return;
 			}
 
+		// A capability swap unregisters the current color-temperature DTO and registers the other one.
+		// If this runs while a color-temperature slider interaction is in flight, it deletes the very
+		// property the UI-issued command is bound to, and Crestron's LightTunable capability then fails
+		// to retrieve 'lightEmulatedColorTemperature:range'/':level' and the command times out. Defer
+		// the swap: record the requested target state and re-run it once the interaction has settled
+		// (see ProcessSliderCommandAsync -> TryApplyDeferredColorTemperatureReconcile). The currently
+		// registered DTO stays valid for the whole interaction, so in-flight commands keep working.
+		if (IsSliderInteractionActive ())
+			{
+			_pendingColorTemperatureReconcile = true;
+			_pendingColorTemperatureReconcileHasActive = hasActiveColorTemperature;
+			_pendingColorTemperatureReconcileLevel = colorTemperature;
+			LogInfo ($"Light entity '{ControllerId}' deferring color-temperature capability swap until slider interaction settles: hasActiveColorTemperature={hasActiveColorTemperature}, colorTemperature={(colorTemperature.HasValue ? colorTemperature.Value.ToString () : "<none>")}.");
+			return;
+			}
+
 		// Entering color mode: there is no active color-temperature value to carry over, so use the
 		// range minimum as an in-range placeholder level. Entering white/CT mode: use the device's
 		// real, currently-reported value. Either way the declared range stays the device's real range.
@@ -1563,7 +1678,29 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		RegisterObjectWithAttributes (_registeredColorTemperatureMembers);
 		RaiseDefinitionChangedEvent ();
 
+		_pendingColorTemperatureReconcile = false;
+		_pendingColorTemperatureReconcileLevel = null;
+
 		LogInfo ($"Light entity '{ControllerId}' switched color-temperature capability: useEmulatedColorTemperature={shouldUseEmulatedColorTemperature}, currentLevel={currentLevel}, range={FormatRange (currentRange)}.");
+		}
+
+	// Re-runs a color-temperature capability swap that was deferred because a slider interaction was
+	// active when it was requested (see ReconcileColorTemperatureCapability). Called once the slider
+	// interaction has settled, when it is safe to unregister/register the DTO without breaking an
+	// in-flight command.
+	private void TryApplyDeferredColorTemperatureReconcile (string context)
+		{
+		if (!_pendingColorTemperatureReconcile || IsSliderInteractionActive ())
+			{
+			return;
+			}
+
+		bool hasActiveColorTemperature = _pendingColorTemperatureReconcileHasActive;
+		int? colorTemperature = _pendingColorTemperatureReconcileLevel;
+		_pendingColorTemperatureReconcile = false;
+
+		LogInfo ($"Light entity '{ControllerId}' applying deferred color-temperature capability swap after slider interaction settled; context='{context}'.");
+		ReconcileColorTemperatureCapability (hasActiveColorTemperature, colorTemperature);
 		}
 
 	// This timeout wraps EnsureConnectedAsync (which may need to fully reconnect if the connection was
@@ -1575,16 +1712,25 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	// Align this with StartupConnectTimeout so a reconnect triggered by a command has the same realistic
 	// budget as an initial startup connect.
 	private static readonly TimeSpan DeviceCommandTimeout = StartupConnectTimeout;
+
+	// A command against a long-idle bulb must first fully reconnect (cold TPAP PAKE handshake) before
+	// the command itself can run. Live logs show that after ~8h idle the gate wait + cold handshake
+	// alone consumed the entire single command budget (e.g. "acquired connection gate after 15356 ms"
+	// then the handshake timed out at 20s), so the actual on/off request never reached the bulb and it
+	// never physically switched. Give the connect phase its OWN budget, distinct from the command
+	// execution budget, so a cold reconnect gets the same realistic time as an initial startup connect
+	// and does not starve the command that follows it.
+	private static readonly TimeSpan DeviceConnectTimeout = StartupConnectTimeout;
 	private static readonly TimeSpan DeviceCommandRetryDelay = TimeSpan.FromSeconds (1);
 	private const int DEVICE_COMMAND_MAX_ATTEMPTS = 2;
 
-	protected async Task ExecuteDeviceCommandAsync (Func<KasaDevice, CancellationToken, Task> action, bool refreshAfterCommand = true, CancellationToken cancellationToken = default)
+	protected async Task ExecuteDeviceCommandAsync (Func<KasaDevice, CancellationToken, Task> action, bool refreshAfterCommand = true, CancellationToken cancellationToken = default, bool reassertColorModeAfterRefresh = false)
 		{
 		for (int attempt = 1; ; attempt++)
 			{
 			try
 				{
-				await ExecuteDeviceCommandAttemptAsync (action, refreshAfterCommand, cancellationToken).ConfigureAwait (false);
+				await ExecuteDeviceCommandAttemptAsync (action, refreshAfterCommand, reassertColorModeAfterRefresh, cancellationToken).ConfigureAwait (false);
 				return;
 				}
 			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1599,31 +1745,59 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		}
 
-	private async Task ExecuteDeviceCommandAttemptAsync (Func<KasaDevice, CancellationToken, Task> action, bool refreshAfterCommand, CancellationToken cancellationToken)
+	private async Task ExecuteDeviceCommandAttemptAsync (Func<KasaDevice, CancellationToken, Task> action, bool refreshAfterCommand, bool reassertColorModeAfterRefresh, CancellationToken cancellationToken)
 		{
 		try
 			{
+			// Phase 1: connect (its own budget). Ensuring a connection may require a full cold reconnect
+			// after a long idle period; give it the same realistic budget as an initial startup connect
+			// so a slow handshake does not consume the command budget below.
+			KasaDevice device;
+			using (CancellationTokenSource connectTimeoutSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken))
+				{
+				connectTimeoutSource.CancelAfter (DeviceConnectTimeout);
+				CancellationToken connectToken = connectTimeoutSource.Token;
+				try
+					{
+					device = await EnsureConnectedAsync (connectToken).ConfigureAwait (false);
+					}
+				catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && connectToken.IsCancellationRequested)
+					{
+					throw new TimeoutException ($"Light entity '{ControllerId}' connect timed out after {DeviceConnectTimeout.TotalSeconds:0} seconds.");
+					}
+				}
+
+			// Phase 2: command execution (separate budget), now that a live connection exists.
 			using CancellationTokenSource timeoutCancellationSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken);
 			timeoutCancellationSource.CancelAfter (DeviceCommandTimeout);
 			CancellationToken timeoutToken = timeoutCancellationSource.Token;
 
 			try
 				{
-				await ExecuteWithConnectedDeviceAsync (async device =>
+				timeoutToken.ThrowIfCancellationRequested ();
+				await action (device, timeoutToken).ConfigureAwait (false);
+
+				if (refreshAfterCommand)
 					{
-						timeoutToken.ThrowIfCancellationRequested ();
-						await action (device, timeoutToken).ConfigureAwait (false);
+					await device.UpdateAsync (timeoutToken).ConfigureAwait (false);
+					LogReportedState ("ExecuteDeviceCommandAsync.AfterCommand", device);
+					}
 
-						if (refreshAfterCommand)
-							{
-							await device.UpdateAsync (timeoutToken).ConfigureAwait (false);
-							LogReportedState ("ExecuteDeviceCommandAsync.AfterCommand", device);
-							}
+				ApplyState (device);
+				OnlineIndicatorIsOnline = true;
+				ReadyIndicatorIsReady = true;
 
-						ApplyState (device);
-						OnlineIndicatorIsOnline = true;
-						ReadyIndicatorIsReady = true;
-					}, timeoutToken).ConfigureAwait (false);
+				// On power-on, Crestron's Load layer drives the load's ColorTemp channel and dispatches
+				// lightEmulatedColorTemperature:setLevel to the capability layer BEFORE our dimmer
+				// power-on runs, switching the UI to white/CCT. The emulated CT value cannot be
+				// retracted (see RetractEmulatedColorTemperatureAssertion), so the authoritative fix is
+				// to publish lightTunable:mode=Color: PublishActiveColorModeProperties emits the explicit
+				// tuning mode plus the real hue/saturation, forcing the UI back to the color mode the
+				// bulb never left.
+				if (reassertColorModeAfterRefresh && LightIsOn && _supportsFullColor && !IsCurrentColorTemperatureUiMode ())
+						{
+						PublishActiveColorModeProperties ("ExecuteDeviceCommandAsync.ReassertColorModeAfterPowerOn");
+						}
 				}
 			catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutToken.IsCancellationRequested)
 				{
@@ -1800,6 +1974,30 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		return _supportsColorTemperature && _isColorTemperatureUiModeActive;
 		}
 
+	// The Crestron Home tuning mode is derived from the same single source of truth as the internal
+	// color-temperature UI mode flag: when color temperature is the active mode the bulb is in
+	// White (CCT) tuning, otherwise it is in Color (hue/saturation) tuning.
+	private LightTunableTuningMode ComputeTuningMode ()
+		{
+		return IsCurrentColorTemperatureUiMode () ? LightTunableTuningMode.White : LightTunableTuningMode.Color;
+		}
+
+	// Publishes the authoritative lightTunable:mode so the Crestron Home UI keeps the correct
+	// color-vs-white tile regardless of any color-temperature setLevel the processor injected. This
+	// force-publishes (rather than relying on the change-tracked setter) because snapshot and
+	// power-on reassert paths must re-emit the mode even when it has not changed.
+	private void PublishTuningMode (string context)
+		{
+		if (_registeredLightTunableMembers is null)
+			{
+			return;
+			}
+
+		LightTunableTuningMode mode = ComputeTuningMode ();
+		_registeredLightTunableMembers.LightTunableMode = mode;
+		PublishProperty ("lightTunable:mode", CreateValueForObject (mode), context);
+		}
+
 	private void PublishCurrentLightModeProperties (string context)
 		{
 		if (_supportsBrightness)
@@ -1854,6 +2052,8 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		bool colorTemperatureUiModeActive = IsCurrentColorTemperatureUiMode ();
 		bool publishColorTemperatureLevel = ShouldPublishColorTemperatureLevel (colorTemperatureUiModeActive);
 
+		PublishTuningMode (context);
+
 		if (colorTemperatureUiModeActive)
 			{
 			if (_supportsFullColor)
@@ -1884,6 +2084,8 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private void PublishActiveColorModeProperties (string context)
 		{
+		PublishTuningMode (context);
+
 		if (ShouldPublishColorTemperatureLevel (IsCurrentColorTemperatureUiMode ()))
 			{
 			PublishProperty (_registeredColorTemperatureMembers!.LevelPropertyId, new DriverEntityValue (_registeredColorTemperatureMembers!.LightColorTemperatureLevel), context);
