@@ -161,6 +161,36 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		}
 
+	// Color-temperature capability for full-color bulbs that expose the lightTunable capability. It
+	// publishes the real lightColorTemperature:range/level (which lightTunable:setLevels references for
+	// its colorTemperature parameter) but deliberately declares NO lightColorTemperature:setLevel
+	// command: the individual set-command cannot coexist with lightTunable:setLevels. All CT changes
+	// for these bulbs arrive through lightTunable:setLevels instead.
+	private sealed class TunableColorTemperatureMembers : IColorTemperatureLevelHolder
+		{
+		private readonly KasaLightEntity _owner;
+		private long _lightColorTemperatureLevel;
+
+		public TunableColorTemperatureMembers (KasaLightEntity owner, DriverEntityValueRange range, long level)
+			{
+			_owner = owner;
+			LightColorTemperatureRange = range;
+			_lightColorTemperatureLevel = level;
+			}
+
+		string IColorTemperatureLevelHolder.LevelPropertyId => "lightColorTemperature:level";
+
+		[EntityProperty (Id = "lightColorTemperature:range", Units = "Kelvin")]
+		public DriverEntityValueRange LightColorTemperatureRange { get; set; } = new DriverEntityValueRange (0, 0, 1);
+
+		[EntityProperty (Id = "lightColorTemperature:level", RangeProperty = "lightColorTemperature:range", Units = "Kelvin")]
+		public long LightColorTemperatureLevel
+			{
+			get => _lightColorTemperatureLevel;
+			set => _owner.SetAndNotify ("lightColorTemperature:level", value, ref _lightColorTemperatureLevel);
+			}
+		}
+
 	private sealed class FullColorMembers
 		{
 		private readonly KasaLightEntity _owner;
@@ -194,18 +224,10 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			set => _owner.SetAndNotify ("lightColor:saturation", value, ref _lightColorSaturation);
 			}
 
-		[EntityCommand (Id = "lightColor:setHue")]
-		public void LightColorSetHue ([EntityParameter (RangeMinimum = 0, RangeMaximum = 1, RangeStepSize = 1d / HUE_MAX_DEGREES)] double level)
-			{
-			_owner.LightColorSetHue (level);
-			}
-
-		[EntityCommand (Id = "lightColor:setSaturation")]
-		public void LightColorSetSaturation ([EntityParameter (RangeMinimum = 0, RangeMaximum = 1, RangeStepSize = 0.01)] double level)
-			{
-			_owner.LightColorSetSaturation (level);
-			}
-
+		// Color-capable bulbs no longer expose the individual lightColor:setHue/setSaturation commands:
+		// the Crestron Home lightTunable capability requires all tuning to flow through the single
+		// lightTunable:setLevels command instead (see LightTunableMembers). The hue/saturation state
+		// properties and their ranges are still published so the UI can render the current color.
 		}
 
 	// Registered for color-capable bulbs so the driver can report the authoritative Crestron Home
@@ -229,6 +251,32 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			{
 			get => _mode;
 			set => _owner.SetAndNotify ("lightTunable:mode", value, ref _mode);
+			}
+
+		// The single tuning command for color-capable bulbs. The Crestron Home lightTunable capability
+		// requires all appearance changes (hue, saturation, brightness, colour temperature) to flow
+		// through this one command instead of the individual lightColor:*/lightColorTemperature:setLevel
+		// commands - the two styles cannot coexist. The UI always sends every parameter declared here.
+		// We declare the REAL colorTemperature parameter (not emulatedColorTemperature): emulated CT
+		// always overwrites hue/saturation and "wins" whenever sent, which - because the UI always sends
+		// every declared parameter - would pin the bulb into white mode permanently. Real colorTemperature
+		// sets the white point and Kasa/Tapo bulbs treat colorTemperature==0 as "colour/HSV mode" and
+		// colorTemperature>0 as "white/CT mode", so the mode follows the CT value naturally.
+		//
+		// intensity is declared OptionalParameter = false: per the SDK EntityParameterAttribute docs
+		// OptionalParameter is the runtime flag that decides whether the UI is REQUIRED to send a value.
+		// intensity is our power/level channel, so we force the UI to always send it - it must never
+		// arrive as <none>. hue/saturation/colorTemperature stay optional because their presence or
+		// absence is exactly how the UI signals colour-vs-white intent.
+		[EntityCommand (Id = "lightTunable:setLevels")]
+		public void LightTunableSetLevels (
+			[EntityParameter (RelativeRangeProperty = "lightColor:hueRange", OptionalFeature = true, OptionalParameter = true)] double? hue,
+			[EntityParameter (RelativeRangeProperty = "lightColor:saturationRange", OptionalFeature = true, OptionalParameter = true)] double? saturation,
+			[EntityParameter (RelativeRangeProperty = "lightDimmer:levelRange", OptionalFeature = false, OptionalParameter = false)] double intensity,
+			[EntityParameter (RangeProperty = "lightColorTemperature:range", OptionalFeature = true, OptionalParameter = true, Units = "Kelvin")] long? colorTemperature,
+			[EntityParameter (DefaultValue = 0, OptionalFeature = true, OptionalParameter = true, Units = "Milliseconds")] long transitionTime)
+			{
+			_owner.LightTunableSetLevels (hue, saturation, intensity, colorTemperature, transitionTime);
 			}
 		}
 
@@ -370,10 +418,19 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	// KL130 (legacy) stall together on independent transports that share no discovery or connection code.
 	// The likely common denominator is thread-pool/CPU contention during the concurrent connect storm on
 	// the embedded host (e.g. blocking BouncyCastle SecureRandom seeding, Task.Run-wrapped synchronous DNS).
-	// This gate forces startup connects to run one-at-a-time across ALL entities to relieve that contention.
+	// This gate throttles the startup connect BURST across ALL entities to relieve that contention.
 	// It intentionally wraps ONLY the startup connect path, so steady-state per-device reconnects and
 	// polling remain fully independent.
-	private static readonly SemaphoreSlim StartupConnectConcurrencyGate = new (1, 1);
+	//
+	// It must NOT serialize to a single connect: an unreachable/slow device can hang its handshake for
+	// the full StartupConnectTimeout (20s). With a degree of 1, that single hang blocks every other
+	// entity's very first connect for 20s at a time, and because all entities retry in lockstep the
+	// entire platform can fail to initialize for minutes. Live logs showed even a legacy TCP/9999 bulb
+	// (a completely different transport from the TPAP bulbs) never initializing because it was queued
+	// behind a hung TPAP handshake. A small bounded degree keeps the reload burst throttled while
+	// ensuring one stalled device cannot stall the initialization of the others.
+	private const int StartupConnectMaxConcurrency = 3;
+	private static readonly SemaphoreSlim StartupConnectConcurrencyGate = new (StartupConnectMaxConcurrency, StartupConnectMaxConcurrency);
 
 	private SemaphoreSlim _connectionGate { get; }
 	private object _sliderGate { get; } = new ();
@@ -559,44 +616,83 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		private set => SetAndNotify ("readyIndicator:isReady", value, ref field);
 		}
 
-	private void LightColorSetHue (double level)
+	// Consolidated tuning handler for the lightTunable:setLevels command (full-color bulbs). Command
+	// parameters are optional: the UI sends only the ones relevant to the current interaction and omits
+	// the rest (arriving here as null = "leave unchanged"). Which tuning parameter is present therefore
+	// signals the requested mode - colorTemperature present => white/CT mode, hue/saturation present =>
+	// colour/HSV mode. Intensity carries power: intensity==0 turns the light off, otherwise on. Because
+	// power arrives through this command, it must NEVER be routed through IgnoreValueCommandWhileOff
+	// (which would drop the power-on and leave the light dead).
+	private void LightTunableSetLevels (double? hue, double? saturation, double intensity, long? colorTemperature, long transitionTime)
 		{
-		double hueLevel = Clamp01 (level);
-		LogCommandInvocation ("lightColor:setHue", $"hue={hueLevel:0.####}");
-		if (IgnoreValueCommandWhileOff ("lightColor:setHue"))
+		LogCommandInvocation (
+			"lightTunable:setLevels",
+			$"hue={(hue.HasValue ? hue.Value.ToString ("0.####") : "<none>")}, saturation={(saturation.HasValue ? saturation.Value.ToString ("0.####") : "<none>")}, intensity={intensity:0.####}, colorTemperature={(colorTemperature.HasValue ? colorTemperature.Value.ToString () : "<none>")}, transitionTime={transitionTime}");
+
+		// Intensity 0 means power off; handle it directly (never drop it while off).
+		if (intensity <= 0d)
 			{
+			CancelSliderInteraction ();
+			LightIsOn = false;
+			StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, false, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token), "lightTunable:setLevels:off");
 			return;
 			}
 
-		_isColorTemperatureUiModeActive = false;
-		if (_supportsColorTemperature)
-			{
-			ReconcileColorTemperatureCapability (hasActiveColorTemperature: false, colorTemperature: null);
-			}
-		LightColorHue = hueLevel;
-		PublishActiveColorModeProperties ("lightColor:setHue");
+		bool wasOff = !LightIsOn;
+		double effectiveLevel = Clamp01 (intensity);
+		LightIsOn = true;
+		LightDimmerLevel = effectiveLevel;
 
-		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, GetEffectiveOnLevel (), hueLevel, LightColorSaturation, 0L));
-		}
-
-	private void LightColorSetSaturation (double level)
-		{
-		double saturationLevel = Clamp01 (level);
-		LogCommandInvocation ("lightColor:setSaturation", $"saturation={saturationLevel:0.####}");
-		if (IgnoreValueCommandWhileOff ("lightColor:setSaturation"))
+		// A power-on (transition from off to on) must be treated as power only. The UI reasserts its
+		// retained tuning state (e.g. colorTemperature) alongside intensity on every on-press, but a
+		// bare on/off press is not a tuning interaction: routing it into a full colour-temperature/HSV
+		// re-dispatch fires several sequential device calls that can hang and time out (knocking the
+		// entity offline). Just power the device on and let it retain its own last state; the deferred
+		// reassert after refresh keeps the UI mode aligned.
+		if (wasOff)
 			{
+			StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, true, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token, reassertColorModeAfterRefresh: true), "lightTunable:setLevels:on");
 			return;
 			}
 
-		_isColorTemperatureUiModeActive = false;
-		if (_supportsColorTemperature)
-			{
-			ReconcileColorTemperatureCapability (hasActiveColorTemperature: false, colorTemperature: null);
-			}
-		LightColorSaturation = saturationLevel;
-		PublishActiveColorModeProperties ("lightColor:setSaturation");
+		// Already on: this is a genuine tuning interaction. The tuning parameter the UI sent signals the
+		// requested mode - colorTemperature present => white/CT mode, hue or saturation present => colour
+		// mode. When neither is present (a brightness-only change) retain the current mode.
+		bool requestsWhite = colorTemperature.HasValue && colorTemperature.Value > 0L;
+		bool requestsColor = hue.HasValue || saturation.HasValue;
 
-		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, GetEffectiveOnLevel (), LightColorHue, saturationLevel, 0L));
+		if (requestsWhite)
+			{
+			long temperatureLevel = Math.Max (1L, colorTemperature!.Value);
+			_isColorTemperatureUiModeActive = true;
+			SetActiveColorTemperatureLevel (temperatureLevel);
+			PublishTuningMode ("lightTunable:setLevels");
+			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, effectiveLevel, 0d, 0d, temperatureLevel));
+			return;
+			}
+
+		if (requestsColor)
+			{
+			_isColorTemperatureUiModeActive = false;
+			double hueLevel = hue.HasValue ? Clamp01 (hue.Value) : LightColorHue;
+			double saturationLevel = saturation.HasValue ? Clamp01 (saturation.Value) : LightColorSaturation;
+			LightColorHue = hueLevel;
+			LightColorSaturation = saturationLevel;
+			PublishTuningMode ("lightTunable:setLevels");
+			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, effectiveLevel, hueLevel, saturationLevel, 0L));
+			return;
+			}
+
+		// Already on with no tuning parameter: a brightness-only change. Reassert the current mode so a
+		// brightness move does not let the UI's persisted mode state flip the tile.
+		if (IsCurrentColorTemperatureUiMode ())
+			{
+			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, effectiveLevel, 0d, 0d, GetActiveColorTemperatureLevel ()));
+			}
+		else
+			{
+			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, effectiveLevel, LightColorHue, LightColorSaturation, 0L));
+			}
 		}
 
 	private void LightDimmerSetLevel (double level)
@@ -1561,33 +1657,29 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			_isColorTemperatureUiModeActive = hasActiveColorTemperature;
 			_colorTemperatureRangeMinimum = (long)TryGetColorTemperatureMinimum (device.Features);
 
-			// The capability shape is chosen from the bulb's *current* mode, not its static kind: a
-			// bulb that supports full color and is currently in color mode (no active color
-			// temperature) needs lightEmulatedColorTemperature so the CT slider is understood as an
-			// override of the displayed color, while a bulb currently in white/CT mode needs plain
-			// lightColorTemperature so the persisted-but-currently-irrelevant HSV values are not
-			// mistaken for the active mode. Bulbs without full color (TunableWhite) always use the
-			// plain capability. This selection is re-evaluated on every mode change - see
-			// ReconcileColorTemperatureCapability.
-			bool useEmulatedColorTemperature = _supportsFullColor && !hasActiveColorTemperature;
+			// Full-color bulbs expose the lightTunable capability, so their colour temperature always
+			// uses the real lightColorTemperature capability (the colorTemperature parameter of
+			// lightTunable:setLevels references lightColorTemperature:range) and never the emulated
+			// style - emulated CT would overwrite hue/saturation and pin the bulb into white mode.
+			// The UI mode is signalled explicitly via lightTunable:mode, so no emulated<->plain
+			// capability swap is needed. TunableWhite bulbs (CT only, no hue/saturation) keep the plain
+			// lightColorTemperature capability together with its individual setLevel command.
+			bool useTunableCapability = _supportsFullColor;
 
-			// While in color mode there is no active color-temperature value to report. Register the
-			// device's real declared range (so the UI sees an honest range) and use the range minimum
-			// as an in-range placeholder level, rather than an out-of-range 0. Color mode is kept
-			// stable by the power-on/off dispatch path, not by this value.
-			long initialColorTemperatureLevel = useEmulatedColorTemperature
-				? _colorTemperatureRangeMinimum
-				: (device.LightState?.ColorTemperature is int activeCt && activeCt > 0
-					? activeCt
-					: _colorTemperatureRangeMinimum);
+			// In color mode there is no active color-temperature value to report; register the device's
+			// real declared range (so the UI sees an honest range) and use the range minimum as an
+			// in-range placeholder level rather than an out-of-range 0.
+			long initialColorTemperatureLevel = device.LightState?.ColorTemperature is int activeCt && activeCt > 0
+				? activeCt
+				: _colorTemperatureRangeMinimum;
 			DriverEntityValueRange initialColorTemperatureMemberRange = lightColorTemperatureRange!;
 
 			_colorTemperatureLevelRange = lightColorTemperatureRange;
-			_registeredColorTemperatureMembers = useEmulatedColorTemperature
-				? new EmulatedColorTemperatureMembers (this, initialColorTemperatureMemberRange, initialColorTemperatureLevel)
+			_registeredColorTemperatureMembers = useTunableCapability
+				? new TunableColorTemperatureMembers (this, initialColorTemperatureMemberRange, initialColorTemperatureLevel)
 				: new ColorTemperatureMembers (this, initialColorTemperatureMemberRange, initialColorTemperatureLevel);
 			RegisterObjectWithAttributes (_registeredColorTemperatureMembers);
-			LogInfo ($"Light entity '{ControllerId}' registered color-temperature dynamic members: useEmulatedColorTemperature={useEmulatedColorTemperature}, initialColorTemperatureLevel={initialColorTemperatureLevel}.");
+			LogInfo ($"Light entity '{ControllerId}' registered color-temperature dynamic members: useTunableCapability={useTunableCapability}, initialColorTemperatureLevel={initialColorTemperatureLevel}.");
 			}
 
 		if (!_supportsFullColor)
@@ -1635,6 +1727,14 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private void ReconcileColorTemperatureCapability (bool hasActiveColorTemperature, int? colorTemperature)
 		{
 		if (_registeredColorTemperatureMembers is null || _colorTemperatureLevelRange is null)
+			{
+			return;
+			}
+
+		// Full-color bulbs use the lightTunable capability with a fixed real lightColorTemperature
+		// capability; their UI mode is signalled explicitly via lightTunable:mode, so there is no
+		// emulated<->plain capability swap to perform here.
+		if (_registeredColorTemperatureMembers is TunableColorTemperatureMembers)
 			{
 			return;
 			}
@@ -2033,12 +2133,18 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			return false;
 			}
 
-		if (_registeredColorTemperatureMembers is EmulatedColorTemperatureMembers)
+		// The plain lightColorTemperature capability is only registered for TunableWhite bulbs, which
+		// have no colour mode at all - colour temperature is always their active mode, so always
+		// publish it. For full-colour bulbs (the emulated capability, or the lightTunable capability's
+		// TunableColorTemperatureMembers) publishing a CT level asserts white mode in the UI, so only
+		// publish it while colour temperature is actually the active mode. Publishing it unconditionally
+		// forces every colour-mode bulb into white on connect.
+		if (_registeredColorTemperatureMembers is ColorTemperatureMembers)
 			{
-			return colorTemperatureUiModeActive;
+			return true;
 			}
 
-		return true;
+		return colorTemperatureUiModeActive;
 		}
 
 	private void PublishColorModeStateProperties (string context)
