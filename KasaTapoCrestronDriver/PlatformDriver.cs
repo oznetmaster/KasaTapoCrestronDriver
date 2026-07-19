@@ -587,7 +587,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectionGates = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _materializationInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _previousDiscoveredControllerIds = new (StringComparer.OrdinalIgnoreCase);
-	private readonly ConcurrentDictionary<string, PlatformManagedDevice> _managedDevices = new (StringComparer.OrdinalIgnoreCase);
+	private ConcurrentDictionary<string, PlatformManagedDevice> _managedDevices = new (StringComparer.OrdinalIgnoreCase);
 	private readonly PlatformSharedConfiguration _sharedConfiguration = new ();
 	private readonly SemaphoreSlim _refreshGate = new (1, 1);
 	private readonly SemaphoreSlim _scheduledRefreshGate = new (1, 1);
@@ -825,7 +825,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			{
 			case ConfigurationApplyMode.InitialConfiguration:
 			case ConfigurationApplyMode.SavedConfiguration:
-				_managedDevices.Clear ();
+				_managedDevices = new ConcurrentDictionary<string, PlatformManagedDevice> (StringComparer.OrdinalIgnoreCase);
 					_managedDeviceCacheMetadata.Clear ();
 					_resolvedDeviceNames.Clear ();
 					LoadManagedDeviceCacheIntoMemory ();
@@ -1420,7 +1420,9 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			return false;
 			}
 
-		_managedDevices[controllerId] = CreateManagedDeviceEntry (controllerId, name, modelName, serialNumber);
+		ConcurrentDictionary<string, PlatformManagedDevice> initialEntryCopy = new (_managedDevices, StringComparer.OrdinalIgnoreCase);
+		initialEntryCopy[controllerId] = CreateManagedDeviceEntry (controllerId, name, modelName, serialNumber);
+		_managedDevices = initialEntryCopy;
 		_managedDeviceCacheMetadata[controllerId] = CreateManagedDeviceCacheEntry (descriptor, name);
 		RememberResolvedDeviceName (controllerId, name, descriptor.DiscoveryDeviceId ?? descriptor.SerialNumber, descriptor.Host);
 		PersistManagedDeviceCache ();
@@ -1495,8 +1497,16 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			}
 
 		PlatformManagedDevice updatedEntry = CreateManagedDeviceEntry (controllerId, existingEntry.Name, existingEntry.Model, existingEntry.SerialNumber);
-		_managedDevices[controllerId] = updatedEntry;
-		NotifyManagedDevicesSnapshotChanged ();
+
+		ConcurrentDictionary<string, PlatformManagedDevice> copy = new (_managedDevices, StringComparer.OrdinalIgnoreCase);
+		copy[controllerId] = updatedEntry;
+		_managedDevices = copy;
+
+		DriverEntityValueUpdate nameChange = DriverEntityValueUpdate.Create ("name", new DriverEntityValue (updatedEntry.Name));
+		DriverEntityValueUpdate managedDevicesChange = DriverEntityValueUpdate.Create (
+			DriverEntityValueUpdate.Create (controllerId, nameChange));
+		NotifyPropertyChanged ("platform:managedDevices", managedDevicesChange);
+
 		LogInfo ($"PublishManagedDeviceEntryUpdate: published managed-device entry update for controllerId='{controllerId}', name='{updatedEntry.Name}', model='{updatedEntry.Model}', serial='{updatedEntry.SerialNumber}', configured={_configuredChildControllerIds.Contains (controllerId)}, context='{context}'.");
 		}
 
@@ -2686,11 +2696,13 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			}
 
 		PlatformManagedDevice entry = CreateManagedDeviceEntry (controllerId, name, modelName, serialNumber);
-		if (!_managedDevices.TryAdd (controllerId, entry))
+		ConcurrentDictionary<string, PlatformManagedDevice> additionCopy = new (_managedDevices, StringComparer.OrdinalIgnoreCase);
+		if (!additionCopy.TryAdd (controllerId, entry))
 			{
 			LogInfo ($"Skipping managed-device add for controllerId='{controllerId}' because an entry already exists.");
 			return false;
 			}
+		_managedDevices = additionCopy;
 
 		if (descriptor is not null)
 			{
@@ -2699,7 +2711,9 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			}
 		else
 			{
-			_managedDevices.TryRemove (controllerId, out _);
+			ConcurrentDictionary<string, PlatformManagedDevice> rollbackCopy = new (_managedDevices, StringComparer.OrdinalIgnoreCase);
+			rollbackCopy.TryRemove (controllerId, out _);
+			_managedDevices = rollbackCopy;
 			LogError ($"Skipping managed-device add for controllerId='{controllerId}' because discovery metadata is unavailable; cache metadata cannot be created safely.");
 			return false;
 			}
@@ -2738,6 +2752,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				bool skippedInvalidEntries = false;
 				int cachedConfiguredEntryCount = 0;
 				List<ManagedDeviceCacheEntry> devices = document.Devices ?? new List<ManagedDeviceCacheEntry> ();
+				ConcurrentDictionary<string, PlatformManagedDevice> cacheSeedCopy = new (_managedDevices, StringComparer.OrdinalIgnoreCase);
 
 				foreach (ManagedDeviceCacheEntry? entry in devices)
 					{
@@ -2768,14 +2783,14 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 							continue;
 							}
 
-						_managedDevices[entry.ControllerId] = new PlatformManagedDevice (
+						cacheSeedCopy[entry.ControllerId] = new PlatformManagedDevice (
 							entry.UxCategory,
 							entry.Name,
 							entry.Manufacturer,
 							entry.Model,
 							cacheSerialNumber);
-					_managedDeviceCacheMetadata[entry.ControllerId] = entry;
-					LogChildPublicationState ("Managed-device cache seeded state", entry.ControllerId);
+						_managedDeviceCacheMetadata[entry.ControllerId] = entry;
+						LogChildPublicationState ("Managed-device cache seeded state", entry.ControllerId);
 					if (entry.IsConfigured)
 						{
 						cachedConfiguredEntryCount++;
@@ -2784,6 +2799,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					RememberResolvedDeviceName (entry.ControllerId, entry.Name, cacheSerialNumber, entry.Host);
 					}
 
+				_managedDevices = cacheSeedCopy;
 				LogInfo ($"Managed-device cache seeded {_managedDevices.Count} device entries from '{cachePath}', cachedConfiguredChildCount={cachedConfiguredEntryCount}; current session child configuration state will be established only by child configuration callbacks.");
 				if (skippedInvalidEntries)
 					{
@@ -2950,10 +2966,12 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 	private bool PublishManagedDeviceRemoval (string controllerId)
 		{
-		if (!_managedDevices.TryRemove (controllerId, out _))
+		ConcurrentDictionary<string, PlatformManagedDevice> removalCopy = new (_managedDevices, StringComparer.OrdinalIgnoreCase);
+		if (!removalCopy.TryRemove (controllerId, out _))
 			{
 			return false;
 			}
+		_managedDevices = removalCopy;
 
 		PersistManagedDeviceCache ();
 

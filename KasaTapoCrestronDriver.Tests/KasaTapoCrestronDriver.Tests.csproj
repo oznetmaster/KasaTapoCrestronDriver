@@ -1,0 +1,50 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MSTest" Version="4.0.2" />
+    <!-- KasaTapoClient.dll is referenced directly via HintPath (below) rather than as a PackageReference,
+          so its transitive System.Memory 4.6.3 dependency isn't pulled into this project's dependency graph.
+          Without this explicit reference, NuGet resolves an older System.Memory (4.5.5 / asm version 4.0.1.2)
+          from the test-infra packages, causing an MSB3277 conflict with the version KasaTapoClient needs
+          (asm version 4.0.5.0). Keep this version aligned with KasaTapoClient.csproj's System.Memory reference. -->
+    <PackageReference Include="System.Memory" Version="4.6.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+  </ItemGroup>
+
+  <!-- Aliased so the ILRepack-merged KasaTapoClient types embedded in KasaTapoCrestronDriver.dll (e.g.
+        LightState, DeviceFeature) do not collide (CS0433) with the same types from the direct KasaTapoClient
+        reference below. Files that need driver-only types (e.g. LightTuningDecisions) must declare
+        `extern alias driverassembly;` and qualify types as `driverassembly::KasaTapoCrestronDriver.*`. -->
+  <ItemGroup>
+    <ProjectReference Include="..\KasaTapoCrestronDriver\KasaTapoCrestronDriver.csproj">
+      <Aliases>driverassembly</Aliases>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!-- DEBUG-only: use the local KasaClient Debug build directly (instead of the published NuGet package) so
+        internal KasaDevice/IDeviceTransport test seams are available for fake-device fixture tests.
+        Must never affect Release builds. Requires KasaClient checked out as a sibling at C:\Projects\KasaClient. -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug' AND Exists('C:\Projects\KasaClient\KasaClient\bin\Debug\net472\KasaTapoClient.dll')">
+    <Reference Include="KasaTapoClient">
+      <HintPath>C:\Projects\KasaClient\KasaClient\bin\Debug\net472\KasaTapoClient.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Debug' AND !Exists('C:\Projects\KasaClient\KasaClient\bin\Debug\net472\KasaTapoClient.dll')">
+    <PackageReference Include="KasaTapoClient" Version="1.1.9" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)' != 'Debug'">
+    <PackageReference Include="KasaTapoClient" Version="1.1.9" />
+  </ItemGroup>
+
+</Project>

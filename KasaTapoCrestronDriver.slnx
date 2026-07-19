@@ -2,5 +2,6 @@
   <Project Path="../KasaClient/KasaClient/KasaTapoClient.csproj">
     <Build Project="false" />
   </Project>
+  <Project Path="KasaTapoCrestronDriver.Tests/KasaTapoCrestronDriver.Tests.csproj" />
   <Project Path="KasaTapoCrestronDriver/KasaTapoCrestronDriver.csproj" />
 </Solution>
