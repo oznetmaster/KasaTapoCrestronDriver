@@ -584,11 +584,11 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private readonly HashSet<string> _inUseChildControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _connectedIdentityResolvedControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, byte> _aliasResolutionInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
-	private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectionGates = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _materializationInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _previousDiscoveredControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private ConcurrentDictionary<string, PlatformManagedDevice> _managedDevices = new (StringComparer.OrdinalIgnoreCase);
 	private readonly PlatformSharedConfiguration _sharedConfiguration = new ();
+	private readonly ProcessorBaselineCoordinator _processorBaselineCoordinator;
 	private readonly SemaphoreSlim _refreshGate = new (1, 1);
 	private readonly SemaphoreSlim _scheduledRefreshGate = new (1, 1);
 	private readonly SemaphoreSlim _managedDeviceCacheWriteGate = new (1, 1);
@@ -603,6 +603,10 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private string _sensorPollIntervalSeconds = ((int)DefaultSensorPollInterval.TotalSeconds).ToString (CultureInfo.InvariantCulture);
 	private bool _enableLightPolling;
 	private bool _treatPlugsAsLights;
+	private bool _enableProcessorBaselineWorkaround;
+	private string _processorSshHost = string.Empty;
+	private string _processorSshUserName = string.Empty;
+	private string _processorSshPassword = string.Empty;
 	private bool _disposed;
 	private bool _initialDiscoveryLoadPending = true;
 	private bool _initialShortRefreshPending = true;
@@ -646,6 +650,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		_resources = resources;
 		_logger = args.Logger;
 		_driverLogId = args.DriverId;
+		_processorBaselineCoordinator = new ProcessorBaselineCoordinator (_sharedConfiguration, message => LogInfoCore (message), message => LogError (message));
 
 		#if DEBUG
 		RegisterKasaClientDebugListener ();
@@ -697,6 +702,8 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			{
 			lightEntity.Dispose ();
 			}
+
+		_processorBaselineCoordinator.Dispose ();
 
 		_scheduledRefreshGate.Dispose ();
 		_managedDeviceCacheWriteGate.Dispose ();
@@ -773,6 +780,20 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				tapoCredentialError);
 			}
 
+		bool hasProcessorSshUserName = !string.IsNullOrWhiteSpace (_processorSshUserName);
+		bool hasProcessorSshPassword = !string.IsNullOrWhiteSpace (_processorSshPassword);
+		if (_enableProcessorBaselineWorkaround && (!hasProcessorSshUserName || !hasProcessorSshPassword))
+			{
+			const string processorSshCredentialError = "Processor SSH user name and password are required when the processor baseline workaround is enabled.";
+			return new ConfigurationItemErrors (
+				new Dictionary<string, string>
+					{
+					["ProcessorSshUserName"] = processorSshCredentialError,
+					["ProcessorSshPassword"] = processorSshCredentialError
+					},
+				processorSshCredentialError);
+			}
+
 		if (!TryParseDiscoveryTimeout (_discoveryTimeoutSeconds, out var timeout, out var timeoutError))
 			{
 			return new ConfigurationItemErrors (
@@ -816,7 +837,11 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			_enableLightPolling,
 			lightPollInterval,
 			sensorPollInterval,
-			_treatPlugsAsLights);
+			_treatPlugsAsLights,
+			_enableProcessorBaselineWorkaround,
+			_processorSshHost,
+			_processorSshUserName,
+			_processorSshPassword);
 
 		PlatformSharedConfigurationSnapshot currentConfiguration = _sharedConfiguration.Snapshot ();
 		LogInfo ($"ApplyConfigurationItems resolved configuration: mode={applyMode}, timeoutSeconds={currentConfiguration.DiscoveryTimeout.TotalSeconds:0.###}, enableLightPolling={currentConfiguration.EnableLightPolling}, lightPollIntervalSeconds={currentConfiguration.LightPollInterval.TotalSeconds:0.###}, sensorPollIntervalSeconds={currentConfiguration.SensorPollInterval.TotalSeconds:0.###}, treatPlugsAsLights={currentConfiguration.TreatPlugsAsLights}, hasTapoCredentials={HasTapoCredentials ()}.");
@@ -914,6 +939,26 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 			{
 			_treatPlugsAsLights = treatPlugsValue.Value.GetValue<bool> ();
 			}
+
+		if (values.TryGetValue ("EnableProcessorBaselineWorkaround", out var enableProcessorBaselineWorkaroundValue) && enableProcessorBaselineWorkaroundValue.HasValue)
+			{
+			_enableProcessorBaselineWorkaround = enableProcessorBaselineWorkaroundValue.Value.GetValue<bool> ();
+			}
+
+		if (values.TryGetValue ("ProcessorSshHost", out var processorSshHostValue) && processorSshHostValue.HasValue)
+			{
+			_processorSshHost = processorSshHostValue.Value.GetValue<string> ()?.Trim () ?? _processorSshHost;
+			}
+
+		if (values.TryGetValue ("ProcessorSshUserName", out var processorSshUserNameValue) && processorSshUserNameValue.HasValue)
+			{
+			_processorSshUserName = processorSshUserNameValue.Value.GetValue<string> ()?.Trim () ?? _processorSshUserName;
+			}
+
+		if (values.TryGetValue ("ProcessorSshPassword", out var processorSshPasswordValue) && processorSshPasswordValue.HasValue)
+			{
+			_processorSshPassword = processorSshPasswordValue.Value.GetValue<string> () ?? _processorSshPassword;
+			}
 		}
 
 	private static string DescribeConfiguredValueState (string? value)
@@ -1002,16 +1047,13 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					else if (_lightEntities.ContainsKey (controllerId))
 						{
 						// A materialized light entity already exists for this controller and will perform
-						// its own startup/reconnect (KasaLightEntity.InitializeStartupAsync), which acquires
-						// the SAME per-controller connection gate (GetConnectionGate) and resolves the alias
-						// itself via UpdateDescriptorFromConnectedDevice once connected. Starting a redundant
-						// background alias-enrichment connect here would compete for that gate: the
-						// enrichment connect can take up to DiscoveryTimeout+2s (~10s) to complete or time
-						// out, while the entity's own startup attempt only allows 8 seconds
-						// (StartupConnectTimeout) before canceling and backing off. With discovery refresh
-						// re-triggering this every ~10 seconds during the fast-refresh startup phase, the
-						// entity's connect attempts were repeatedly starved of the gate and canceled,
-						// producing a multi-minute delay before devices actually connected after a reload.
+						// its own startup/reconnect (KasaLightEntity.InitializeStartupAsync). KasaClient's
+						// Discover now coalesces/reuses connects per Host:Port itself, so a redundant
+						// background alias-enrichment connect started here resolves to the SAME shared
+						// KasaDevice instance rather than competing for a separate gate/connection - it is
+						// skipped here simply because the light entity's own startup connect will resolve
+						// the alias itself via UpdateDescriptorFromConnectedDevice once connected, making a
+						// second alias-only connect redundant.
 						LogInfo ($"EnrichDiscoveryResultAliasAsync: skipped one-shot alias fetch for controllerId='{controllerId}', host='{discoveryResult.Host}' because a light entity already exists and will resolve its own alias via its startup connect.");
 						}
 					else
@@ -1369,6 +1411,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 								{
 								lightEntity.NotifyChildPublished ();
 								}
+				ActivatePublishedChildIfRunning (controller, "async-publication-status-reconciliation");
 							}
 						}
 
@@ -1566,6 +1609,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					{
 					lightEntity.NotifyChildPublished ();
 					}
+				ActivatePublishedChildIfRunning (controller, "cached-publication-status-reconciliation");
 				}
 			}
 		}
@@ -1834,23 +1878,23 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		return treatPlugsAsLights && (deviceType == KasaDeviceType.Plug || deviceType == KasaDeviceType.Strip);
 		}
 
-	private SemaphoreSlim GetConnectionGate (string controllerId)
-		{
-		return _connectionGates.GetOrAdd (controllerId, _ => new SemaphoreSlim (1, 1));
-		}
-
 	private IKasaManagedLightEntity CreateManagedLightEntity (ManagedLightDescriptor descriptor, DeviceConfiguration configuration)
 		{
 		return new KasaLightEntity (
 			descriptor.ControllerId,
 			descriptor,
 			configuration,
-			GetConnectionGate (descriptor.ControllerId),
 			HandleManagedLightDescriptorNameChanged,
 			_sharedConfiguration,
+			SynchronizeProcessorBaselineAsync,
 			_resources,
 			_logger,
 			_driverLogId);
+		}
+
+	private Task SynchronizeProcessorBaselineAsync (string loadName, ProcessorLightTuningMode mode, double level, double hue, double saturation, long colorTemperature, CancellationToken cancellationToken)
+		{
+		return _processorBaselineCoordinator.SynchronizeAsync (loadName, mode, level, hue, saturation, colorTemperature, cancellationToken);
 		}
 
 	private LoggingDriverConfigurationController CreateChildConfigurationController (ManagedLightDescriptor descriptor)
@@ -1932,6 +1976,17 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		{
 		return _childConfigurationControllers.TryGetValue (controller.ControllerId, out LoggingDriverConfigurationController? loggingController)
 			&& loggingController.PeekStatus () == DriverControllerStatus.Running;
+		}
+
+	private void ActivatePublishedChildIfRunning (ConfigurableDriverEntity controller, string context)
+		{
+		if (!IsChildConfigurationControllerRunning (controller))
+			{
+			return;
+			}
+
+		LogInfo ($"ActivatePublishedChildIfRunning: controllerId='{controller.ControllerId}' is already Running after publication; reconciling activation to avoid a missed status-change event.");
+		ActivateChildController (controller.ControllerId, context);
 		}
 
 	private ConfigurationItemErrors? ApplyChildConfigurationItems (
@@ -2278,28 +2333,26 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 
 		try
 			{
-			SemaphoreSlim connectionGate = GetConnectionGate (controllerId);
-				using var aliasTimeoutSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken);
-				TimeSpan aliasTimeout = configuration.Timeout > TimeSpan.Zero
-					? configuration.Timeout + TimeSpan.FromSeconds (2)
-					: DefaultDiscoveryTimeout + TimeSpan.FromSeconds (2);
-				LogInfo ($"EnrichDiscoveryResultAliasAsync: controllerId='{controllerId}', host='{discoveryResult.Host}', port={configuration.Port}, timeoutMs={aliasTimeout.TotalMilliseconds:0}, transport={configuration.ConnectionOptions.TransportKind}, appPath='{configuration.ConnectionOptions.ApplicationPath ?? string.Empty}'.");
-				aliasTimeoutSource.CancelAfter (aliasTimeout);
+			using var aliasTimeoutSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken);
+			TimeSpan aliasTimeout = configuration.Timeout > TimeSpan.Zero
+				? configuration.Timeout + TimeSpan.FromSeconds (2)
+				: DefaultDiscoveryTimeout + TimeSpan.FromSeconds (2);
+			LogInfo ($"EnrichDiscoveryResultAliasAsync: controllerId='{controllerId}', host='{discoveryResult.Host}', port={configuration.Port}, timeoutMs={aliasTimeout.TotalMilliseconds:0}, transport={configuration.ConnectionOptions.TransportKind}, appPath='{configuration.ConnectionOptions.ApplicationPath ?? string.Empty}'.");
+			aliasTimeoutSource.CancelAfter (aliasTimeout);
 
-			LogInfo ($"EnrichDiscoveryResultAliasAsync: controllerId='{controllerId}' waiting on connection gate.");
-			Stopwatch aliasGateWaitStopwatch = Stopwatch.StartNew ();
-			await connectionGate.WaitAsync (aliasTimeoutSource.Token).ConfigureAwait (false);
-			aliasGateWaitStopwatch.Stop ();
-			LogInfo ($"EnrichDiscoveryResultAliasAsync: controllerId='{controllerId}' acquired connection gate after {aliasGateWaitStopwatch.Elapsed.TotalMilliseconds:0} ms.");
+			// This alias fetch may race with the light entity's own connect for the same host, so it
+			// uses the explicit, opt-in shared-connection API (Discover.GetOrConnectSharedAsync) rather
+			// than the plain ConnectAsync (which, as of KasaClient 1.2.3, always returns an instance
+			// exclusively owned by the calling code and no longer shares across separate calls). Using
+			// the shared API here lets this fetch reuse the entity's already-connected device instead
+			// of opening a second, redundant TCP session to the same bulb.
+			Stopwatch aliasConnectStopwatch = Stopwatch.StartNew ();
+			KasaDevice? device = await Discover.GetOrConnectSharedAsync (configuration, updateState: true, cancellationToken: aliasTimeoutSource.Token).ConfigureAwait (false);
+			aliasConnectStopwatch.Stop ();
+			LogInfo ($"EnrichDiscoveryResultAliasAsync: controllerId='{controllerId}' Discover.GetOrConnectSharedAsync completed after {aliasConnectStopwatch.Elapsed.TotalMilliseconds:0} ms.");
+			bool deviceAdopted = false;
 			try
 				{
-				Stopwatch aliasConnectStopwatch = Stopwatch.StartNew ();
-				KasaDevice? device = await Discover.ConnectAsync (configuration, updateState: true, cancellationToken: aliasTimeoutSource.Token).ConfigureAwait (false);
-				aliasConnectStopwatch.Stop ();
-				LogInfo ($"EnrichDiscoveryResultAliasAsync: controllerId='{controllerId}' Discover.ConnectAsync completed after {aliasConnectStopwatch.Elapsed.TotalMilliseconds:0} ms.");
-				bool deviceAdopted = false;
-				try
-					{
 				string? resolvedAlias = !string.IsNullOrWhiteSpace (device.Alias)
 					? device.Alias
 					: device.SystemInfo?.Alias;
@@ -2340,11 +2393,6 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					{
 					device.Dispose ();
 					}
-				}
-			}
-			finally
-				{
-				_ = connectionGate.Release ();
 				}
 			}
 		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

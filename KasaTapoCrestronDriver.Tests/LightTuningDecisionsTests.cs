@@ -8,68 +8,26 @@ namespace KasaTapoCrestronDriver.Tests;
 /// Regression tests for the pure color-temperature/tuning-mode decision logic extracted from
 /// <c>KasaLightEntity</c> into <see cref="LightTuningDecisions"/>. These rules are the exact site of a
 /// prior regression involving the colorTemperature vs emulatedColorTemperature DTO shapes: a full-color
-/// (lightTunable-capable) bulb must always use the real, lightTunable-paired lightColorTemperature
-/// capability and must never fall back to the emulated shape, since emulated CT overwrites hue/saturation
-/// and would pin the bulb permanently into white mode.
+/// bulb must always expose the emulated color-temperature capability so Crestron Home has one stable
+/// LightTunable contract, independent of whether HSV or CT is currently active.
 /// </summary>
 [TestClass]
 public sealed class LightTuningDecisionsTests
 	{
 	[TestMethod]
-	public void SelectInitialColorTemperatureShape_FullColorBulb_UsesTunableCapability ()
+	public void ShouldUseEmulatedColorTemperature_FullColorBulb_ReturnsTrue ()
 		{
-		ColorTemperatureCapabilityShape shape = LightTuningDecisions.SelectInitialColorTemperatureShape (supportsFullColor: true);
-
-		Assert.AreEqual (ColorTemperatureCapabilityShape.TunableColorTemperature, shape);
-		}
-
-	[TestMethod]
-	public void SelectInitialColorTemperatureShape_TunableWhiteBulb_UsesPlainCapability ()
-		{
-		ColorTemperatureCapabilityShape shape = LightTuningDecisions.SelectInitialColorTemperatureShape (supportsFullColor: false);
-
-		Assert.AreEqual (ColorTemperatureCapabilityShape.PlainColorTemperature, shape);
-		}
-
-	[TestMethod]
-	public void ShouldUseEmulatedColorTemperature_FullColorBulbWithoutActiveColorTemperature_ReturnsTrue ()
-		{
-		bool result = LightTuningDecisions.ShouldUseEmulatedColorTemperature (supportsFullColor: true, hasActiveColorTemperature: false);
+		bool result = LightTuningDecisions.ShouldUseEmulatedColorTemperature (supportsFullColor: true);
 
 		Assert.IsTrue (result);
-		}
-
-	[TestMethod]
-	public void ShouldUseEmulatedColorTemperature_FullColorBulbWithActiveColorTemperature_ReturnsFalse ()
-		{
-		bool result = LightTuningDecisions.ShouldUseEmulatedColorTemperature (supportsFullColor: true, hasActiveColorTemperature: true);
-
-		Assert.IsFalse (result);
 		}
 
 	[TestMethod]
 	public void ShouldUseEmulatedColorTemperature_TunableWhiteBulb_NeverEmulated ()
 		{
 		// A TunableWhite (CT-only) bulb never supports full color, so it must never select the
-		// emulated shape regardless of whether color temperature is currently active.
-		Assert.IsFalse (LightTuningDecisions.ShouldUseEmulatedColorTemperature (supportsFullColor: false, hasActiveColorTemperature: false));
-		Assert.IsFalse (LightTuningDecisions.ShouldUseEmulatedColorTemperature (supportsFullColor: false, hasActiveColorTemperature: true));
-		}
-
-	[TestMethod]
-	public void ComputeTuningMode_ColorTemperatureUiModeActive_ReturnsWhite ()
-		{
-		LightTunableTuningMode mode = LightTuningDecisions.ComputeTuningMode (isColorTemperatureUiModeActive: true);
-
-		Assert.AreEqual (LightTunableTuningMode.White, mode);
-		}
-
-	[TestMethod]
-	public void ComputeTuningMode_ColorTemperatureUiModeInactive_ReturnsColor ()
-		{
-		LightTunableTuningMode mode = LightTuningDecisions.ComputeTuningMode (isColorTemperatureUiModeActive: false);
-
-		Assert.AreEqual (LightTunableTuningMode.Color, mode);
+		// emulated shape.
+		Assert.IsFalse (LightTuningDecisions.ShouldUseEmulatedColorTemperature (supportsFullColor: false));
 		}
 
 	[TestMethod]
@@ -107,6 +65,18 @@ public sealed class LightTuningDecisionsTests
 	public void RequestsColorMode_NeitherPresent_ReturnsFalse ()
 		{
 		Assert.IsFalse (LightTuningDecisions.RequestsColorMode (hue: null, saturation: null));
+		}
+
+	[TestMethod]
+	public void ToProcessorTuningMode_ColorTemperatureActive_ReturnsWhite ()
+		{
+		Assert.AreEqual (ProcessorLightTuningMode.White, LightTuningDecisions.ToProcessorTuningMode (colorTemperatureUiModeActive: true));
+		}
+
+	[TestMethod]
+	public void ToProcessorTuningMode_ColorActive_ReturnsColor ()
+		{
+		Assert.AreEqual (ProcessorLightTuningMode.Color, LightTuningDecisions.ToProcessorTuningMode (colorTemperatureUiModeActive: false));
 		}
 
 	[TestMethod]

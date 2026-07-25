@@ -9,6 +9,26 @@ internal interface IPlatformSharedConfiguration
 		get;
 		}
 
+	bool EnableProcessorBaselineWorkaround
+		{
+		get;
+		}
+
+	string ProcessorSshHost
+		{
+		get;
+		}
+
+	string ProcessorSshUserName
+		{
+		get;
+		}
+
+	string ProcessorSshPassword
+		{
+		get;
+		}
+
 	string Password
 		{
 		get;
@@ -51,7 +71,11 @@ internal readonly struct PlatformSharedConfigurationSnapshot
 		bool enableLightPolling,
 		TimeSpan lightPollInterval,
 		TimeSpan sensorPollInterval,
-		bool treatPlugsAsLights)
+		bool treatPlugsAsLights,
+		bool enableProcessorBaselineWorkaround,
+		string processorSshHost,
+		string processorSshUserName,
+		string processorSshPassword)
 		{
 		UserName = userName;
 		Password = password;
@@ -60,7 +84,16 @@ internal readonly struct PlatformSharedConfigurationSnapshot
 		LightPollInterval = lightPollInterval;
 		SensorPollInterval = sensorPollInterval;
 		TreatPlugsAsLights = treatPlugsAsLights;
+		EnableProcessorBaselineWorkaround = enableProcessorBaselineWorkaround;
+		ProcessorSshHost = processorSshHost;
+		ProcessorSshUserName = processorSshUserName;
+		ProcessorSshPassword = processorSshPassword;
 		}
+
+	public bool EnableProcessorBaselineWorkaround { get; }
+	public string ProcessorSshHost { get; }
+	public string ProcessorSshUserName { get; }
+	public string ProcessorSshPassword { get; }
 
 	public string UserName
 		{
@@ -108,6 +141,10 @@ internal sealed class PlatformSharedConfiguration : IPlatformSharedConfiguration
 	private TimeSpan _lightPollInterval = TimeSpan.FromSeconds (15);
 	private TimeSpan _sensorPollInterval = TimeSpan.FromSeconds (3);
 	private bool _treatPlugsAsLights;
+	private bool _enableProcessorBaselineWorkaround;
+	private string _processorSshHost = string.Empty;
+	private string _processorSshUserName = string.Empty;
+	private string _processorSshPassword = string.Empty;
 
 	public string UserName
 		{
@@ -119,6 +156,11 @@ internal sealed class PlatformSharedConfiguration : IPlatformSharedConfiguration
 				}
 			}
 		}
+
+	public bool EnableProcessorBaselineWorkaround { get { lock (_gate) { return _enableProcessorBaselineWorkaround; } } }
+	public string ProcessorSshHost { get { lock (_gate) { return _processorSshHost; } } }
+	public string ProcessorSshUserName { get { lock (_gate) { return _processorSshUserName; } } }
+	public string ProcessorSshPassword { get { lock (_gate) { return _processorSshPassword; } } }
 
 	public string Password
 		{
@@ -193,7 +235,11 @@ internal sealed class PlatformSharedConfiguration : IPlatformSharedConfiguration
 		bool enableLightPolling,
 		TimeSpan lightPollInterval,
 		TimeSpan sensorPollInterval,
-		bool treatPlugsAsLights)
+		bool treatPlugsAsLights,
+		bool enableProcessorBaselineWorkaround,
+		string processorSshHost,
+		string processorSshUserName,
+		string processorSshPassword)
 		{
 		lock (_gate)
 			{
@@ -204,6 +250,10 @@ internal sealed class PlatformSharedConfiguration : IPlatformSharedConfiguration
 			_lightPollInterval = lightPollInterval;
 			_sensorPollInterval = sensorPollInterval;
 			_treatPlugsAsLights = treatPlugsAsLights;
+		_enableProcessorBaselineWorkaround = enableProcessorBaselineWorkaround;
+		_processorSshHost = processorSshHost;
+		_processorSshUserName = processorSshUserName;
+		_processorSshPassword = processorSshPassword;
 			}
 		}
 
@@ -218,7 +268,11 @@ internal sealed class PlatformSharedConfiguration : IPlatformSharedConfiguration
 				_enableLightPolling,
 				_lightPollInterval,
 				_sensorPollInterval,
-				_treatPlugsAsLights);
+				_treatPlugsAsLights,
+				_enableProcessorBaselineWorkaround,
+				_processorSshHost,
+				_processorSshUserName,
+				_processorSshPassword);
 			}
 		}
 	}

@@ -42,7 +42,7 @@ function Remove-SftpDirectory {
 	Remove-SFTPItem -SessionId $SessionId -Path $Path -Force -ErrorAction SilentlyContinue
 }
 
-$sftpSession = New-SFTPSession -ComputerName $ProcessorIP -Credential $credential -AcceptKey -ErrorAction Stop
+$sftpSession = New-SFTPSession -ComputerName $ProcessorIP -Credential $credential -Force -ErrorAction Stop
 try {
 	if ($Clean) {
 		$stale = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $usedPath -ErrorAction SilentlyContinue |

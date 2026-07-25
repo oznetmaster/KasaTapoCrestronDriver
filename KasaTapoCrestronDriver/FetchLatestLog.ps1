@@ -44,7 +44,7 @@ function Get-RemoteLogMetadata {
 	return $remoteFile
 }
 
-$sftp = New-SFTPSession -ComputerName $ip -Credential $credential -AcceptKey -ErrorAction Stop
+$sftp = New-SFTPSession -ComputerName $ip -Credential $credential -Force -ErrorAction Stop
 try {
 	$remote = "/rm/SeawolfDiagnostic/$((Get-Date -Format 'yyyy-MM-dd')).log"
 	$baselineWriteTimeUtc = $null

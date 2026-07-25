@@ -161,36 +161,6 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		}
 
-	// Color-temperature capability for full-color bulbs that expose the lightTunable capability. It
-	// publishes the real lightColorTemperature:range/level (which lightTunable:setLevels references for
-	// its colorTemperature parameter) but deliberately declares NO lightColorTemperature:setLevel
-	// command: the individual set-command cannot coexist with lightTunable:setLevels. All CT changes
-	// for these bulbs arrive through lightTunable:setLevels instead.
-	private sealed class TunableColorTemperatureMembers : IColorTemperatureLevelHolder
-		{
-		private readonly KasaLightEntity _owner;
-		private long _lightColorTemperatureLevel;
-
-		public TunableColorTemperatureMembers (KasaLightEntity owner, DriverEntityValueRange range, long level)
-			{
-			_owner = owner;
-			LightColorTemperatureRange = range;
-			_lightColorTemperatureLevel = level;
-			}
-
-		string IColorTemperatureLevelHolder.LevelPropertyId => "lightColorTemperature:level";
-
-		[EntityProperty (Id = "lightColorTemperature:range", Units = "Kelvin")]
-		public DriverEntityValueRange LightColorTemperatureRange { get; set; } = new DriverEntityValueRange (0, 0, 1);
-
-		[EntityProperty (Id = "lightColorTemperature:level", RangeProperty = "lightColorTemperature:range", Units = "Kelvin")]
-		public long LightColorTemperatureLevel
-			{
-			get => _lightColorTemperatureLevel;
-			set => _owner.SetAndNotify ("lightColorTemperature:level", value, ref _lightColorTemperatureLevel);
-			}
-		}
-
 	private sealed class FullColorMembers
 		{
 		private readonly KasaLightEntity _owner;
@@ -231,81 +201,15 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		// no way to invoke a hue/saturation-only change and silently resolves the channel state entirely
 		// inside its own lighting engine, never calling into the driver at all.
 		[EntityCommand (Id = "lightColor:setHue")]
-		public void LightColorSetHue ([EntityParameter (RelativeRangeProperty = "lightColor:hueRange")] double hue)
+		public void LightColorSetHue ([EntityParameter (RelativeRangeProperty = "lightColor:hueRange")] double level)
 			{
-			_owner.LightColorSetHue (hue);
+			_owner.LightColorSetHue (level);
 			}
 
 		[EntityCommand (Id = "lightColor:setSaturation")]
-		public void LightColorSetSaturation ([EntityParameter (RelativeRangeProperty = "lightColor:saturationRange")] double saturation)
+		public void LightColorSetSaturation ([EntityParameter (RelativeRangeProperty = "lightColor:saturationRange")] double level)
 			{
-			_owner.LightColorSetSaturation (saturation);
-			}
-		}
-
-	// Registered for color-capable bulbs so the driver can report the authoritative Crestron Home
-	// tuning mode (color vs white/CCT) via lightTunable:mode. Crestron Home derives the color-picker
-	// vs color-temperature control from this property; when it is not published the UI infers the mode
-	// from the last color-temperature setLevel it injected on power-on and spuriously flips to white.
-	// Publishing lightTunable:mode explicitly keeps the UI in the mode the bulb is actually in.
-	private sealed class LightTunableMembers
-		{
-		private readonly KasaLightEntity _owner;
-		private LightTunableTuningMode _mode;
-
-		public LightTunableMembers (KasaLightEntity owner, LightTunableTuningMode mode)
-			{
-			_owner = owner;
-			_mode = mode;
-			}
-
-		[EntityProperty (Id = "lightTunable:mode")]
-		public LightTunableTuningMode LightTunableMode
-			{
-			get => _mode;
-			set => _owner.SetAndNotify ("lightTunable:mode", value, ref _mode);
-			}
-
-		// Every UI-settable entity property must have a paired command so Crestron Home has a way to
-		// tell the driver the user requested a change - there is no combination of the other settable
-		// properties (hue, saturation, colorTemperature) that unambiguously signals a bare color<->white
-		// mode toggle, since the UI can display color, colour-temperature and mode simultaneously (e.g.
-		// showing a stale color while in white mode with a CT of 0K). Without this command the driver has
-		// no way to distinguish "the user pressed the white/color toggle with no other change" from a
-		// tuning interaction, and must instead infer mode purely from lightTunable:setLevels parameters.
-		[EntityCommand (Id = "lightTunable:setMode")]
-		public void LightTunableSetMode (LightTunableTuningMode mode)
-			{
-			_owner.LightTunableSetMode (mode);
-			}
-
-		// The single tuning command for color-capable bulbs. The Crestron Home lightTunable capability
-		// requires all appearance changes (hue, saturation, brightness, colour temperature) to flow
-		// through this one command instead of the individual lightColor:*/lightColorTemperature:setLevel
-		// commands - the two styles cannot coexist. Per the SDK's lightTunable:setLevels specification
-		// every parameter (including intensity) is OptionalParameter = true: the UI only sends the
-		// parameters relevant to the current interaction and omits the rest, so the signature must
-		// declare every documented parameter as nullable/optional or the UI may treat the command
-		// definition as malformed and refuse to invoke it for interactions (e.g. a pure color-wheel
-		// drag) that legitimately omit intensity.
-		//
-		// We declare the REAL colorTemperature parameter (not emulatedColorTemperature): emulated CT
-		// always overwrites hue/saturation and "wins" whenever sent, which would pin the bulb into
-		// white mode permanently. Real colorTemperature sets the white point and Kasa/Tapo bulbs treat
-		// colorTemperature==0 as "colour/HSV mode" and colorTemperature>0 as "white/CT mode", so the
-		// mode follows the CT value naturally. Per the SDK docs colorTemperature and
-		// emulatedColorTemperature are mutually exclusive - a driver must never declare/support both -
-		// so emulatedColorTemperature is intentionally omitted here. warmDimMode is also omitted because
-		// these bulbs have no warm-dim concept.
-		[EntityCommand (Id = "lightTunable:setLevels")]
-		public void LightTunableSetLevels (
-			[EntityParameter (RelativeRangeProperty = "lightColor:hueRange", OptionalFeature = true, OptionalParameter = true)] double? hue,
-			[EntityParameter (RelativeRangeProperty = "lightColor:saturationRange", OptionalFeature = true, OptionalParameter = true)] double? saturation,
-			[EntityParameter (RelativeRangeProperty = "lightDimmer:levelRange", OptionalFeature = true, OptionalParameter = true)] double? intensity,
-			[EntityParameter (RangeProperty = "lightColorTemperature:range", OptionalFeature = true, OptionalParameter = true, Units = "Kelvin")] long? colorTemperature,
-			[EntityParameter (DefaultValue = 0, OptionalFeature = true, OptionalParameter = true, Units = "Milliseconds")] long transitionTime)
-			{
-			_owner.LightTunableSetLevels (hue, saturation, intensity, colorTemperature, transitionTime);
+			_owner.LightColorSetSaturation (level);
 			}
 		}
 
@@ -417,11 +321,16 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		}
 
 	// Dimmable bulbs (e.g. L530/L900) never register OnOffMembers - see ConfigureDynamicFeatures -
-	// because per the lightDimmer command documentation, such lights have no dedicated power on/off
-	// command at all: power state is derived purely from lightDimmer:level (0 = off, >0 = on).
-	// Without this fallback, LightIsOn would always read false for these bulbs, which previously
-	// caused IgnoreValueCommandWhileOff to believe the light was always off and force-republish/drop
-	// color commands even while genuinely on, producing a spurious color/white mode flip in the UI.
+	// because the Crestron lightDimmer reflected entity model has no dedicated power on/off member
+	// for such lights: the UI/entity layer infers power state purely from lightDimmer:level (0 =
+	// off, >0 = on). This is strictly a Crestron entity-model/UI convention, not a limitation of the
+	// physical device or of KasaDevice: the bulb (and KasaDevice's independent TurnLightOnAsync /
+	// TurnLightOffAsync / SetBrightnessAsync calls) tracks power and brightness as separate,
+	// independently-retained values - confirmed by device status showing State=Off with a real,
+	// nonzero Brightness. Without this fallback, LightIsOn would always read false for these bulbs,
+	// which previously caused IgnoreValueCommandWhileOff to believe the light was always off and
+	// force-republish/drop color commands even while genuinely on, producing a spurious color/white
+	// mode flip in the UI.
 	private bool LightIsOn
 		{
 		get => _registeredOnOffMembers is not null
@@ -453,17 +362,29 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private const int STARTUP_CONNECT_MAX_CONCURRENCY = 3;
 	private static readonly SemaphoreSlim StartupConnectConcurrencyGate = new (STARTUP_CONNECT_MAX_CONCURRENCY, STARTUP_CONNECT_MAX_CONCURRENCY);
 
-	private SemaphoreSlim _connectionGate { get; }
 	private object _sliderGate { get; } = new ();
 	private DriverControllerLogger _logger { get; }
 	private string _driverLogId { get; }
 	private Action<ManagedLightDescriptor>? _descriptorUpdated { get; }
 	private IPlatformSharedConfiguration _sharedConfiguration { get; }
+	private Func<string, ProcessorLightTuningMode, double, double, double, long, CancellationToken, Task>? _synchronizeProcessorBaselineAsync { get; }
 	private CancellationTokenSource _lifetimeCancellationSource { get; } = new ();
 
 	private ManagedLightDescriptor _descriptor { get; set; } = null!;
 	private DeviceConfiguration? _configuration { get; set; }
-	private KasaDevice? _connectedDevice { get; set; }
+	private KasaDevice? _connectedDevice;
+
+	// Crestron Home dispatches overlapping commands against the same connected device during
+	// power-on (e.g. lightDimmer:setLevel:on and lightEmulatedColorTemperature:setLevel both fire
+	// from the Load layer). KasaDevice already serializes these internally, so one can queue long
+	// enough for the OTHER'S own command timeout to elapse first. When that happens the failing
+	// operation must NOT dispose the device out from under the operation still actively using it -
+	// doing so previously produced an ObjectDisposedException cascade that left the light dead and
+	// the UI offline. This counter tracks how many commands currently hold a live reference to
+	// _connectedDevice's Phase 2 (post-connect) execution window, and _deviceAwaitingDisposal defers
+	// actual disposal of a superseded device until the last active operation against it completes.
+	private int _activeDeviceOperationCount;
+	private KasaDevice? _deviceAwaitingDisposal;
 	private Task? _pollingTask { get; set; }
 	private ManagedLightKind Kind { get; set; }
 	private string? ChildId { get; set; }
@@ -510,8 +431,6 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private static readonly Random StartupJitterRandom = new ();
 	private static readonly object StartupJitterRandomGate = new ();
 	private static readonly TimeSpan StartupJitterMax = TimeSpan.FromSeconds (3);
-	private static readonly TimeSpan LightTunableInitializationReassertDelay = TimeSpan.FromSeconds (1);
-	private static readonly TimeSpan LightTunableModeTransitionDelay = TimeSpan.FromMilliseconds (250);
 
 	private static TimeSpan GetStartupJitterDelay ()
 		{
@@ -533,30 +452,43 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private bool _deferredDeviceStatePending { get; set; }
 	private FullColorMembers? _registeredFullColorMembers { get; set; }
 	private IColorTemperatureLevelHolder? _registeredColorTemperatureMembers { get; set; }
-	private LightTunableMembers? _registeredLightTunableMembers { get; set; }
-	private DriverEntityValueRange? _colorTemperatureLevelRange { get; set; }
 
-	// While a color-capable bulb is in color/HSV mode, the device has no active color-temperature
-	// value at all (Kasa/Tapo devices report color_temp=0, which is not a valid Kelvin reading - it
-	// simply means "color temperature is not the active mode"). We still register the
-	// lightEmulatedColorTemperature capability with the device's real declared range (e.g.
-	// 2500-6500K) so the UI always sees an honest, device-accurate range. Because a level must be
-	// within that range, the color-mode placeholder level is the range minimum rather than 0 (which
-	// would be out of range). The mode itself is kept stable by dispatching power-on/off directly
+	// Immediately after InitializeConnectedStateAsync publishes the bulb's real (already on, at
+	// whatever brightness it actually was) state, Crestron Home's own Load layer has been observed
+	// (on-disk log evidence) to independently dispatch its own lightDimmer:setLevel commands against
+	// the freshly-(re)started entity - typically level=0 followed within a second or two by a
+	// near-zero level (0.01) - with no genuine user interaction involved. Forwarding those to the
+	// device as real commands was turning a bulb that was already on (at ANY real brightness,
+	// including already-low ones like 1%) off, and then back on at the wrong brightness (100%, since
+	// GetEffectiveOnLevel falls back to full brightness once LightDimmerLevel has been zeroed by the
+	// spurious "off"). This grace window lets LightDimmerSetLevel recognize and ignore that specific
+	// replay pattern (a near-zero level arriving very soon after we just published that the bulb was
+	// genuinely on) instead of applying it to the device - regardless of what the real on-level
+	// happened to be, since the replay is a Load-layer artifact unrelated to the bulb's actual level.
+	private static readonly TimeSpan StartupDimmerReplayGuardWindow = TimeSpan.FromSeconds (5);
+	private const double StartupDimmerReplaySuspectLevelThreshold = 0.02;
+	private DateTime? _startupDimmerReplayGuardUntilUtc { get; set; }
+	private double _startupDimmerReplayRealLevel { get; set; }
+
+	// While a color-capable bulb is in color/HSV mode, Kasa/Tapo devices report color_temp=0. This
+	// is the device's supported inactive-mode sentinel, so the emulated CT range includes zero and
+	// publishes zero in color mode. Retaining a Kelvin value in that state makes Crestron Home restore
+	// White mode after a color-mode power cycle. The mode itself is kept stable by dispatching power-on/off directly
 	// instead of through the deferred slider path - see LightDimmerSetLevel - not by the CT value.
 	private long _colorTemperatureRangeMinimum { get; set; }
 	private DimmableMembers? _registeredDimmableMembers { get; set; }
 	private OnOffMembers? _registeredOnOffMembers { get; set; }
 
-	// The emulated<->plain color-temperature capability swap (see ReconcileColorTemperatureCapability)
-	// must NOT run while a color-temperature slider interaction is in flight: unregistering the DTO
-	// mid-command deletes the very property the UI-issued command is bound to, which makes Crestron's
-	// LightTunable capability fail to retrieve 'lightEmulatedColorTemperature:range'/':level' and the
-	// command times out. When a swap is requested during an active interaction we record it here and
-	// apply it once the interaction has settled - see ProcessSliderCommandAsync.
-	private bool _pendingColorTemperatureReconcile { get; set; }
-	private bool _pendingColorTemperatureReconcileHasActive { get; set; }
-	private int? _pendingColorTemperatureReconcileLevel { get; set; }
+	// LightDimmerLevel is forced to 0 while the bulb is off (see ApplyStateCore) because, for
+	// dimmable-only bulbs, lightDimmer:level also doubles as the Crestron power-state signal (0 =
+	// off, >0 = on - see the DimmableMembers/LightIsOn comment above). Legacy KL130-style bulbs do,
+	// however, genuinely retain their own last brightness while off (confirmed via device status:
+	// State=Off, Brightness=50) - it is our own zeroing of LightDimmerLevel that previously lost
+	// track of it, not a device limitation. This field mirrors the device's last-reported brightness
+	// independent of power state so GetEffectiveOnLevel can restore it on the next power-on instead
+	// of falling back to full brightness.
+	private double? _lastKnownDeviceBrightnessLevel { get; set; }
+
 	private int _stopState;
 	private int _pollingGeneration;
 	private bool _disposed { get; set; }
@@ -565,17 +497,17 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		string controllerId,
 		ManagedLightDescriptor descriptor,
 		DeviceConfiguration configuration,
-		SemaphoreSlim connectionGate,
 			Action<ManagedLightDescriptor>? descriptorUpdated,
 		IPlatformSharedConfiguration sharedConfiguration,
+		Func<string, ProcessorLightTuningMode, double, double, double, long, CancellationToken, Task>? synchronizeProcessorBaselineAsync,
 		DriverImplementationResources resources,
 		DriverControllerLogger logger,
 		string driverLogId)
 		: base (controllerId)
 		{
-		_connectionGate = connectionGate ?? throw new ArgumentNullException (nameof (connectionGate));
 		_descriptorUpdated = descriptorUpdated;
 		_sharedConfiguration = sharedConfiguration;
+		_synchronizeProcessorBaselineAsync = synchronizeProcessorBaselineAsync;
 		_logger = logger;
 		_driverLogId = driverLogId;
 
@@ -602,27 +534,29 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			return false;
 			}
 
-		if (!_connectionGate.Wait (0))
+		// KasaClient's Discover now guarantees a single shared, persistent KasaDevice per
+		// Host:Port, so there is no longer a distinct-instance race to guard against here - the
+		// only remaining concern is not clobbering an already-attached device on this entity.
+		// A lock-free compare-and-set is sufficient in place of the old connection gate. Because
+		// Discover can hand back the SAME shared instance this entity already has attached (e.g.
+		// alias-enrichment resolving to the entity's own live device), treat that case as an
+		// already-satisfied attach rather than a failure - the caller (EnrichDiscoveryAliasCacheAsync)
+		// disposes the device on a false return, which must never happen to a device this entity is
+		// actively using.
+		KasaDevice? previousDevice = Interlocked.CompareExchange (ref _connectedDevice, device, null);
+		if (ReferenceEquals (previousDevice, device))
+			{
+			return true;
+			}
+
+		if (previousDevice is not null)
 			{
 			return false;
 			}
 
-		try
-			{
-			if (_connectedDevice is not null)
-				{
-				return false;
-				}
-
-			_connectedDevice = device;
-			UpdateDescriptorFromConnectedDevice (device);
-			LogInfo ($"Light entity '{ControllerId}' adopted connected device from context='{context}'.");
-			return true;
-			}
-		finally
-			{
-			_ = _connectionGate.Release ();
-			}
+		UpdateDescriptorFromConnectedDevice (device);
+		LogInfo ($"Light entity '{ControllerId}' adopted connected device from context='{context}'.");
+		return true;
 		}
 
 	[EntityProperty (Id = "onlineIndicator:isOnline")]
@@ -639,130 +573,9 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		private set => SetAndNotify ("readyIndicator:isReady", value, ref field);
 		}
 
-	// Consolidated tuning handler for the lightTunable:setLevels command (full-color bulbs). Command
-	// parameters are optional: the UI sends only the ones relevant to the current interaction and omits
-	// the rest (arriving here as null = "leave unchanged"). Which tuning parameter is present therefore
-	// signals the requested mode - colorTemperature present => white/CT mode, hue/saturation present =>
-	// colour/HSV mode. Intensity carries power: intensity==0 turns the light off, a positive value turns
-	// it on/sets brightness, and a null intensity means the UI omitted it (leave power/brightness
-	// unchanged). Because power arrives through this command, it must NEVER be routed through
-	// IgnoreValueCommandWhileOff (which would drop the power-on and leave the light dead).
-	private void LightTunableSetLevels (double? hue, double? saturation, double? intensity, long? colorTemperature, long transitionTime)
-		{
-		LogCommandInvocation (
-			"lightTunable:setLevels",
-			$"hue={(hue.HasValue ? hue.Value.ToString ("0.####") : "<none>")}, saturation={(saturation.HasValue ? saturation.Value.ToString ("0.####") : "<none>")}, intensity={(intensity.HasValue ? intensity.Value.ToString ("0.####") : "<none>")}, colorTemperature={(colorTemperature.HasValue ? colorTemperature.Value.ToString () : "<none>")}, transitionTime={transitionTime}");
-
-		// Intensity 0 means power off; handle it directly (never drop it while off).
-		if (intensity.HasValue && intensity.Value <= 0d)
-			{
-			CancelSliderInteraction ();
-			LightIsOn = false;
-			StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, false, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token), "lightTunable:setLevels:off");
-			return;
-			}
-
-		bool wasOff = !LightIsOn;
-		double effectiveLevel = intensity.HasValue ? Clamp01 (intensity.Value) : LightDimmerLevel;
-		LightIsOn = true;
-		LightDimmerLevel = effectiveLevel;
-
-		// A power-on (transition from off to on) must be treated as power only. The UI reasserts its
-		// retained tuning state (e.g. colorTemperature) alongside intensity on every on-press, but a
-		// bare on/off press is not a tuning interaction: routing it into a full colour-temperature/HSV
-		// re-dispatch fires several sequential device calls that can hang and time out (knocking the
-		// entity offline). Just power the device on and let it retain its own last state; the deferred
-		// reassert after refresh keeps the UI mode aligned.
-		if (wasOff)
-			{
-			StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, true, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token, reassertColorModeAfterRefresh: true), "lightTunable:setLevels:on");
-			return;
-			}
-
-		// Already on: this is a genuine tuning interaction. The tuning parameter the UI sent signals the
-		// requested mode - colorTemperature present => white/CT mode, hue or saturation present => colour
-		// mode. When neither is present (a brightness-only change) retain the current mode.
-		bool requestsWhite = LightTuningDecisions.RequestsWhiteMode (colorTemperature);
-		bool requestsColor = LightTuningDecisions.RequestsColorMode (hue, saturation);
-
-		if (requestsWhite)
-			{
-			long temperatureLevel = Math.Max (1L, colorTemperature!.Value);
-			_isColorTemperatureUiModeActive = true;
-			SetActiveColorTemperatureLevel (temperatureLevel);
-			PublishTuningMode ("lightTunable:setLevels");
-			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, effectiveLevel, 0d, 0d, temperatureLevel));
-			return;
-			}
-
-		if (requestsColor)
-			{
-			_isColorTemperatureUiModeActive = false;
-			double hueLevel = hue.HasValue ? Clamp01 (hue.Value) : LightColorHue;
-			double saturationLevel = saturation.HasValue ? Clamp01 (saturation.Value) : LightColorSaturation;
-			LightColorHue = hueLevel;
-			LightColorSaturation = saturationLevel;
-			PublishTuningMode ("lightTunable:setLevels");
-			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, effectiveLevel, hueLevel, saturationLevel, 0L));
-			return;
-			}
-
-		// Already on with no tuning parameter: a brightness-only change. Reassert the current mode so a
-		// brightness move does not let the UI's persisted mode state flip the tile.
-		if (IsCurrentColorTemperatureUiMode ())
-			{
-			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, effectiveLevel, 0d, 0d, GetActiveColorTemperatureLevel ()));
-			}
-		else
-			{
-			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, effectiveLevel, LightColorHue, LightColorSaturation, 0L));
-			}
-		}
-
-	// Explicit command paired with the lightTunable:mode property. This is the UI's only way to signal
-	// a bare color<->white toggle that is not accompanied by any hue/saturation/colorTemperature change
-	// (e.g. pressing the mode tile without moving a slider). It re-dispatches the bulb's currently
-	// retained state (hue/saturation for Color, the last active color-temperature level for White) so
-	// the device actually flips mode instead of only updating the published property.
-	private void LightTunableSetMode (LightTunableTuningMode mode)
-		{
-		LogCommandInvocation ("lightTunable:setMode", $"mode={mode}");
-
-		if (!LightIsOn)
-			{
-			// Nothing to dispatch to the device while off; just record the requested mode so it is
-			// honoured on the next power-on.
-			_isColorTemperatureUiModeActive = mode == LightTunableTuningMode.White;
-			PublishTuningMode ("lightTunable:setMode");
-			return;
-			}
-
-		bool requestsWhite = mode == LightTunableTuningMode.White;
-		if (requestsWhite == IsCurrentColorTemperatureUiMode ())
-			{
-			// Already in the requested mode; nothing to change.
-			return;
-			}
-
-		_isColorTemperatureUiModeActive = requestsWhite;
-		PublishTuningMode ("lightTunable:setMode");
-
-		if (requestsWhite)
-			{
-			long temperatureLevel = GetActiveColorTemperatureLevel ();
-			SetActiveColorTemperatureLevel (temperatureLevel);
-			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, LightDimmerLevel, 0d, 0d, temperatureLevel));
-			}
-		else
-			{
-			QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, LightDimmerLevel, LightColorHue, LightColorSaturation, 0L));
-			}
-		}
-
 	// Individual channel command for full-color bulbs, paired with the lightColor:hue property. Crestron
-	// Home's classic per-channel lighting engine (IRpcLights.SetTunableChannelState) invokes this rather
-	// than lightTunable:setLevels when the color wheel is dragged. Switches the bulb into color/HSV mode
-	// (matching the mode-derivation rule used by lightTunable:setLevels) and re-dispatches the full
+	// Home's classic per-channel lighting engine (IRpcLights.SetTunableChannelState) invokes this when
+	// the color wheel is dragged. Switches the bulb into color/HSV mode and re-dispatches the full
 	// hue/saturation/brightness state.
 	private void LightColorSetHue (double hue)
 		{
@@ -771,13 +584,39 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		if (!LightIsOn)
 			{
+			// While off, this can be a passive Crestron Home Load-layer replay of a stored hue value
+			// against a bulb that is genuinely in white/CT mode (mirroring the dimmer replay pattern
+			// documented elsewhere in this file), not a genuine user color selection. Only republish
+			// the hue itself here - do NOT touch or seed LightColorSaturation - so a bulb that is
+			// really in CT mode does not get force-flipped to showing a fabricated color in the UI
+			// before the user has actually interacted with the color controls.
+			_isColorTemperatureUiModeActive = false;
+			LightColorHue = hueLevel;
+			PublishCurrentLightModeProperties ("lightColor:setHue:whileOff");
 			return;
+			}
+
+		// While white/CT mode is active, ApplyStateCore intentionally leaves LightColorSaturation at
+		// its neutral placeholder (0) rather than the device's real retained value (see its remarks).
+		// If the user switches into color mode via the hue channel while that placeholder is still in
+		// effect, dispatching hue alongside saturation=0 produces a fully desaturated (i.e. white/gray)
+		// HSV command - the bulb never visibly changes color no matter what hue is selected, because
+		// zero saturation IS "no color". Seed a full-saturation default in that specific transition so
+		// the requested hue is actually visible; a genuine subsequent lightColor:setSaturation command
+		// from the UI still overrides this default normally. This only applies to a live, powered-on
+		// interaction (never the whileOff snapshot path above) so a passive replay while off cannot
+		// fabricate a color state for a bulb that is really in CT mode.
+		double saturationLevel = LightColorSaturation;
+		if (_isColorTemperatureUiModeActive && saturationLevel <= 0d)
+			{
+			saturationLevel = 1d;
 			}
 
 		_isColorTemperatureUiModeActive = false;
 		LightColorHue = hueLevel;
-		PublishTuningMode ("lightColor:setHue");
-		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, LightDimmerLevel, hueLevel, LightColorSaturation, 0L));
+		LightColorSaturation = saturationLevel;
+		SynchronizeProcessorBaseline (ProcessorLightTuningMode.Color, "lightColor:setHue");
+		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, LightDimmerLevel, hueLevel, saturationLevel, 0L));
 		}
 
 	private void LightColorSetSaturation (double saturation)
@@ -787,12 +626,15 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		if (!LightIsOn)
 			{
+			_isColorTemperatureUiModeActive = false;
+			LightColorSaturation = saturationLevel;
+			PublishCurrentLightModeProperties ("lightColor:setSaturation:whileOff");
 			return;
 			}
 
 		_isColorTemperatureUiModeActive = false;
 		LightColorSaturation = saturationLevel;
-		PublishTuningMode ("lightColor:setSaturation");
+		SynchronizeProcessorBaseline (ProcessorLightTuningMode.Color, "lightColor:setSaturation");
 		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, LightDimmerLevel, LightColorHue, saturationLevel, 0L));
 		}
 
@@ -800,16 +642,64 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		{
 		double relativeLevel = Clamp01 (level);
 		LogCommandInvocation ("lightDimmer:setLevel", $"level={relativeLevel:0.####}");
+
+		// Detect and ignore Crestron Home's own post-reload Load-layer replay of a stale remembered
+		// level (observed on-disk as level=0 then level=0.01 arriving within a couple of seconds of
+		// InitializeConnectedStateAsync publishing the bulb's real, already-on, higher-brightness
+		// state) - see the guard fields' remarks above. Applying these to the device was what dimmed
+		// an already-on/high-brightness bulb down to 1% immediately after every reload.
+		//
+		// Both halves of that replay pair must be caught here, not just the second: the
+		// lightDimmer:level slider representation cannot express "brightness while off" (level 0
+		// always means off in that UI/entity model - see the DimmableMembers/LightIsOn comment
+		// above), so the very fact that Crestron follows up level=0 with level=0.01 a moment later
+		// proves the first level=0 was never a real user power-off either - it is simply the first
+		// half of the same stale replay. Checking LightIsOn
+		// here (rather than requiring it to still be true) intentionally also matches immediately
+		// after we ourselves already let a replayed level=0 through and flipped LightIsOn to false, so
+		// this must key off the guard window rather than the current on/off state.
+		if (_startupDimmerReplayGuardUntilUtc is DateTime guardUntilUtc)
+			{
+			if (DateTime.UtcNow <= guardUntilUtc && relativeLevel <= StartupDimmerReplaySuspectLevelThreshold)
+				{
+				LogInfo ($"Light entity '{ControllerId}' ignoring suspected post-startup Load-layer dimmer replay: level={relativeLevel:0.####}, realLevel={_startupDimmerReplayRealLevel:0.####}.");
+				LightDimmerLevel = _startupDimmerReplayRealLevel;
+				LightIsOn = true;
+				PublishCurrentLightModeProperties ("lightDimmer:setLevel:ignoredStartupReplay", synchronizeProcessorBaseline: false);
+				return;
+				}
+
+			_startupDimmerReplayGuardUntilUtc = null;
+			}
+
+		// Capture whether the bulb was on BEFORE mutating LightDimmerLevel below: for dimmable-only
+		// bulbs (no OnOffMembers - see the LightIsOn getter's remarks), LightIsOn is derived live
+		// from LightDimmerLevel itself (> 0 = on), so assigning LightDimmerLevel first would make
+		// LightIsOn already read true by the time the off->on transition is checked below, causing
+		// a genuine level=1 power-on request to be misidentified as "already on" and fall through
+		// to the brightness dispatch path, which then explicitly sets the device to 100% brightness
+		// instead of preserving whatever brightness the bulb already retained while off.
+		bool wasOnBeforeThisCommand = LightIsOn;
 		LightDimmerLevel = relativeLevel;
 
 		// For dimmable bulbs the extreme dimmer levels are the power commands: level 0 = power off,
-		// level 1 = power on. These must NEVER be routed through the debounced slider path - even if
-		// they arrive during an in-flight slider drag - because that path marks the subsequent
-		// device-driven state re-apply as deferred. During power-on Crestron's own Load layer drives
-		// the load's ColorTemp channel (SetMultipleChannels ... ColorTemp), and deferring our re-apply
-		// lets that Load-layer drive be the last word, flipping a color-mode bulb to white/CCT in the
-		// UI. Cancel any pending slider interaction and dispatch the extremes directly as power
-		// commands (identical to light:on / light:off), so the settled device state is applied
+		// level 1 = power on - but only genuinely when that represents an actual off->on transition.
+		// If the bulb is already on and the user simply drags the slider to full brightness, level 1
+		// is a real 100% brightness request, not a power command: routing it through ExecutePowerAsync
+		// (which only calls TurnLightOnAsync and never touches brightness) leaves the device at
+		// whatever brightness it already had, and the follow-up refreshAfterCommand then reads back
+		// that unchanged (lower) brightness and republishes it - visibly "retreating" the slider/bulb
+		// right after the drag reached 100%. So the power-on shortcut below only applies while the
+		// bulb is confirmed off; otherwise level 1 falls through to the normal slider/brightness
+		// dispatch path so the device is actually set to full brightness.
+		//
+		// These must NEVER be routed through the debounced slider path when they really are power
+		// commands - even if they arrive during an in-flight slider drag - because that path marks the
+		// subsequent device-driven state re-apply as deferred. During power-on Crestron's own Load
+		// layer drives the load's ColorTemp channel (SetMultipleChannels ... ColorTemp), and deferring
+		// our re-apply lets that Load-layer drive be the last word, flipping a color-mode bulb to
+		// white/CCT in the UI. Cancel any pending slider interaction and dispatch the extremes directly
+		// as power commands (identical to light:on / light:off), so the settled device state is applied
 		// immediately and authoritatively.
 		if (relativeLevel <= 0d)
 			{
@@ -819,7 +709,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			return;
 			}
 
-		if (relativeLevel >= 1d)
+		if (relativeLevel >= 1d && !wasOnBeforeThisCommand)
 			{
 			CancelSliderInteraction ();
 			LightIsOn = true;
@@ -854,42 +744,71 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			? $"msSincePowerOn={(DateTime.UtcNow - powerOnUtc).TotalMilliseconds:0}"
 			: "msSincePowerOn=<none>";
 		LogCommandInvocation (commandId, $"level={level}, uiModeWasActive={_isColorTemperatureUiModeActive}, {powerOnCorrelation}");
-		if (IgnoreValueCommandWhileOff (commandId))
+		long temperatureLevel = Math.Max (1L, level);
+		if (!LightIsOn)
 			{
+			// The UI sends this immediately before its dimmer power-on command, as an artifact of
+			// Crestron's own Load layer driving the load's ColorTemp channel - not a genuine
+			// user-requested mode change. The bulb's actual last-known state may still be full
+			// color, so do NOT synchronize the processor baseline to White here: doing so caches a
+			// White baseline before the device is ever confirmed to have changed mode, which then
+			// causes the baseline coordinator to see a false "already matches" on the subsequent
+			// power-on and skip the real color-mode correction.
+			//
+			// Likewise, do NOT flip _isColorTemperatureUiModeActive (and therefore do NOT publish
+			// this as an active white-mode UI property) when the bulb's last confirmed real state
+			// (from ApplyStateCore, reflecting the actual device) is genuinely in color mode. This
+			// artifact fires unconditionally regardless of the bulb's real mode, so blindly trusting
+			// it here would incorrectly flip the UI to White for a bulb that is really in Color mode
+			// - the subsequent ExecuteDeviceCommandAsync.ReassertColorModeAfterPowerOn already
+			// restores the real mode once the device is queried after power-on, so there is nothing
+			// to gain by asserting White mode from this pre-power-on artifact alone. Only cache the
+			// UI-facing level for later use; the mode/baseline is settled once the light is actually
+			// turned on and its real state is read back.
+			//
+			// Crucially, do NOT call SetActiveColorTemperatureLevel here when confirmed color mode is
+			// active either: that call directly sets the lightEmulatedColorTemperature:level property
+			// via SetAndNotify, which pushes the new Kelvin value straight to the Crestron UI and is
+			// enough on its own to flip the on-screen slider to White/CCT - independent of whatever
+			// this driver's own _isColorTemperatureUiModeActive flag says afterward. Skipping the
+			// level update entirely (in addition to skipping the mode flag and publish) is required
+			// to fully suppress this artifact while the bulb is confirmed to be in color mode.
+			if (_isColorTemperatureUiModeActive)
+				{
+				SetActiveColorTemperatureLevel (temperatureLevel);
+				PublishCurrentLightModeProperties ($"{commandId}:whileOff", synchronizeProcessorBaseline: false);
+				}
+			else
+				{
+				// Crestron's own Load layer optimistically renders the UI slider as White the moment
+				// it dispatches this command - BEFORE this driver even runs - regardless of anything
+				// this driver publishes or withholds afterward. Silently ignoring the artifact (i.e.
+				// not publishing anything) is therefore not enough to keep the UI showing Color mode:
+				// the Load layer has already flipped the on-screen slider on its own. The only way to
+				// visibly correct the UI is to immediately re-publish the real hue/saturation values
+				// right now, actively overriding the Load layer's optimistic White render, rather than
+				// waiting for ExecuteDeviceCommandAsync.ReassertColorModeAfterPowerOn to do it later
+				// once the paired power-on command completes.
+				//
+				// Republishing lightColor:hue/saturation alone is NOT enough: those are just entity-model
+				// properties on our own driver's side. The Load layer's actual on-screen mode is driven by
+				// a separate, console-level TuningMode on the processor itself (see
+				// ProcessorBaselineCoordinator), which this artifact's dispatch of
+				// lightEmulatedColorTemperature:setLevel changes directly, bypassing our property
+				// publishing entirely. So the console-level baseline must also be forced back to Color
+				// here, or the Load layer keeps rendering White regardless of what we publish.
+				LogInfo ($"Light entity '{ControllerId}' countering pre-power-on lightEmulatedColorTemperature artifact while confirmed color mode is active: level={temperatureLevel}.");
+				PublishActiveColorModeProperties ($"{commandId}:whileOff.CounterColorTemperatureArtifact");
+				SynchronizeProcessorBaseline (ProcessorLightTuningMode.Color, $"{commandId}:whileOff.CounterColorTemperatureArtifact");
+				}
 			return;
 			}
 
-		long temperatureLevel = Math.Max (1L, level);
 		_isColorTemperatureUiModeActive = true;
 		SetActiveColorTemperatureLevel (temperatureLevel);
+		SynchronizeProcessorBaseline (ProcessorLightTuningMode.White, commandId);
 
-		// Publish the authoritative white/CCT tuning mode so the UI tile follows the mode switch the
-		// user just made through the color-temperature slider.
-		PublishTuningMode ("lightColorTemperature:setLevel");
-
-		// Queue the slider command first so the interaction is marked active before we request the
-		// capability swap. That guarantees ReconcileColorTemperatureCapability defers the emulated->plain
-		// DTO swap (rather than unregistering the property this very command is bound to) until the
-		// interaction settles; ProcessSliderCommandAsync applies the deferred swap afterward.
 		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, GetEffectiveOnLevel (), 0d, 0d, temperatureLevel));
-		ReconcileColorTemperatureCapability (hasActiveColorTemperature: true, colorTemperature: (int)temperatureLevel);
-		}
-
-	private bool IgnoreValueCommandWhileOff (string commandId)
-		{
-		if (LightIsOn)
-			{
-			return false;
-			}
-
-		LogInfo ($"Light entity '{ControllerId}' ignoring value command '{commandId}' while off; waiting for dimmer power-on command.");
-
-		// The UI (e.g. a slider) may optimistically switch its displayed mode before the command
-		// result is known. Since this command is being dropped rather than applied, republish the
-		// current authoritative mode/property state so the UI reverts to reality instead of being
-		// left showing a mode the device never actually entered.
-		PublishCurrentLightModeProperties ($"IgnoreValueCommandWhileOff:{commandId}");
-		return true;
 		}
 
 	private void QueueSliderCommand (DesiredLightCommand command)
@@ -1034,7 +953,6 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 				{
 				try
 					{
-					TryApplyDeferredColorTemperatureReconcile ("ProcessSliderCommandAsync");
 					TryApplyDeferredDeviceStateAfterSliderInteraction ("ProcessSliderCommandAsync");
 					}
 				catch (Exception ex)
@@ -1348,31 +1266,81 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		Interlocked.Exchange (ref _stopState, 0);
 		int generation = Interlocked.Increment (ref _pollingGeneration);
 
-		_pollingTask = _sharedConfiguration.EnableLightPolling
-			? RunPollingCycleAsync (generation)
-			: null;
+		// Even when full state polling is disabled (so external/out-of-band changes to the
+		// device are intentionally not detected), a light that has gone offline while in use
+		// (e.g. the device was unplugged/lost power/lost Wi-Fi) still needs some way to recover
+		// automatically once it comes back, rather than staying offline forever until a user
+		// happens to issue another command against it. RunPollingCycleAsync always runs on this
+		// same timer, but only performs a reconnect-and-refresh attempt when EnableLightPolling
+		// is off if the entity is currently offline; it does nothing else in that case, so no
+		// external state changes are surfaced while the device remains reachable.
+		_pollingTask = RunPollingCycleAsync (generation);
 		LogInfo ($"Light entity '{ControllerId}' RestartPolling: enabled={_sharedConfiguration.EnableLightPolling}, generation={generation}, intervalMs={_sharedConfiguration.LightPollInterval.TotalMilliseconds:0}.");
 		}
 
-	private void ResetConnectionState ()
+	private void ResetConnectionState (bool flipIndicatorsOffline = true)
 		{
 		KasaDevice? staleDevice = _connectedDevice;
-		LogInfo ($"Light entity '{ControllerId}' ResetConnectionState: hadConnectedDevice={staleDevice is not null}.");
+		LogInfo ($"Light entity '{ControllerId}' ResetConnectionState: hadConnectedDevice={staleDevice is not null}, flipIndicatorsOffline={flipIndicatorsOffline}.");
 		_connectedDevice = null;
 		_pendingStartupSnapshotAfterConnectedState = false;
-		OnlineIndicatorIsOnline = false;
-		ReadyIndicatorIsReady = false;
 
-		if (staleDevice is not null)
+		// A single failed attempt that will be immediately retried (see ExecuteDeviceCommandAsync)
+		// should not visibly flap the UI to offline - a transient one-off TCP connect hiccup (e.g.
+		// a dropped SYN during the device's own state transition) can resolve itself on the very
+		// next attempt a second later. Only surface offline/not-ready once retries are exhausted.
+		if (flipIndicatorsOffline)
 			{
-			try
-				{
-				staleDevice.Dispose ();
-				}
-			catch (Exception ex)
-				{
-				_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' failed to dispose stale connected device: {ex}");
-				}
+			OnlineIndicatorIsOnline = false;
+			ReadyIndicatorIsReady = false;
+			}
+
+		if (staleDevice is null)
+			{
+			return;
+			}
+
+		// Do not dispose while another in-flight command is still actively executing against this
+		// same device instance (see _activeDeviceOperationCount remarks above) - disposing here would
+		// pull the transport/semaphore out from under that other operation's still-running command.
+		// Defer disposal until the last active operation against this device finishes.
+		if (Volatile.Read (ref _activeDeviceOperationCount) > 0)
+			{
+			LogInfo ($"Light entity '{ControllerId}' ResetConnectionState: deferring disposal, {_activeDeviceOperationCount} operation(s) still active on the stale device.");
+			_deviceAwaitingDisposal = staleDevice;
+			return;
+			}
+
+		try
+			{
+			staleDevice.Dispose ();
+			}
+		catch (Exception ex)
+			{
+			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' failed to dispose stale connected device: {ex}");
+			}
+		}
+
+	private void ReleaseDeviceOperation ()
+		{
+		if (Interlocked.Decrement (ref _activeDeviceOperationCount) > 0)
+			{
+			return;
+			}
+
+		KasaDevice? deferredDevice = Interlocked.Exchange (ref _deviceAwaitingDisposal, null);
+		if (deferredDevice is null)
+			{
+			return;
+			}
+
+		try
+			{
+			deferredDevice.Dispose ();
+			}
+		catch (Exception ex)
+			{
+			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' failed to dispose deferred stale connected device: {ex}");
 			}
 		}
 
@@ -1459,19 +1427,43 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 			if (_disposed
 				|| Volatile.Read (ref _stopState) != 0
-				|| generation != Volatile.Read (ref _pollingGeneration)
-				|| !_sharedConfiguration.EnableLightPolling)
+				|| generation != Volatile.Read (ref _pollingGeneration))
 				{
 				return;
 				}
 
-			await RefreshAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
-			PublishStateSnapshot ();
+			if (_sharedConfiguration.EnableLightPolling)
+				{
+				await RefreshAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
+				PublishStateSnapshot ();
+				}
+			else if (!OnlineIndicatorIsOnline)
+				{
+				// Polling is disabled (no external/out-of-band device-state detection), but an
+				// offline device still needs a periodic chance to recover automatically - e.g. it
+				// was unplugged and has since been plugged back in - rather than staying offline
+				// indefinitely until a user happens to issue another command against it. Attempt
+				// a lightweight reconnect-and-refresh here; ReconnectAndRefreshAsync already
+				// restores OnlineIndicatorIsOnline/ReadyIndicatorIsReady and republishes the
+				// current device state on success.
+				try
+					{
+					await RefreshAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
+					PublishStateSnapshot ();
+					}
+				catch (OperationCanceledException)
+					{
+					throw;
+					}
+				catch (Exception ex)
+					{
+					LogInfo ($"Light entity '{ControllerId}' offline-recovery attempt failed; will retry on the next cycle: {ex.Message}");
+					}
+				}
 
 			if (_disposed
 				|| Volatile.Read (ref _stopState) != 0
-				|| generation != Volatile.Read (ref _pollingGeneration)
-				|| !_sharedConfiguration.EnableLightPolling)
+				|| generation != Volatile.Read (ref _pollingGeneration))
 				{
 				return;
 				}
@@ -1532,22 +1524,32 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		OnlineIndicatorIsOnline = true;
 		ReadyIndicatorIsReady = true;
-		PublishCurrentLightModeProperties ("InitializeConnectedStateAsync.AfterOnlineReady");
+		// Synchronize the processor baseline to the light's actual reported mode here, the same way
+		// ApplyState above already reflects that real mode into the UI properties. Without this, the
+		// baseline coordinator's cached tuning mode can go stale/out-of-sync with the bulb's true
+		// state across reconnects/reloads (e.g. left over from a prior session), so a later spurious
+		// pre-power-on mode command is wrongly treated as "already matches" and the real correction
+		// is skipped.
+		PublishCurrentLightModeProperties ("InitializeConnectedStateAsync.AfterOnlineReady", synchronizeProcessorBaseline: true);
+
+		// Arm the startup dimmer-replay guard (see remarks on the fields above) whenever the bulb is
+		// actually reported on, regardless of its real brightness level - even a genuinely low level
+		// like 1% must be protected, since the replay pattern is a Load-layer artifact unrelated to
+		// what the real level happens to be. If Crestron Home's Load layer replays a stale near-zero
+		// level against this entity within the guard window, LightDimmerSetLevel will detect and
+		// ignore it instead of turning the real bulb off and later back on at the wrong brightness.
+		if (LightIsOn)
+			{
+			_startupDimmerReplayRealLevel = LightDimmerLevel;
+			_startupDimmerReplayGuardUntilUtc = DateTime.UtcNow + StartupDimmerReplayGuardWindow;
+			}
+		else
+			{
+			_startupDimmerReplayGuardUntilUtc = null;
+			}
+
 		_pendingStartupSnapshotAfterConnectedState = true;
 		TryPublishDeferredStartupSnapshot ("InitializeConnectedStateAsync");
-		if (_registeredLightTunableMembers is not null)
-			{
-			StartBackgroundOperation (ReassertInitialTuningModeAsync, "lightTunable:initial-mode-reassert");
-			}
-		}
-
-	private async Task ReassertInitialTuningModeAsync ()
-		{
-		await Task.Delay (LightTunableInitializationReassertDelay, _lifetimeCancellationSource.Token).ConfigureAwait (false);
-		_registeredLightTunableMembers!.LightTunableMode = LightTunableTuningMode.White;
-		PublishProperty ("lightTunable:mode", CreateValueForObject (LightTunableTuningMode.White), "ReassertInitialTuningModeAsync.TransitionToWhite");
-		await Task.Delay (LightTunableModeTransitionDelay, _lifetimeCancellationSource.Token).ConfigureAwait (false);
-		PublishTuningMode ("ReassertInitialTuningModeAsync.TransitionToAuthoritativeMode");
 		}
 
 	private async Task InitializeStartupAsync ()
@@ -1621,42 +1623,54 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 
 		KasaDevice? existingDevice = _connectedDevice;
-		if (existingDevice is not null)
+		// This entity connects via Discover.GetOrConnectSharedAsync (see
+		// ConnectFromConfigurationAsync), which shares a single, long-lived KasaDevice per
+		// Host:Port across all coordinated callers (this entity's command path and
+		// PlatformDriver's alias-enrichment path). Some other caller of that same shared device
+		// - e.g. alias-enrichment on a different controller, or another entity that resolved to
+		// the same host - can dispose it independently of anything this entity did. Unlike a
+		// purely local cache, this entity's own ResetConnectionState is not the only path that
+		// can leave _connectedDevice stale, so IsDisposed must be checked here too before
+		// reusing it, exactly like Discover's own shared-instance cache does for its entries.
+		if (existingDevice is not null && !existingDevice.IsDisposed)
 			{
 			return existingDevice;
+			}
+
+		if (existingDevice is not null && existingDevice.IsDisposed)
+			{
+			LogInfo ($"Light entity '{ControllerId}' EnsureConnectedAsync detected a disposed shared device instance; reconnecting.");
+			_ = Interlocked.CompareExchange (ref _connectedDevice, null, existingDevice);
 			}
 
 		cancellationToken.ThrowIfCancellationRequested ();
 		_lifetimeCancellationSource.Token.ThrowIfCancellationRequested ();
 
-		using var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken, _lifetimeCancellationSource.Token);
-		LogInfo ($"Light entity '{ControllerId}' EnsureConnectedAsync waiting on connection gate.");
-		Stopwatch gateWaitStopwatch = Stopwatch.StartNew ();
-		await _connectionGate.WaitAsync (linkedCancellationSource.Token).ConfigureAwait (false);
-		gateWaitStopwatch.Stop ();
-		LogInfo ($"Light entity '{ControllerId}' EnsureConnectedAsync acquired connection gate after {gateWaitStopwatch.Elapsed.TotalMilliseconds:0} ms.");
+		// KasaClient's Discover now owns the single-shared-device-per-Host:Port guarantee (it
+		// coalesces concurrent connects for the same key and returns the same live KasaDevice
+		// instance to every caller), so there is no longer a need to serialize connect attempts
+		// behind a local gate here. If two commands race past the null check above, both calls
+		// below resolve to the very same KasaDevice instance from Discover, so the final
+		// assignment to _connectedDevice is idempotent regardless of which caller wins the race.
+		using var connectCancellationSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken, _lifetimeCancellationSource.Token);
+		connectCancellationSource.CancelAfter (DeviceConnectTimeout);
+		Stopwatch connectStopwatch = Stopwatch.StartNew ();
+		KasaDevice connectedDevice;
 		try
 			{
-			existingDevice = _connectedDevice;
-			if (existingDevice is not null)
-				{
-				return existingDevice;
-				}
-
-			Stopwatch connectStopwatch = Stopwatch.StartNew ();
-			KasaDevice connectedDevice = await ConnectFromConfigurationAsync (updateState: true, linkedCancellationSource.Token).ConfigureAwait (false);
-			connectStopwatch.Stop ();
-
-			LogInfo ($"Light entity '{ControllerId}' connect succeeded after {connectStopwatch.Elapsed.TotalMilliseconds:0} ms: deviceAlias='{connectedDevice.Alias ?? "<null>"}', systemInfoAlias='{connectedDevice.SystemInfo?.Alias ?? "<null>"}', model='{connectedDevice.SystemInfo?.Model ?? "<null>"}', deviceId='{connectedDevice.SystemInfo?.DeviceId ?? "<null>"}'.");
-
-			_connectedDevice = connectedDevice;
-			UpdateDescriptorFromConnectedDevice (connectedDevice);
-			return connectedDevice;
+			connectedDevice = await ConnectFromConfigurationAsync (updateState: true, connectCancellationSource.Token).ConfigureAwait (false);
 			}
-		finally
+		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && connectCancellationSource.IsCancellationRequested)
 			{
-			_ = _connectionGate.Release ();
+			throw new TimeoutException ($"Light entity '{ControllerId}' connect timed out after {DeviceConnectTimeout.TotalSeconds:0} seconds.");
 			}
+		connectStopwatch.Stop ();
+
+		LogInfo ($"Light entity '{ControllerId}' connect succeeded after {connectStopwatch.Elapsed.TotalMilliseconds:0} ms: deviceAlias='{connectedDevice.Alias ?? "<null>"}', systemInfoAlias='{connectedDevice.SystemInfo?.Alias ?? "<null>"}', model='{connectedDevice.SystemInfo?.Model ?? "<null>"}', deviceId='{connectedDevice.SystemInfo?.DeviceId ?? "<null>"}'.");
+
+		_connectedDevice = connectedDevice;
+		UpdateDescriptorFromConnectedDevice (connectedDevice);
+		return connectedDevice;
 		}
 
 	private async Task<KasaDevice> ConnectFromConfigurationAsync (bool updateState, CancellationToken cancellationToken)
@@ -1682,7 +1696,13 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			? new DeviceConfiguration (configuration.Host, configuration.Port, configuration.Credentials, configuration.ConnectionOptions, StartupConnectTimeout)
 			: configuration;
 
-		return await Discover.ConnectAsync (
+		// Use the explicit, opt-in shared-connection API: this entity's own command path and
+		// PlatformDriver's alias-enrichment path are coordinated call sites that both target the
+		// same device identity (host/port) and are expected to reuse one live connection rather
+		// than each dialing their own, since some devices reject or reset additional concurrent
+		// sessions. Discover.ConnectAsync (plain) no longer shares instances across separate
+		// calls as of KasaClient 1.2.3.
+		return await Discover.GetOrConnectSharedAsync (
 			startupConfiguration,
 			updateState,
 			cancellationToken: cancellationToken).ConfigureAwait (false);
@@ -1777,29 +1797,24 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			_isColorTemperatureUiModeActive = hasActiveColorTemperature;
 			_colorTemperatureRangeMinimum = (long)TryGetColorTemperatureMinimum (device.Features);
 
-			// Full-color bulbs expose the lightTunable capability, so their colour temperature always
-			// uses the real lightColorTemperature capability (the colorTemperature parameter of
-			// lightTunable:setLevels references lightColorTemperature:range) and never the emulated
-			// style - emulated CT would overwrite hue/saturation and pin the bulb into white mode.
-			// The UI mode is signalled explicitly via lightTunable:mode, so no emulated<->plain
-			// capability swap is needed. TunableWhite bulbs (CT only, no hue/saturation) keep the plain
-			// lightColorTemperature capability together with its individual setLevel command.
-			bool useTunableCapability = LightTuningDecisions.SelectInitialColorTemperatureShape (_supportsFullColor) == ColorTemperatureCapabilityShape.TunableColorTemperature;
-
 			// In color mode there is no active color-temperature value to report; register the device's
-			// real declared range (so the UI sees an honest range) and use the range minimum as an
-			// in-range placeholder level rather than an out-of-range 0.
+			// declared Kelvin range and retain an in-range placeholder level for the reflected member.
+			// The processor UI must not receive this value while HSV mode is active.
+			bool useEmulatedColorTemperature = LightTuningDecisions.ShouldUseEmulatedColorTemperature (_supportsFullColor);
 			long initialColorTemperatureLevel = device.LightState?.ColorTemperature is int activeCt && activeCt > 0
 				? activeCt
 				: _colorTemperatureRangeMinimum;
 			DriverEntityValueRange initialColorTemperatureMemberRange = lightColorTemperatureRange!;
 
-			_colorTemperatureLevelRange = lightColorTemperatureRange;
-			_registeredColorTemperatureMembers = useTunableCapability
-				? new TunableColorTemperatureMembers (this, initialColorTemperatureMemberRange, initialColorTemperatureLevel)
+			// Capability identity is fixed for an entity's lifetime. A color-capable bulb always exposes
+			// lightEmulatedColorTemperature, whether CT or HSV is presently active; a CT-only bulb always
+			// exposes lightColorTemperature. Changing the reflected property ID after Home binds its built-in
+			// LightTunable UI to it leaves that UI with a stale command/property contract.
+			_registeredColorTemperatureMembers = useEmulatedColorTemperature
+				? new EmulatedColorTemperatureMembers (this, initialColorTemperatureMemberRange, initialColorTemperatureLevel)
 				: new ColorTemperatureMembers (this, initialColorTemperatureMemberRange, initialColorTemperatureLevel);
 			RegisterObjectWithAttributes (_registeredColorTemperatureMembers);
-			LogInfo ($"Light entity '{ControllerId}' registered color-temperature dynamic members: useTunableCapability={useTunableCapability}, initialColorTemperatureLevel={initialColorTemperatureLevel}.");
+			LogInfo ($"Light entity '{ControllerId}' registered color-temperature dynamic members: useEmulatedColorTemperature={useEmulatedColorTemperature}, initialColorTemperatureLevel={initialColorTemperatureLevel}.");
 			}
 
 		if (!_supportsFullColor)
@@ -1808,119 +1823,29 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		else
 			{
-			// The device reports real hue/saturation values regardless of whether color temperature is
-			// currently active (color temperature only overrides the displayed color while active; it
-			// does not clear or alter the stored hue/saturation), so always seed the initial members
-			// from those real values.
+			// The device retains real hue/saturation values internally regardless of whether color
+			// temperature is currently active (color temperature only overrides the displayed color
+			// while active; it does not clear or alter the stored hue/saturation). However, just like
+			// the color-temperature level uses an in-range placeholder while color mode is active (see
+			// above), the initial lightColor:hue/saturation members must not surface the real retained
+			// values while white/CT mode is active - Crestron Home infers the light is in color mode
+			// purely from these properties being non-placeholder, regardless of publish order. Seed
+			// them from the real values only while color mode is genuinely active; otherwise use
+			// neutral placeholders (0).
 			int? hue = device.LightState?.Hue ?? device.LightState?.Hsv?.Hue;
 			int? saturation = device.LightState?.Saturation ?? device.LightState?.Hsv?.Saturation;
-			double initialHue = hue.HasValue ? Clamp01 (hue.Value / HUE_MAX_DEGREES) : 0d;
-			double initialSaturation = saturation.HasValue ? Clamp01 (saturation.Value / 100d) : 0d;
+			bool seedRealHueSaturation = !_isColorTemperatureUiModeActive;
+			double initialHue = seedRealHueSaturation && hue.HasValue ? Clamp01 (hue.Value / HUE_MAX_DEGREES) : 0d;
+			double initialSaturation = seedRealHueSaturation && saturation.HasValue ? Clamp01 (saturation.Value / 100d) : 0d;
 
 			_registeredFullColorMembers = new FullColorMembers (this, initialHue, initialSaturation);
 			RegisterObjectWithAttributes (_registeredFullColorMembers);
-			LogInfo ($"Light entity '{ControllerId}' registered full-color dynamic members: initialHue={initialHue:0.####}, initialSaturation={initialSaturation:0.####}.");
-
-			// Color-capable bulbs also expose the authoritative Crestron Home tuning mode so the UI's
-			// color-vs-white tile is driven by an explicit mode signal rather than inferred from the
-			// emulated color-temperature setLevel the processor injects on power-on.
-			LightTunableTuningMode initialTuningMode = ComputeTuningMode ();
-			_registeredLightTunableMembers = new LightTunableMembers (this, initialTuningMode);
-			RegisterObjectWithAttributes (_registeredLightTunableMembers);
-			LogInfo ($"Light entity '{ControllerId}' registered lightTunable dynamic members: initialMode={initialTuningMode}.");
+			LogInfo ($"Light entity '{ControllerId}' registered full-color dynamic members: initialHue={initialHue:0.####}, initialSaturation={initialSaturation:0.####}, seedRealHueSaturation={seedRealHueSaturation}.");
 			}
 
 		RaiseDefinitionChangedEvent ();
 		LogDynamicFeatureEntityState ("ConfigureDynamicFeatures.AfterDefinitionChanged");
 
-		}
-
-	// Bulbs that support both full color and color temperature (Color-kind Kasa/Tapo bulbs) can be
-	// switched between color mode and white/CT mode at any time, and Crestron Home infers which mode a
-	// light is in from which color-temperature capability is currently registered rather than from the
-	// bulb kind. lightEmulatedColorTemperature signals "this is a color light; CT overrides the
-	// displayed color", which is correct while the bulb is in color mode. lightColorTemperature signals
-	// "this light's color state is defined purely by CT", which is correct while the bulb is in
-	// white/CT mode - any persisted HSV is irrelevant to the UI until the bulb returns to color mode.
-	// This method re-registers the appropriate capability whenever the device's active mode has
-	// flipped since the last time dynamic features were configured/reconciled.
-	private void ReconcileColorTemperatureCapability (bool hasActiveColorTemperature, int? colorTemperature)
-		{
-		if (_registeredColorTemperatureMembers is null || _colorTemperatureLevelRange is null)
-			{
-			return;
-			}
-
-		// Full-color bulbs use the lightTunable capability with a fixed real lightColorTemperature
-		// capability; their UI mode is signalled explicitly via lightTunable:mode, so there is no
-		// emulated<->plain capability swap to perform here.
-		if (_registeredColorTemperatureMembers is TunableColorTemperatureMembers)
-			{
-			return;
-			}
-
-		bool shouldUseEmulatedColorTemperature = LightTuningDecisions.ShouldUseEmulatedColorTemperature (_supportsFullColor, hasActiveColorTemperature);
-		bool isCurrentlyEmulated = _registeredColorTemperatureMembers is EmulatedColorTemperatureMembers;
-		if (shouldUseEmulatedColorTemperature == isCurrentlyEmulated)
-			{
-			return;
-			}
-
-		// A capability swap unregisters the current color-temperature DTO and registers the other one.
-		// If this runs while a color-temperature slider interaction is in flight, it deletes the very
-		// property the UI-issued command is bound to, and Crestron's LightTunable capability then fails
-		// to retrieve 'lightEmulatedColorTemperature:range'/':level' and the command times out. Defer
-		// the swap: record the requested target state and re-run it once the interaction has settled
-		// (see ProcessSliderCommandAsync -> TryApplyDeferredColorTemperatureReconcile). The currently
-		// registered DTO stays valid for the whole interaction, so in-flight commands keep working.
-		if (IsSliderInteractionActive ())
-			{
-			_pendingColorTemperatureReconcile = true;
-			_pendingColorTemperatureReconcileHasActive = hasActiveColorTemperature;
-			_pendingColorTemperatureReconcileLevel = colorTemperature;
-			LogInfo ($"Light entity '{ControllerId}' deferring color-temperature capability swap until slider interaction settles: hasActiveColorTemperature={hasActiveColorTemperature}, colorTemperature={(colorTemperature.HasValue ? colorTemperature.Value.ToString () : "<none>")}.");
-			return;
-			}
-
-		// Entering color mode: there is no active color-temperature value to carry over, so use the
-		// range minimum as an in-range placeholder level. Entering white/CT mode: use the device's
-		// real, currently-reported value. Either way the declared range stays the device's real range.
-		long currentLevel = shouldUseEmulatedColorTemperature
-			? _colorTemperatureRangeMinimum
-			: (hasActiveColorTemperature && colorTemperature.HasValue ? colorTemperature.Value : _registeredColorTemperatureMembers.LightColorTemperatureLevel);
-		DriverEntityValueRange currentRange = _colorTemperatureLevelRange;
-
-		UnregisterObjectWithAttributes (_registeredColorTemperatureMembers);
-
-		_registeredColorTemperatureMembers = shouldUseEmulatedColorTemperature
-			? new EmulatedColorTemperatureMembers (this, currentRange, currentLevel)
-			: new ColorTemperatureMembers (this, currentRange, currentLevel);
-		RegisterObjectWithAttributes (_registeredColorTemperatureMembers);
-		RaiseDefinitionChangedEvent ();
-
-		_pendingColorTemperatureReconcile = false;
-		_pendingColorTemperatureReconcileLevel = null;
-
-		LogInfo ($"Light entity '{ControllerId}' switched color-temperature capability: useEmulatedColorTemperature={shouldUseEmulatedColorTemperature}, currentLevel={currentLevel}, range={FormatRange (currentRange)}.");
-		}
-
-	// Re-runs a color-temperature capability swap that was deferred because a slider interaction was
-	// active when it was requested (see ReconcileColorTemperatureCapability). Called once the slider
-	// interaction has settled, when it is safe to unregister/register the DTO without breaking an
-	// in-flight command.
-	private void TryApplyDeferredColorTemperatureReconcile (string context)
-		{
-		if (!_pendingColorTemperatureReconcile || IsSliderInteractionActive ())
-			{
-			return;
-			}
-
-		bool hasActiveColorTemperature = _pendingColorTemperatureReconcileHasActive;
-		int? colorTemperature = _pendingColorTemperatureReconcileLevel;
-		_pendingColorTemperatureReconcile = false;
-
-		LogInfo ($"Light entity '{ControllerId}' applying deferred color-temperature capability swap after slider interaction settled; context='{context}'.");
-		ReconcileColorTemperatureCapability (hasActiveColorTemperature, colorTemperature);
 		}
 
 	// This timeout wraps EnsureConnectedAsync (which may need to fully reconnect if the connection was
@@ -1948,16 +1873,17 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		{
 		for (int attempt = 1; ; attempt++)
 			{
+			bool isFinalAttempt = attempt >= DEVICE_COMMAND_MAX_ATTEMPTS;
 			try
 				{
-				await ExecuteDeviceCommandAttemptAsync (action, refreshAfterCommand, reassertColorModeAfterRefresh, cancellationToken).ConfigureAwait (false);
+				await ExecuteDeviceCommandAttemptAsync (action, refreshAfterCommand, reassertColorModeAfterRefresh, isFinalAttempt, cancellationToken).ConfigureAwait (false);
 				return;
 				}
 			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 				{
 				throw;
 				}
-			catch (Exception ex) when (attempt < DEVICE_COMMAND_MAX_ATTEMPTS)
+			catch (Exception ex) when (!isFinalAttempt)
 				{
 				_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' command attempt {attempt} of {DEVICE_COMMAND_MAX_ATTEMPTS} failed; retrying after {DeviceCommandRetryDelay.TotalSeconds:0} second(s): {ex}");
 				await Task.Delay (DeviceCommandRetryDelay, cancellationToken).ConfigureAwait (false);
@@ -1965,68 +1891,75 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		}
 
-	private async Task ExecuteDeviceCommandAttemptAsync (Func<KasaDevice, CancellationToken, Task> action, bool refreshAfterCommand, bool reassertColorModeAfterRefresh, CancellationToken cancellationToken)
+	private async Task ExecuteDeviceCommandAttemptAsync (Func<KasaDevice, CancellationToken, Task> action, bool refreshAfterCommand, bool reassertColorModeAfterRefresh, bool isFinalAttempt, CancellationToken cancellationToken)
 		{
 		try
 			{
-			// Phase 1: connect (its own budget). Ensuring a connection may require a full cold reconnect
-			// after a long idle period; give it the same realistic budget as an initial startup connect
-			// so a slow handshake does not consume the command budget below.
-			KasaDevice device;
-			using (CancellationTokenSource connectTimeoutSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken))
-				{
-				connectTimeoutSource.CancelAfter (DeviceConnectTimeout);
-				CancellationToken connectToken = connectTimeoutSource.Token;
-				try
-					{
-					device = await EnsureConnectedAsync (connectToken).ConfigureAwait (false);
-					}
-				catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && connectToken.IsCancellationRequested)
-					{
-					throw new TimeoutException ($"Light entity '{ControllerId}' connect timed out after {DeviceConnectTimeout.TotalSeconds:0} seconds.");
-					}
-				}
+			// Phase 1: connect. EnsureConnectedAsync itself only arms the DeviceConnectTimeout
+			// around the actual connect attempt, AFTER the connection gate has been acquired, so
+			// contention from other concurrently-dispatched commands (e.g. the paired
+			// lightEmulatedColorTemperature:setLevel and lightDimmer:setLevel:on commands fired
+			// together for a single power-on gesture) waiting on the same gate no longer eats into
+			// the connect budget. Do not additionally timebox the gate wait here.
+			KasaDevice device = await EnsureConnectedAsync (cancellationToken).ConfigureAwait (false);
 
 			// Phase 2: command execution (separate budget), now that a live connection exists.
 			using CancellationTokenSource timeoutCancellationSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken);
 			timeoutCancellationSource.CancelAfter (DeviceCommandTimeout);
 			CancellationToken timeoutToken = timeoutCancellationSource.Token;
 
+			// Hold a reference count against this device instance for the duration of Phase 2 so that
+			// if another concurrently-dispatched command (e.g. the paired lightDimmer/lightEmulated
+			// ColorTemperature commands fired together during power-on) times out and calls
+			// ResetConnectionState() while THIS operation is still executing against the same device,
+			// the device is not disposed until this operation also finishes (see ReleaseDeviceOperation).
+			Interlocked.Increment (ref _activeDeviceOperationCount);
 			try
 				{
-				timeoutToken.ThrowIfCancellationRequested ();
-				await action (device, timeoutToken).ConfigureAwait (false);
-
-				if (refreshAfterCommand)
+				try
 					{
-					await device.UpdateAsync (timeoutToken).ConfigureAwait (false);
-					LogReportedState ("ExecuteDeviceCommandAsync.AfterCommand", device);
-					}
+					timeoutToken.ThrowIfCancellationRequested ();
+					await action (device, timeoutToken).ConfigureAwait (false);
 
-				ApplyState (device);
-				OnlineIndicatorIsOnline = true;
-				ReadyIndicatorIsReady = true;
+					if (refreshAfterCommand)
+						{
+						await device.UpdateAsync (timeoutToken).ConfigureAwait (false);
+						LogReportedState ("ExecuteDeviceCommandAsync.AfterCommand", device);
+						}
 
-				// On power-on, Crestron's Load layer drives the load's ColorTemp channel and dispatches
-				// lightEmulatedColorTemperature:setLevel to the capability layer BEFORE our dimmer
-				// power-on runs, switching the UI to white/CCT. The emulated CT value cannot be
-				// retracted (see RetractEmulatedColorTemperatureAssertion), so the authoritative fix is
-				// to publish lightTunable:mode=Color: PublishActiveColorModeProperties emits the explicit
-				// tuning mode plus the real hue/saturation, forcing the UI back to the color mode the
-				// bulb never left.
-				if (reassertColorModeAfterRefresh && LightIsOn && _supportsFullColor && !IsCurrentColorTemperatureUiMode ())
+					ApplyState (device);
+					OnlineIndicatorIsOnline = true;
+					ReadyIndicatorIsReady = true;
+
+					// On power-on, Crestron's Load layer drives the load's ColorTemp channel and dispatches
+					// lightEmulatedColorTemperature:setLevel to the capability layer BEFORE our dimmer
+					// power-on runs, switching the UI to white/CCT. PublishActiveColorModeProperties then
+					// restores the full-color state when the bulb remains in color mode. That command also
+					// changes the processor's console-level TuningMode directly (see
+					// ProcessorBaselineCoordinator), independent of our own entity-model properties, so the
+					// baseline must also be forced back to Color here or the Load layer keeps rendering White.
+					if (reassertColorModeAfterRefresh && LightIsOn && _supportsFullColor && !IsCurrentColorTemperatureUiMode ())
 						{
 						PublishActiveColorModeProperties ("ExecuteDeviceCommandAsync.ReassertColorModeAfterPowerOn");
+						SynchronizeProcessorBaseline (ProcessorLightTuningMode.Color, "ExecuteDeviceCommandAsync.ReassertColorModeAfterPowerOn");
 						}
+					}
+				catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutToken.IsCancellationRequested)
+					{
+					throw new TimeoutException ($"Light entity '{ControllerId}' command timed out after {DeviceCommandTimeout.TotalSeconds:0} seconds.");
+					}
 				}
-			catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutToken.IsCancellationRequested)
+			finally
 				{
-				throw new TimeoutException ($"Light entity '{ControllerId}' command timed out after {DeviceCommandTimeout.TotalSeconds:0} seconds.");
+				ReleaseDeviceOperation ();
 				}
 			}
 		catch (Exception ex)
 			{
-			ResetConnectionState ();
+			// Do not flip the UI to offline for an attempt that is about to be quietly retried - only
+			// once the retry budget is exhausted does this become a real, user-visible offline state.
+			// The stale connection is still cleared either way so the next attempt reconnects fresh.
+			ResetConnectionState (flipIndicatorsOffline: isFinalAttempt);
 			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' command failed: {ex}");
 			throw;
 			}
@@ -2115,21 +2048,19 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		LightIsOn = isOn;
 
-		// Kasa/Tapo devices report the real, current color-temperature mode regardless of power state
-		// (colorTemperature is 0 while in HSV/color mode and a real Kelvin value while in white/CT
-		// mode, whether the bulb is on or off), so the reconciliation always uses the live reading
-		// rather than being gated on isOn. Gating this on isOn previously allowed a stale/deferred
-		// state apply from an earlier command to be applied after a fresher one, causing the
-		// capability to flip to the wrong shape and then immediately flip back.
-		if (_supportsColorTemperature)
-			{
-			ReconcileColorTemperatureCapability (hasActiveColorTemperature, colorTemperature);
-			}
-
 		_isColorTemperatureUiModeActive = _supportsColorTemperature && hasActiveColorTemperature;
 
 		if (_supportsBrightness)
 			{
+			if (brightness.HasValue)
+				{
+				// Track the device's real reported brightness independent of power state: legacy
+				// bulbs genuinely retain their own last brightness while off (confirmed via device
+				// status showing State=Off with a real Brightness value), so this must not be
+				// cleared just because the bulb is off.
+				_lastKnownDeviceBrightnessLevel = Clamp01 (brightness.Value / 100d);
+				}
+
 			LightDimmerLevel = isOn && brightness.HasValue
 				? Clamp01 (brightness.Value / 100d)
 				: 0d;
@@ -2149,23 +2080,27 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			// publish on its own.
 			SetActiveColorTemperatureLevel (colorTemperature!.Value);
 			}
-
 		if (_supportsFullColor)
 			{
 			// Kasa/Tapo devices retain their hue/saturation values independently of color temperature -
 			// color temperature simply overrides the displayed color while active, without clearing or
-			// altering the stored hue/saturation. The device reports the real hue/saturation values
-			// regardless of whether color temperature is currently active, so always surface those
-			// real values here; it is the color-temperature capability's job (lightEmulatedColorTemperature
-			// for Color-kind bulbs) to signal the override to the Crestron Home UI, not zeroing hue/saturation.
-			if (hue.HasValue)
+			// altering the stored hue/saturation. However, surfacing those real retained values to the
+			// UI while white/CT mode is genuinely active asserts color mode to Crestron Home regardless
+			// of publish order (mirroring how publishing a CT level asserts white mode - see
+			// ShouldPublishColorTemperatureLevel), so only apply the real values while color mode is
+			// genuinely active; otherwise leave the published hue/saturation at their neutral
+			// placeholders until the bulb actually returns to color mode.
+			if (!hasActiveColorTemperature)
 				{
-				LightColorHue = Clamp01 (hue.Value / HUE_MAX_DEGREES);
-				}
+				if (hue.HasValue)
+					{
+					LightColorHue = Clamp01 (hue.Value / HUE_MAX_DEGREES);
+					}
 
-			if (saturation.HasValue)
-				{
-				LightColorSaturation = Clamp01 (saturation.Value / 100d);
+				if (saturation.HasValue)
+					{
+					LightColorSaturation = Clamp01 (saturation.Value / 100d);
+					}
 				}
 			}
 
@@ -2174,12 +2109,11 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private static bool HasCurrentColorTemperatureState (LightState? lightState)
 		{
-		if (lightState?.ColorTemperature is not int colorTemperature || colorTemperature <= 0)
-			{
-			return false;
-			}
-
-		return true;
+		// To the bulb itself, color_temp > 0 is the sole and authoritative signal that white/CT
+		// mode is active; color_temp == 0 always means color/HSV mode, regardless of the reported
+		// saturation value (some devices report a stale/meaningless saturation of 0 while still
+		// genuinely in color mode). Do not infer white mode from saturation.
+		return lightState?.ColorTemperature is int colorTemperature && colorTemperature > 0;
 		}
 
 	private static bool HasCurrentFullColorState (LightState? lightState)
@@ -2194,31 +2128,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		return _supportsColorTemperature && _isColorTemperatureUiModeActive;
 		}
 
-	// The Crestron Home tuning mode is derived from the same single source of truth as the internal
-	// color-temperature UI mode flag: when color temperature is the active mode the bulb is in
-	// White (CCT) tuning, otherwise it is in Color (hue/saturation) tuning.
-	private LightTunableTuningMode ComputeTuningMode ()
-		{
-		return LightTuningDecisions.ComputeTuningMode (IsCurrentColorTemperatureUiMode ());
-		}
-
-	// Publishes the authoritative lightTunable:mode so the Crestron Home UI keeps the correct
-	// color-vs-white tile regardless of any color-temperature setLevel the processor injected. This
-	// force-publishes (rather than relying on the change-tracked setter) because snapshot and
-	// power-on reassert paths must re-emit the mode even when it has not changed.
-	private void PublishTuningMode (string context)
-		{
-		if (_registeredLightTunableMembers is null)
-			{
-			return;
-			}
-
-		LightTunableTuningMode mode = ComputeTuningMode ();
-		_registeredLightTunableMembers.LightTunableMode = mode;
-		PublishProperty ("lightTunable:mode", CreateValueForObject (mode), context);
-		}
-
-	private void PublishCurrentLightModeProperties (string context)
+	private void PublishCurrentLightModeProperties (string context, bool synchronizeProcessorBaseline = true)
 		{
 		if (_supportsBrightness)
 			{
@@ -2226,6 +2136,38 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 
 		PublishColorModeStateProperties (context);
+		if (synchronizeProcessorBaseline)
+			{
+			SynchronizeProcessorBaseline (LightTuningDecisions.ToProcessorTuningMode (IsCurrentColorTemperatureUiMode ()), context);
+			}
+		}
+
+	private void SynchronizeProcessorBaseline (ProcessorLightTuningMode mode, string context)
+		{
+		if (!_supportsFullColor || !_sharedConfiguration.EnableProcessorBaselineWorkaround || _synchronizeProcessorBaselineAsync is null || string.IsNullOrWhiteSpace (DeviceName))
+			{
+			return;
+			}
+
+		// Capture the current level/hue/saturation/color-temperature synchronously here, rather than
+		// reading them lazily from inside the queued background delegate below. StartBackgroundOperation
+		// only starts running once the console round-trip to resolve/initialize the processor baseline
+		// load completes (can take several seconds). Only this driver process restarts on a reload;
+		// Crestron Home's own Load/UI layer keeps running and performs its own reconnect handshake
+		// against the freshly-restarted entity, re-asserting its last-known level/mode as genuine
+		// commands against the load (e.g. lightDimmer:setLevel level=0 then 0.01 immediately after
+		// InitializeConnectedStateAsync publishes the real state - the same documented Load-layer
+		// channel-driving behavior seen elsewhere, e.g. around power-on ColorTemp commands). Reading
+		// the properties lazily would race against that handshake and send the processor a stale value
+		// that no longer matches what was actually true when this synchronization was requested - which
+		// is exactly what produced a spurious low-brightness SetLoadState during initialization.
+		double dimmerLevel = LightDimmerLevel;
+		double hue = LightColorHue;
+		double saturation = LightColorSaturation;
+		long colorTemperature = GetActiveColorTemperatureLevel ();
+		StartBackgroundOperation (
+			() => _synchronizeProcessorBaselineAsync (DeviceName, mode, dimmerLevel, hue, saturation, colorTemperature, _lifetimeCancellationSource.Token),
+			$"ProcessorBaseline:{context}");
 		}
 
 	private long GetActiveColorTemperatureLevel ()
@@ -2239,13 +2181,8 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		}
 
 	// The Crestron Home UI treats any published lightEmulatedColorTemperature:level as an assertion
-	// that the color-temperature override is currently the active mode, and immediately switches the
-	// light to white/CCT at that Kelvin value. While a color-capable bulb is in color/HSV mode there
-	// is no active color-temperature value (the device reports color_temp=0 and we only hold the
-	// range-minimum placeholder), so publishing the emulated level would spuriously flip the UI to
-	// white. The emulated CT level must therefore only be published while color temperature is the
-	// active mode. The plain lightColorTemperature capability (TunableWhite bulbs, which have no color
-	// mode at all) is always the active mode and is always published.
+	// that the color-temperature override is currently active. While a color-capable bulb is in HSV
+	// mode, do not publish its device-level color_temp=0 sentinel through this UI property.
 	private bool ShouldPublishColorTemperatureLevel (bool colorTemperatureUiModeActive)
 		{
 		if (!_supportsColorTemperature)
@@ -2254,11 +2191,8 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 
 		// The plain lightColorTemperature capability is only registered for TunableWhite bulbs, which
-		// have no colour mode at all - colour temperature is always their active mode, so always
-		// publish it. For full-colour bulbs (the emulated capability, or the lightTunable capability's
-		// TunableColorTemperatureMembers) publishing a CT level asserts white mode in the UI, so only
-		// publish it while colour temperature is actually the active mode. Publishing it unconditionally
-		// forces every colour-mode bulb into white on connect.
+		// have no colour mode at all. For full-colour bulbs, only an active Kelvin value is publishable
+		// without asserting White mode in the processor UI.
 		if (_registeredColorTemperatureMembers is ColorTemperatureMembers)
 			{
 			return true;
@@ -2269,62 +2203,34 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private void PublishColorModeStateProperties (string context)
 		{
-		// The Crestron Home UI infers whether a light is currently in "color" or "white/CCT" mode from
-		// whichever of lightColor:*/lightColorTemperature:level was most recently published, so the
-		// publish order here must reflect the device's actual active mode (see IsCurrentColorTemperatureUiMode),
-		// matching the convention used by PublishActiveColorModeProperties. Publishing them in a fixed
-		// order regardless of active mode causes the UI to always show the last-published mode (white)
-		// on reload even when the bulb is actually in color mode.
 		bool colorTemperatureUiModeActive = IsCurrentColorTemperatureUiMode ();
 		bool publishColorTemperatureLevel = ShouldPublishColorTemperatureLevel (colorTemperatureUiModeActive);
 
-		if (colorTemperatureUiModeActive)
+		if (_supportsFullColor && !colorTemperatureUiModeActive)
 			{
-			if (_supportsFullColor)
-				{
-				PublishProperty ("lightColor:saturation", new DriverEntityValue (LightColorSaturation), context);
-				PublishProperty ("lightColor:hue", new DriverEntityValue (LightColorHue), context);
-				}
-
-			if (publishColorTemperatureLevel)
-				{
-				PublishProperty (_registeredColorTemperatureMembers!.LevelPropertyId, new DriverEntityValue (GetActiveColorTemperatureLevel ()), context);
-				}
-			}
-		else
-			{
-			if (publishColorTemperatureLevel)
-				{
-				PublishProperty (_registeredColorTemperatureMembers!.LevelPropertyId, new DriverEntityValue (GetActiveColorTemperatureLevel ()), context);
-				}
-
-			if (_supportsFullColor)
-				{
-				PublishProperty ("lightColor:saturation", new DriverEntityValue (LightColorSaturation), context);
-				PublishProperty ("lightColor:hue", new DriverEntityValue (LightColorHue), context);
-				}
+			PublishProperty ("lightColor:hue", new DriverEntityValue (LightColorHue), context);
+			PublishProperty ("lightColor:saturation", new DriverEntityValue (LightColorSaturation), context);
 			}
 
-		// Publish the explicit tuning mode after all supporting color/temperature properties. Crestron
-		// Home also infers mode from those properties, so publishing them after lightTunable:mode can
-		// overwrite the authoritative mode and initialize a color-mode bulb in the white UI.
-		PublishTuningMode (context);
+		if (publishColorTemperatureLevel)
+			{
+			PublishProperty (_registeredColorTemperatureMembers!.LevelPropertyId, new DriverEntityValue (GetActiveColorTemperatureLevel ()), context);
+			}
 		}
 
 	private void PublishActiveColorModeProperties (string context)
 		{
-		if (ShouldPublishColorTemperatureLevel (IsCurrentColorTemperatureUiMode ()))
+		bool colorTemperatureUiModeActive = IsCurrentColorTemperatureUiMode ();
+		if (ShouldPublishColorTemperatureLevel (colorTemperatureUiModeActive))
 			{
 			PublishProperty (_registeredColorTemperatureMembers!.LevelPropertyId, new DriverEntityValue (_registeredColorTemperatureMembers!.LightColorTemperatureLevel), context);
 			}
 
-		if (_supportsFullColor)
+		if (_supportsFullColor && !colorTemperatureUiModeActive)
 			{
-			PublishProperty ("lightColor:saturation", new DriverEntityValue (LightColorSaturation), context);
 			PublishProperty ("lightColor:hue", new DriverEntityValue (LightColorHue), context);
+			PublishProperty ("lightColor:saturation", new DriverEntityValue (LightColorSaturation), context);
 			}
-
-		PublishTuningMode (context);
 		}
 
 	private void PublishProperty (string propertyId, DriverEntityValue value, string context)
@@ -2629,7 +2535,20 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		await device.TurnLightOnAsync (cancellationToken).ConfigureAwait (false);
 		}
 
-	private double GetEffectiveOnLevel () => LightDimmerLevel > 0d ? LightDimmerLevel : 1d;
+	private double GetEffectiveOnLevel ()
+		{
+		if (LightDimmerLevel > 0d)
+			{
+			return LightDimmerLevel;
+			}
+
+		if (_lastKnownDeviceBrightnessLevel is double lastKnownLevel && lastKnownLevel > 0d)
+			{
+			return lastKnownLevel;
+			}
+
+		return 1d;
+		}
 
 	private bool ResolvePowerState (KasaDevice device)
 		{
@@ -2717,7 +2636,17 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		bool hasColorState = HasCurrentFullColorState (device.LightState);
 		bool supportsFullColor = (supportsHue && supportsSaturation) || hasColorState;
 
-		if (supportsFullColor)
+		// A full-color-capable bulb (e.g. KL130) always reports retained hue/saturation values from
+		// the device, even while it is currently operating in white/color-temperature mode - the
+		// bulb keeps its last HSV color in memory purely so it can be restored later. supportsFullColor
+		// above only reflects that reporting *capability*, not which mode is presently active, so it
+		// must not be used on its own to decide the managed identity/kind that is published to Crestron
+		// Home and used to select the tile's initial UI. Only classify the light as Color when full
+		// color is genuinely the active mode right now (i.e. color temperature is not currently active);
+		// otherwise a color-temperature-capable bulb sitting in white mode must report TunableWhite.
+		bool isCurrentlyInColorTemperatureMode = HasCurrentColorTemperatureState (device.LightState);
+
+		if (supportsFullColor && !isCurrentlyInColorTemperatureMode)
 			{
 			return ManagedLightKind.Color;
 			}

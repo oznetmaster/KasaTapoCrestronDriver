@@ -1,6 +1,7 @@
 param(
 	[string] $ProjectUserFile = "$PSScriptRoot\KasaTapoCrestronDriver.csproj.user",
-	[string] $Pattern = "startup connect"
+	[string[]] $Commands,
+	[int] $ResponseWaitMilliseconds = 2000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,23 +19,21 @@ Import-Module Posh-SSH -ErrorAction Stop
 
 $secure = ConvertTo-SecureString $password -AsPlainText -Force
 $credential = [System.Management.Automation.PSCredential]::new($user, $secure)
-
 $session = New-SSHSession -ComputerName $ip -Credential $credential -Force -ErrorAction Stop
 try {
 	$stream = New-SSHShellStream -SSHSession $session
-	$logPath = "/rm/SeawolfDiagnostic/$(Get-Date -Format 'yyyy-MM-dd').log"
-	$stream.WriteLine("")
-	Start-Sleep -Seconds 1
-	$stream.Read() | Out-Null
-	$stream.WriteLine("grep -a `"$Pattern`" $logPath > /tmp/out.txt 2>&1; wc -l < /tmp/out.txt")
-	Start-Sleep -Seconds 10
-	$output = $stream.Read()
-	Write-Host $output
-	Write-Host "----LAST 200----"
-	$stream.WriteLine("tail -n 200 /tmp/out.txt")
-	Start-Sleep -Seconds 6
-	$output2 = $stream.Read()
-	Write-Host $output2
+	Start-Sleep -Milliseconds 500
+	$null = $stream.Read()
+
+	foreach ($command in $Commands) {
+		$stream.WriteLine($command)
+		Start-Sleep -Milliseconds $ResponseWaitMilliseconds
+		Write-Output "`$ $command"
+		$output = $stream.Read()
+		if (-not [string]::IsNullOrWhiteSpace($output)) {
+			Write-Output $output
+		}
+	}
 }
 finally {
 	Remove-SSHSession -SSHSession $session | Out-Null

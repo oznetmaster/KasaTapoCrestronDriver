@@ -20,7 +20,7 @@ Import-Module Posh-SSH -ErrorAction Stop
 $secure = ConvertTo-SecureString $password -AsPlainText -Force
 $credential = [System.Management.Automation.PSCredential]::new($user, $secure)
 
-$session = New-SFTPSession -ComputerName $ip -Credential $credential -AcceptKey -ErrorAction Stop
+$session = New-SFTPSession -ComputerName $ip -Credential $credential -Force -ErrorAction Stop
 try {
 	Get-SFTPItem -SessionId $session.SessionId -Path $RemotePath -Destination $PSScriptRoot -Force
 	$downloadedName = Join-Path $PSScriptRoot (Split-Path $RemotePath -Leaf)

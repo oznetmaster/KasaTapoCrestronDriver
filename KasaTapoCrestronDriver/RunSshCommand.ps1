@@ -19,7 +19,7 @@ Import-Module Posh-SSH -ErrorAction Stop
 $secure = ConvertTo-SecureString $password -AsPlainText -Force
 $credential = [System.Management.Automation.PSCredential]::new($user, $secure)
 
-$session = New-SSHSession -ComputerName $ip -Credential $credential -AcceptKey -ErrorAction Stop
+$session = New-SSHSession -ComputerName $ip -Credential $credential -Force -ErrorAction Stop
 try {
 	$result = Invoke-SSHCommand -SSHSession $session -Command $Command -TimeOut 30
 	Write-Output $result.Output

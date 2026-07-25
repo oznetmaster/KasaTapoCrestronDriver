@@ -18,13 +18,11 @@ Import-Module Posh-SSH -ErrorAction Stop
 $secure = ConvertTo-SecureString $password -AsPlainText -Force
 $credential = [System.Management.Automation.PSCredential]::new($user, $secure)
 
-$session = New-SSHSession -ComputerName $ip -Credential $credential -AcceptKey -ErrorAction Stop
+$session = New-SSHSession -ComputerName $ip -Credential $credential -Force -ErrorAction Stop
 try {
 	$stream = New-SSHShellStream -SSHSession $session
-	$logPath = "/rm/SeawolfDiagnostic/$(Get-Date -Format 'yyyy-MM-dd').log"
-	$stream.WriteLine("tail -F -n 0 $logPath")
 	Start-Sleep -Seconds 2
-	Write-Host "Tailing $logPath on $ip. Press Ctrl+C to stop."
+	Write-Host "Streaming the processor diagnostic console on $ip. Press Ctrl+C to stop."
 	while ($true) {
 		Start-Sleep -Seconds 2
 		$output = $stream.Read()

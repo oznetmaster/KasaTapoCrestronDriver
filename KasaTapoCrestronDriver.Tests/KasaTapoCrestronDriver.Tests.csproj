@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MSTest" Version="4.0.2" />
+    <PackageReference Include="MSTest" Version="4.3.2" />
     <!-- KasaTapoClient.dll is referenced directly via HintPath (below) rather than as a PackageReference,
           so its transitive System.Memory 4.6.3 dependency isn't pulled into this project's dependency graph.
           Without this explicit reference, NuGet resolves an older System.Memory (4.5.5 / asm version 4.0.1.2)

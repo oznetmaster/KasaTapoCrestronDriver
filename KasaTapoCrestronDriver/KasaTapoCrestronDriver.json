@@ -16,8 +16,8 @@
       "Website": "",
       "PhoneNumber": ""
     },
-    "DriverVersion": "1.0.006.0095",
-    "VersionDate": "2026-07-18 19:42:06.659"
+    "DriverVersion": "1.0.006.0253",
+    "VersionDate": "2026-07-25 18:18:55.004"
   },
   "ConfigurationSteps": {
     "Items": [
@@ -96,12 +96,55 @@
         "Persistent": true,
         "ValueType": "String",
         "DefaultValue": "3"
+      },
+      {
+        "Id": "EnableProcessorBaselineWorkaround",
+        "Title": "Enable Processor Baseline Workaround",
+        "Description": "Temporarily synchronize Crestron Home's generated light-load baseline through the processor SSH console. Requires unique light names and processor SSH credentials.",
+        "Availability": "Always",
+        "UsageContext": "Generic.Prompt",
+        "Required": true,
+        "Persistent": true,
+        "ValueType": "Boolean",
+        "DefaultValue": false
+      },
+      {
+        "Id": "ProcessorSshHost",
+        "Title": "Processor SSH Host",
+        "Description": "Optional processor SSH endpoint for the baseline workaround. Leave blank to use the processor's primary IPv4 address.",
+        "Availability": "Always",
+        "UsageContext": "Generic.Prompt",
+        "Required": false,
+        "Persistent": true,
+        "ValueType": "String",
+        "DefaultValue": ""
+      },
+      {
+        "Id": "ProcessorSshUserName",
+        "Title": "Processor SSH User Name",
+        "Description": "Processor SSH user for the baseline workaround.",
+        "Availability": "Always",
+        "UsageContext": "Authentication.Username",
+        "Required": false,
+        "Persistent": true,
+        "ValueType": "String"
+      },
+      {
+        "Id": "ProcessorSshPassword",
+        "Title": "Processor SSH Password",
+        "Description": "Processor SSH password for the baseline workaround.",
+        "Availability": "Always",
+        "UsageContext": "Authentication.Password",
+        "Required": false,
+        "Persistent": true,
+        "ValueType": "String",
+        "Masked": true
       }
     ],
     "Steps": [
       {
         "StepId": "Settings",
-        "Items": [ "UserName", "Password", "DiscoveryTimeoutSeconds", "TreatPlugsAsLights", "EnableLightPolling", "LightPollIntervalSeconds", "SensorPollIntervalSeconds" ],
+        "Items": [ "UserName", "Password", "DiscoveryTimeoutSeconds", "TreatPlugsAsLights", "EnableLightPolling", "LightPollIntervalSeconds", "SensorPollIntervalSeconds", "EnableProcessorBaselineWorkaround", "ProcessorSshHost", "ProcessorSshUserName", "ProcessorSshPassword" ],
         "NextStep": null
       }
     ],
