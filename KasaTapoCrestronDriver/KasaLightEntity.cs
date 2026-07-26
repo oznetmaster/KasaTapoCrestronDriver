@@ -478,17 +478,19 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	// awaited startup path (DispatchProcessorBaselineSynchronizationAsync, called from
 	// InitializeConnectedStateAsync) - it is the only way to correct the processor's console-level
 	// TunableChannelStates.TuningMode before the entity ever reports online/ready, and Crestron
-	// Home's own Load layer reacts to it by relaying it back to this entity as a genuine
-	// lightDimmer:setLevel/light:on command, indistinguishable from a real user action. This
-	// class-level flag is the single source of truth for that startup window: it is set immediately
-	// before the awaited startup coordinator call and cleared in a finally immediately after, so
-	// ExecutePowerAsync can suppress only that replayed power-ON call from reaching the physical
-	// device during the deterministic span in which it can arrive, without guessing at any fixed
-	// time window or threading a separate flag through the coordinator. A power-OFF call is never
-	// suppressed here (see ExecutePowerAsync): the genuine, user-requested off command must always
-	// reach the device immediately regardless of whether this initialization sync happens to still
-	// be in flight. Status queries (device.UpdateAsync) and UI-facing property updates are unaffected
-	// and continue normally.
+	// Home's own Load layer reacts to it by relaying BOTH halves of that toggle back to this entity
+	// as genuine light:off then light:on (or dimmer) commands, indistinguishable from real user
+	// actions. This class-level flag is the single source of truth for that startup window: it is
+	// set immediately before the awaited startup coordinator call and cleared in a finally
+	// immediately after, so ExecutePowerAsync can suppress both relayed power calls from reaching
+	// the physical device during the deterministic span in which they can arrive, without guessing
+	// at any fixed time window or threading a separate flag through the coordinator. Suppressing
+	// only the "on" half is not sufficient: the relayed "off" half would otherwise reach the
+	// physical device and turn off a bulb that was genuinely on before the reload, even though the
+	// bulb itself was never touched by the console-only toggle. Outside this startup window, a
+	// genuine user-requested power command (either direction) must always reach the device
+	// immediately. Status queries (device.UpdateAsync) and UI-facing property updates are
+	// unaffected and continue normally.
 	private bool _isInitializingProcessorBaseline { get; set; }
 
 	// While a color-capable bulb is in color/HSV mode, Kasa/Tapo devices report color_temp=0. This
@@ -2105,17 +2107,21 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private async Task ExecutePowerAsync (KasaDevice device, bool on, CancellationToken cancellationToken)
 		{
-		// A genuine "off" command may never be suppressed, delayed, or silently dropped here - see
-		// the remarks on _isInitializingProcessorBaseline. A genuine "on" is suppressed only for the
-		// deterministic duration of the awaited startup processor baseline synchronization: that
-		// window is the only time the processor console workaround ever performs its off->on
-		// SetLoadState toggle, which Crestron's own Load layer relays back to this entity as an
-		// indistinguishable genuine "on" command. Suppressing it there avoids a visible flicker from
-		// that relayed command reaching the physical bulb, while the flag's narrow, startup-only
-		// scope means it can never suppress an actual user-requested power-on outside that window.
-		if (on && _isInitializingProcessorBaseline)
+		// Both halves of a genuine physical power command may never be suppressed, delayed, or
+		// silently dropped here - EXCEPT for the deterministic duration of the awaited startup
+		// processor baseline synchronization: that window is the only time the processor console
+		// workaround ever performs its own off->on SetLoadState toggle, and Crestron's own Load
+		// layer relays BOTH halves of that toggle back to this entity as indistinguishable genuine
+		// light:off/light:on (or dimmer) commands. Nothing the entity has done yet during that
+		// window is a real user action - the entity has not even published its initial state - so
+		// both relayed halves must be suppressed, not just the "on" half: letting the relayed "off"
+		// half reach the physical device would actually turn off a bulb that was genuinely on before
+		// the reload, even though the toggle that produced it never touched the real bulb itself.
+		// The flag's narrow, startup-only scope means this can never suppress an actual
+		// user-requested power command outside that window.
+		if (_isInitializingProcessorBaseline)
 			{
-			LogInfo ($"Light entity '{ControllerId}' suppressing physical device power-on call relayed from the startup processor baseline synchronization toggle.");
+			LogInfo ($"Light entity '{ControllerId}' suppressing physical device power-{(on ? "on" : "off")} call relayed from the startup processor baseline synchronization toggle.");
 			return;
 			}
 
