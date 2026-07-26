@@ -474,24 +474,22 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	// only issues a real off->on SetLoadState toggle against the load (see
 	// ProcessorBaselineCoordinator.SynchronizeCoreAsync) when the load's stored/active console
 	// tuning mode actually needs correcting - it is a no-op otherwise, e.g. when a power-off is
-	// requested while the tuning mode already matches. When the toggle does run, it is the only
-	// way to correct the processor's console-level TunableChannelStates.TuningMode, and Crestron
+	// requested while the tuning mode already matches. This toggle is only ever dispatched from the
+	// awaited startup path (DispatchProcessorBaselineSynchronizationAsync, called from
+	// InitializeConnectedStateAsync) - it is the only way to correct the processor's console-level
+	// TunableChannelStates.TuningMode before the entity ever reports online/ready, and Crestron
 	// Home's own Load layer reacts to it by relaying it back to this entity as a genuine
-	// lightDimmer:setLevel/light:on command, indistinguishable from a real user action. Since this
-	// entity itself awaits the coordinator call end-to-end, the exact window during which that
-	// relayed command can arrive is fully deterministic - it starts the moment the coordinator call
-	// is dispatched and ends the moment it completes. This flag is set immediately before that await
-	// and cleared in a finally immediately after, so ExecutePowerAsync can suppress only a replayed
-	// power-ON call reaching the physical device during that exact span, without guessing at any
-	// fixed time window. A power-OFF call is never suppressed here (see ExecutePowerAsync): baseline
-	// synchronization only ever runs at startup or immediately before a genuine power-off, and it is
-	// dispatched as an independent, concurrently-running background operation alongside the real
-	// physical off-dispatch - so the genuine, user-requested off command must always reach the
-	// device immediately regardless of whether the baseline sync is still in flight (or whether it
-	// ends up performing the toggle at all). A responsive UI takes priority over the console
-	// workaround. Status queries (device.UpdateAsync) and UI-facing property updates are unaffected
+	// lightDimmer:setLevel/light:on command, indistinguishable from a real user action. This
+	// class-level flag is the single source of truth for that startup window: it is set immediately
+	// before the awaited startup coordinator call and cleared in a finally immediately after, so
+	// ExecutePowerAsync can suppress only that replayed power-ON call from reaching the physical
+	// device during the deterministic span in which it can arrive, without guessing at any fixed
+	// time window or threading a separate flag through the coordinator. A power-OFF call is never
+	// suppressed here (see ExecutePowerAsync): the genuine, user-requested off command must always
+	// reach the device immediately regardless of whether this initialization sync happens to still
+	// be in flight. Status queries (device.UpdateAsync) and UI-facing property updates are unaffected
 	// and continue normally.
-	private bool _suppressDevicePowerCalls { get; set; }
+	private bool _isInitializingProcessorBaseline { get; set; }
 
 	// While a color-capable bulb is in color/HSV mode, Kasa/Tapo devices report color_temp=0. This
 	// is the device's supported inactive-mode sentinel, so the emulated CT range includes zero and
@@ -609,13 +607,23 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			{
 			// While off, this can be a passive Crestron Home Load-layer replay of a stored hue value
 			// against a bulb that is genuinely in white/CT mode (mirroring the dimmer replay pattern
-			// documented elsewhere in this file), not a genuine user color selection. Only republish
-			// the hue itself here - do NOT touch or seed LightColorSaturation - so a bulb that is
-			// really in CT mode does not get force-flipped to showing a fabricated color in the UI
-			// before the user has actually interacted with the color controls.
-			_isColorTemperatureUiModeActive = false;
-			LightColorHue = hueLevel;
-			PublishCurrentLightModeProperties ("lightColor:setHue:whileOff");
+			// documented elsewhere in this file), not a genuine user color selection. The driver must
+			// never publish anything to the UI while the bulb is off - the only permitted off-state
+			// UI action is the baseline sync that happens immediately after a genuine on->off
+			// transition (see SynchronizeProcessorBaselineForPowerOff) - so only update this entity's
+			// own internal tracking fields here, silently (no SetAndNotify/publish), and do not touch
+			// the processor baseline.
+			bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
+			_suppressPropertyNotifications = true;
+			try
+				{
+				_isColorTemperatureUiModeActive = false;
+				LightColorHue = hueLevel;
+				}
+			finally
+				{
+				_suppressPropertyNotifications = previousSuppressPropertyNotifications;
+				}
 			return;
 			}
 
@@ -653,9 +661,20 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 		if (!LightIsOn)
 			{
-			_isColorTemperatureUiModeActive = false;
-			LightColorSaturation = saturationLevel;
-			PublishCurrentLightModeProperties ("lightColor:setSaturation:whileOff");
+			// See the identical remark in LightColorSetHue's whileOff branch: the driver must never
+			// publish anything to the UI while the bulb is off, so only update internal tracking
+			// fields silently here.
+			bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
+			_suppressPropertyNotifications = true;
+			try
+				{
+				_isColorTemperatureUiModeActive = false;
+				LightColorSaturation = saturationLevel;
+				}
+			finally
+				{
+				_suppressPropertyNotifications = previousSuppressPropertyNotifications;
+				}
 			return;
 			}
 
@@ -733,8 +752,14 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			LightDimmerLevel = relativeLevel;
 			CancelSliderInteraction ();
 			LightIsOn = false;
-			SynchronizeProcessorBaselineForPowerOff ("lightDimmer:setLevel:off");
-			StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, false, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token), "lightDimmer:setLevel:off");
+
+			// Only a genuine on->off transition warrants baseline synchronization: the processor's
+			// stored baseline already reflects whatever mode was last actually applied, so replaying
+			// (or re-sending) an off command while the bulb is already confirmed off - e.g. pressing
+			// the UI off button again minutes later, or a Load-layer replay - has no real state change
+			// to synchronize and must not re-invoke the baseline coordinator at all.
+			string? powerOffContext = wasOnBeforeThisCommand ? "lightDimmer:setLevel:off" : null;
+			StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, false, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token, synchronizeProcessorBaselineForPowerOffContext: powerOffContext), "lightDimmer:setLevel:off");
 			return;
 			}
 
@@ -816,37 +841,27 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			// this driver's own _isColorTemperatureUiModeActive flag says afterward. Skipping the
 			// level update entirely (in addition to skipping the mode flag and publish) is required
 			// to fully suppress this artifact while the bulb is confirmed to be in color mode.
+			// The driver must never publish anything to the UI while the bulb is off - the only
+			// permitted off-state UI action is the baseline sync that runs immediately after a
+			// genuine on->off transition (see SynchronizeProcessorBaselineForPowerOff). Crestron's
+			// own Load layer optimistically renders its own UI slider from this artifact
+			// independent of anything this driver does, so racing to counter-publish here gains
+			// nothing: the real, settled color/CT mode is authoritatively restored once the light
+			// actually turns on, via ExecuteDeviceCommandAsync.ReassertColorModeAfterPowerOn
+			// re-applying it from live device state. Only cache the level internally, silently,
+			// for later use when the bulb is confirmed to be in white/CT mode.
 			if (_isColorTemperatureUiModeActive)
 				{
-				SetActiveColorTemperatureLevel (temperatureLevel);
-				PublishCurrentLightModeProperties ($"{commandId}:whileOff", synchronizeProcessorBaseline: false);
-				}
-			else
-				{
-				// Crestron's own Load layer optimistically renders the UI slider as White the moment
-				// it dispatches this command - BEFORE this driver even runs - regardless of anything
-				// this driver publishes or withholds afterward. Silently ignoring the artifact (i.e.
-				// not publishing anything) is therefore not enough to keep the UI showing Color mode:
-				// the Load layer has already flipped the on-screen slider on its own. The only way to
-				// visibly correct the UI is to immediately re-publish the real hue/saturation values
-				// right now, actively overriding the Load layer's optimistic White render, rather than
-				// waiting for ExecuteDeviceCommandAsync.ReassertColorModeAfterPowerOn to do it later
-				// once the paired power-on command completes.
-				//
-				// Republishing lightColor:hue/saturation alone is NOT enough: those are just entity-model
-				// properties on our own driver's side. The Load layer's actual on-screen mode is driven by
-				// a separate, console-level TuningMode on the processor itself (see
-				// ProcessorBaselineCoordinator). Correcting that console-level baseline here, however,
-				// would mean synchronizing it mid-power-on gesture - the processor baseline is only ever
-				// re-asserted by the processor on an off->on transition anyway, so any correction made now
-				// (before that transition has even happened) buys nothing but the multi-second SSH
-				// round-trip and gates the genuine power-on command behind it. Leave the console-level
-				// baseline alone here; SynchronizeProcessorBaselineForPowerOff already captures the real,
-				// settled mode and corrects the stored baseline the next time this light is turned off, so
-				// the following power-on cycle picks up the right mode without needing to act during this
-				// one at all.
-				LogInfo ($"Light entity '{ControllerId}' countering pre-power-on lightEmulatedColorTemperature artifact while confirmed color mode is active: level={temperatureLevel}.");
-				PublishActiveColorModeProperties ($"{commandId}:whileOff.CounterColorTemperatureArtifact");
+				bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
+				_suppressPropertyNotifications = true;
+				try
+					{
+					SetActiveColorTemperatureLevel (temperatureLevel);
+					}
+				finally
+					{
+					_suppressPropertyNotifications = previousSuppressPropertyNotifications;
+					}
 				}
 			return;
 			}
@@ -884,16 +899,18 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private void StartBackgroundOperation (Func<Task> operation, string operationName)
 		{
-		Task task;
-		try
-			{
-			task = operation ();
-			}
-		catch (Exception ex)
-			{
-			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' background operation '{operationName}' failed before dispatch: {ex}");
-			return;
-			}
+		// This must genuinely hand off to the thread pool via Task.Run rather than invoking
+		// operation() directly here: some downstream work (e.g. ProcessorBaselineCoordinator's
+		// console round-trip, which blocks the calling thread with Thread.Sleep while polling for
+		// an SSH response) is not written to yield at a real async boundary until well after it has
+		// already done its blocking work. Invoking operation() inline therefore ran that blocking
+		// work synchronously on the caller's thread - stalling e.g. LightDimmerSetLevel's off-path
+		// for the full multi-second SSH round-trip before it could even reach the line that starts
+		// the actual physical power-off dispatch. Task.Run guarantees the delegate (and any
+		// synchronous blocking prefix within it) runs on a thread-pool thread instead, so callers
+		// of StartBackgroundOperation return immediately regardless of what the operation does
+		// before its first real await.
+		Task task = Task.Run (() => operation ());
 
 		task.ContinueWith (
 			continuationTask =>
@@ -1943,14 +1960,14 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private static readonly TimeSpan DeviceCommandRetryDelay = TimeSpan.FromSeconds (1);
 	private const int DEVICE_COMMAND_MAX_ATTEMPTS = 2;
 
-	protected async Task ExecuteDeviceCommandAsync (Func<KasaDevice, CancellationToken, Task> action, bool refreshAfterCommand = true, CancellationToken cancellationToken = default, bool reassertColorModeAfterRefresh = false)
+	protected async Task ExecuteDeviceCommandAsync (Func<KasaDevice, CancellationToken, Task> action, bool refreshAfterCommand = true, CancellationToken cancellationToken = default, bool reassertColorModeAfterRefresh = false, string? synchronizeProcessorBaselineForPowerOffContext = null)
 		{
 		for (int attempt = 1; ; attempt++)
 			{
 			bool isFinalAttempt = attempt >= DEVICE_COMMAND_MAX_ATTEMPTS;
 			try
 				{
-				await ExecuteDeviceCommandAttemptAsync (action, refreshAfterCommand, reassertColorModeAfterRefresh, isFinalAttempt, cancellationToken).ConfigureAwait (false);
+				await ExecuteDeviceCommandAttemptAsync (action, refreshAfterCommand, reassertColorModeAfterRefresh, synchronizeProcessorBaselineForPowerOffContext, isFinalAttempt, cancellationToken).ConfigureAwait (false);
 				return;
 				}
 			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1965,7 +1982,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			}
 		}
 
-	private async Task ExecuteDeviceCommandAttemptAsync (Func<KasaDevice, CancellationToken, Task> action, bool refreshAfterCommand, bool reassertColorModeAfterRefresh, bool isFinalAttempt, CancellationToken cancellationToken)
+	private async Task ExecuteDeviceCommandAttemptAsync (Func<KasaDevice, CancellationToken, Task> action, bool refreshAfterCommand, bool reassertColorModeAfterRefresh, string? synchronizeProcessorBaselineForPowerOffContext, bool isFinalAttempt, CancellationToken cancellationToken)
 		{
 		try
 			{
@@ -2001,7 +2018,32 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 						LogReportedState ("ExecuteDeviceCommandAsync.AfterCommand", device);
 						}
 
-					ApplyState (device);
+					// The driver must never publish anything to the UI while the bulb is off - the only
+					// permitted off-state UI action is the baseline sync dispatched below. This refresh
+					// following a genuine power-off reads the bulb's real, settled state purely so that
+					// baseline sync has accurate live data to work with; it must not surface as UI
+					// property notifications, since in the overwhelming common case nothing about the
+					// bulb's retained brightness/hue/saturation genuinely changed just because it was
+					// turned off.
+					bool isGenuinePowerOffRefresh = synchronizeProcessorBaselineForPowerOffContext is not null;
+					bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
+					if (isGenuinePowerOffRefresh)
+						{
+						_suppressPropertyNotifications = true;
+						}
+
+					try
+						{
+						ApplyState (device);
+						}
+					finally
+						{
+						if (isGenuinePowerOffRefresh)
+							{
+							_suppressPropertyNotifications = previousSuppressPropertyNotifications;
+							}
+						}
+
 					OnlineIndicatorIsOnline = true;
 					ReadyIndicatorIsReady = true;
 
@@ -2017,6 +2059,19 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 					if (reassertColorModeAfterRefresh && LightIsOn && _supportsFullColor && !IsCurrentColorTemperatureUiMode ())
 						{
 						PublishActiveColorModeProperties ("ExecuteDeviceCommandAsync.ReassertColorModeAfterPowerOn");
+						}
+
+					// Baseline synchronization for a genuine power-off must be based on the live state the
+					// bulb itself reports AFTER it has actually been turned off (per the user's explicit
+					// requirement), not on cached hue/saturation/color-temperature properties captured
+					// before the physical off call ran. ApplyState (device) above has already refreshed
+					// those properties from the just-completed device.UpdateAsync response, so dispatching
+					// here reads exactly that live, settled state. This still runs through the normal
+					// fire-and-forget StartBackgroundOperation dispatch, so it never delays returning
+					// control back to the caller of the (already-completed) physical off command.
+					if (synchronizeProcessorBaselineForPowerOffContext is string powerOffContext)
+						{
+						SynchronizeProcessorBaselineForPowerOff (powerOffContext);
 						}
 					}
 				catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutToken.IsCancellationRequested)
@@ -2050,26 +2105,17 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private async Task ExecutePowerAsync (KasaDevice device, bool on, CancellationToken cancellationToken)
 		{
-		// A genuine "off" command must NEVER be suppressed or delayed here, regardless of
-		// _suppressDevicePowerCalls: SynchronizeProcessorBaselineForPowerOff and the real physical
-		// off-dispatch are started as two independent, concurrently-running background operations
-		// (see LightDimmerSetLevel's off-shortcut and LightOff), so the baseline-sync task setting
-		// this flag can easily still be in flight when the genuine off command's own call to
-		// ExecutePowerAsync arrives. Responsiveness of the user-requested power-off always takes
-		// priority over the console workaround.
-		//
-		// What DOES need suppressing is a relayed "on": ProcessorBaselineCoordinator.SynchronizeCoreAsync
-		// only issues its off->on SetLoadState toggle when the load's stored/active tuning mode
-		// actually needs correcting (it returns early as a no-op when both already match the
-		// requested mode - see the cachedProcessorTuningMode/activeTuningMode checks there), so the
-		// toggle - and the resulting relayed on command from Crestron's Load layer - only happens on
-		// that correction path, not on every synchronization. When it does happen it is
-		// indistinguishable from a genuine user action, and turning the bulb back on immediately
-		// after the user just turned it off would be a visible, incorrect flicker, so it must still
-		// be suppressed whenever the flag is set.
-		if (_suppressDevicePowerCalls && on)
+		// A genuine "off" command may never be suppressed, delayed, or silently dropped here - see
+		// the remarks on _isInitializingProcessorBaseline. A genuine "on" is suppressed only for the
+		// deterministic duration of the awaited startup processor baseline synchronization: that
+		// window is the only time the processor console workaround ever performs its off->on
+		// SetLoadState toggle, which Crestron's own Load layer relays back to this entity as an
+		// indistinguishable genuine "on" command. Suppressing it there avoids a visible flicker from
+		// that relayed command reaching the physical bulb, while the flag's narrow, startup-only
+		// scope means it can never suppress an actual user-requested power-on outside that window.
+		if (on && _isInitializingProcessorBaseline)
 			{
-			LogInfo ($"Light entity '{ControllerId}' suppressing physical device power-on call during processor baseline synchronization: on={on}.");
+			LogInfo ($"Light entity '{ControllerId}' suppressing physical device power-on call relayed from the startup processor baseline synchronization toggle.");
 			return;
 			}
 
@@ -2307,7 +2353,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		double saturation = LightColorSaturation;
 		long colorTemperature = GetActiveColorTemperatureLevel ();
 		StartBackgroundOperation (
-			() => RunProcessorBaselineSynchronizationSuppressingPowerCalls (mode, dimmerLevel, hue, saturation, colorTemperature),
+			() => InvokeProcessorBaselineSynchronization (mode, dimmerLevel, hue, saturation, colorTemperature),
 			$"ProcessorBaseline:{context}");
 		}
 
@@ -2347,18 +2393,29 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	// off->on SetLoadState toggle performed inside _synchronizeProcessorBaselineAsync (see
 	// ProcessorBaselineCoordinator.SynchronizeCoreAsync) is what causes Crestron's Load layer to
 	// relay a power command back at this entity, so the flag only ever needs to be armed for the
-	// exact duration of this awaited call - no timeout guess required.
+	// exact duration of this awaited call - no timeout guess required. This wrapper is only ever
+	// invoked from the awaited startup path (DispatchProcessorBaselineSynchronizationAsync), so
+	// _isInitializingProcessorBaseline is armed only for that startup window. The fire-and-forget
+	// post-off/off-state synchronizations dispatched from DispatchProcessorBaselineSynchronization
+	// call InvokeProcessorBaselineSynchronization directly instead, without arming the flag - a
+	// genuine, user-requested power-on arriving while one of those background syncs happens to still
+	// be in flight must never be suppressed.
 	private async Task RunProcessorBaselineSynchronizationSuppressingPowerCalls (ProcessorLightTuningMode mode, double dimmerLevel, double hue, double saturation, long colorTemperature)
 		{
-		_suppressDevicePowerCalls = true;
+		_isInitializingProcessorBaseline = true;
 		try
 			{
-			await _synchronizeProcessorBaselineAsync! (DeviceName, mode, dimmerLevel, hue, saturation, colorTemperature, _lifetimeCancellationSource.Token);
+			await InvokeProcessorBaselineSynchronization (mode, dimmerLevel, hue, saturation, colorTemperature).ConfigureAwait (false);
 			}
 		finally
 			{
-			_suppressDevicePowerCalls = false;
+			_isInitializingProcessorBaseline = false;
 			}
+		}
+
+	private Task InvokeProcessorBaselineSynchronization (ProcessorLightTuningMode mode, double dimmerLevel, double hue, double saturation, long colorTemperature)
+		{
+		return _synchronizeProcessorBaselineAsync! (DeviceName, mode, dimmerLevel, hue, saturation, colorTemperature, _lifetimeCancellationSource.Token);
 		}
 
 	private long GetActiveColorTemperatureLevel ()
