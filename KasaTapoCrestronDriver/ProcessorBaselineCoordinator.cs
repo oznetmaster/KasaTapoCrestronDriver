@@ -49,6 +49,13 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 	// requested mode (because the active channel happens to agree) while the stored baseline stays
 	// wrong and keeps re-triggering the White artifact on every subsequent power-on.
 	private static readonly Regex BaselineTuningModeExpression = new (@"LoadId\s*:\s*(?<id>\d+)(?:(?!\s*LightLoadState\s*#).)*?BaselineSetting\s*:(?:(?!\s*LightLoadState\s*#).)*?TuningMode\s*:\s*(?<mode>\w+)", RegexOptions.Singleline | RegexOptions.CultureInvariant);
+	// Mirrors BaselineTuningModeExpression but targets the separate TuningMode that trails
+	// TunableChannelStates instead of BaselineSetting - the transient, currently-rendered channel
+	// state that the Crestron Home UI actually reads for its initial tile, and which can silently
+	// diverge from BaselineSetting.TuningMode (see the comment above). It is never cached: unlike
+	// the stored baseline, this field can be changed at any time by ordinary color/CT commands that
+	// never touch this coordinator, so a cached value would quickly go stale.
+	private static readonly Regex ActiveTuningModeExpression = new (@"LoadId\s*:\s*(?<id>\d+)(?:(?!\s*LightLoadState\s*#).)*?TunableChannelStates\s*:(?:(?!\s*LightLoadState\s*#).)*?TuningMode\s*:\s*(?<mode>\w+)", RegexOptions.Singleline | RegexOptions.CultureInvariant);
 	// Detects a .NET exception echoed back on the processor console (e.g. RpcLightsManager
 	// rejecting a SetLoadState call whose parameters don't match the load's current tuning mode).
 	private static readonly Regex ConsoleExceptionExpression = new (@"^\s*\S*Exception\s*:", RegexOptions.Multiline | RegexOptions.CultureInvariant);
@@ -140,12 +147,24 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 				_baselineTuningModesByLoadId[loadId] = processorTuningMode;
 				cachedProcessorTuningMode = processorTuningMode;
 				_logInfo ($"Processor baseline initialized: loadName='{loadName}', loadId={loadId}, tuningMode={processorTuningMode}.");
-			}
+				}
 
 			if (string.Equals (cachedProcessorTuningMode, tuningMode, StringComparison.OrdinalIgnoreCase))
 				{
-				_logInfo ($"Processor baseline already matches cached mode: loadName='{loadName}', loadId={loadId}, tuningMode={tuningMode}.");
-				return;
+				// The stored BaselineSetting already matches, but that alone does not guarantee the
+				// processor's separate, UI-visible TunableChannelStates.TuningMode also matches - it is
+				// only re-asserted by the off->on SetLoadState toggle below, and ordinary color/CT
+				// commands can leave it stuck disagreeing with the stored baseline. Resolve it fresh
+				// (never cached) and only skip the toggle entirely when it also already matches;
+				// otherwise fall through so the toggle below can correct it.
+				string? activeTuningMode = await ResolveActiveTuningModeAsync (loadId, cancellationToken).ConfigureAwait (false);
+				if (string.Equals (activeTuningMode, tuningMode, StringComparison.OrdinalIgnoreCase))
+					{
+					_logInfo ($"Processor baseline already matches cached mode: loadName='{loadName}', loadId={loadId}, tuningMode={tuningMode}.");
+					return;
+					}
+
+				_logInfo ($"Processor baseline stored value matches but active channel state diverged: loadName='{loadName}', loadId={loadId}, tuningMode={tuningMode}, activeTuningMode={activeTuningMode}.");
 				}
 
 			int hueDegrees = (int)Math.Round (Math.Max (0d, Math.Min (1d, hue)) * 360d, MidpointRounding.AwayFromZero);
@@ -286,6 +305,21 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 			}
 
 		throw new InvalidOperationException ($"Processor baseline synchronization skipped: unable to determine baseline tuning mode for loadId={loadId}.");
+		}
+
+	private async Task<string?> ResolveActiveTuningModeAsync (long loadId, CancellationToken cancellationToken)
+		{
+		string loadStates = await ExecuteCommandAsync ("ch rpc lights ListAllLoadStates", cancellationToken).ConfigureAwait (false);
+		foreach (Match match in ActiveTuningModeExpression.Matches (loadStates))
+			{
+			if (long.TryParse (match.Groups["id"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out long stateLoadId)
+				&& stateLoadId == loadId)
+				{
+				return match.Groups["mode"].Value;
+				}
+			}
+
+		return null;
 		}
 
 	private static bool IsMatchingLoadName (string kasaTapoLoadName, string processorLoadName)

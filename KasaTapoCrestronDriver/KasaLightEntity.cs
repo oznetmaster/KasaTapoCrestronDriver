@@ -470,6 +470,20 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private DateTime? _startupDimmerReplayGuardUntilUtc { get; set; }
 	private double _startupDimmerReplayRealLevel { get; set; }
 
+	// The processor console synchronization dispatched by DispatchProcessorBaselineSynchronization
+	// issues a real off->on SetLoadState toggle against the load (see ProcessorBaselineCoordinator) -
+	// the only way to correct the processor's console-level TunableChannelStates.TuningMode. Crestron
+	// Home's own Load layer reacts to that toggle by relaying it back to this entity as a genuine
+	// lightDimmer:setLevel/light:on/light:off command, indistinguishable from a real user action.
+	// Since this entity itself awaits the coordinator call end-to-end, the exact window during which
+	// that relayed command can arrive is fully deterministic - it starts the moment the coordinator
+	// call is dispatched and ends the moment it completes. This flag is set immediately before that
+	// await and cleared in a finally immediately after, so ExecutePowerAsync can suppress only a
+	// replayed power call reaching the physical device during that exact span, without guessing at
+	// any fixed time window. Status queries (device.UpdateAsync) and UI-facing property updates are
+	// unaffected and continue normally.
+	private bool _suppressDevicePowerCalls { get; set; }
+
 	// While a color-capable bulb is in color/HSV mode, Kasa/Tapo devices report color_temp=0. This
 	// is the device's supported inactive-mode sentinel, so the emulated CT range includes zero and
 	// publishes zero in color mode. Retaining a Kelvin value in that state makes Crestron Home restore
@@ -705,6 +719,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			{
 			CancelSliderInteraction ();
 			LightIsOn = false;
+			SynchronizeProcessorBaselineForPowerOff ("lightDimmer:setLevel:off");
 			StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, false, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token), "lightDimmer:setLevel:off");
 			return;
 			}
@@ -720,6 +735,9 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Brightness, relativeLevel, 0d, 0d, 0L));
 		}
 
+	// Registered only for simple on/off bulbs (see OnOffMembers/ConfigureDynamicFeatures) - those
+	// bulbs have no color/CT mode and no processor console baseline concept at all, so this must
+	// never touch SynchronizeProcessorBaselineForPowerOff.
 	private void LightOff ()
 		{
 		LogCommandInvocation ("light:off", "requested power off");
@@ -1354,6 +1372,13 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		_pendingStartupSnapshotAfterConnectedState = false;
 		LogInfo ($"Light entity '{ControllerId}' publishing deferred startup snapshot after connected state and child publication were both satisfied; context='{context}'.");
 		PublishStateSnapshot ();
+
+		// Diagnostic: unlike LogDynamicFeatureEntityState (which only ever logs once, before this
+		// startup snapshot is published), capture the full GetState() payload - the actual combined
+		// definition/value contract Crestron Home receives - immediately after this deferred
+		// snapshot so a mismatched initial UI mode can be correlated against exactly what was sent,
+		// not just the individual PublishProperty calls logged elsewhere.
+		LogEntityStateSnapshot ($"TryPublishDeferredStartupSnapshot.{context}");
 		}
 
 	private void TryApplyDeferredDeviceStateAfterSliderInteraction (string context)
@@ -1522,15 +1547,26 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 			_suppressPropertyNotifications = previousSuppressPropertyNotifications;
 			}
 
-		OnlineIndicatorIsOnline = true;
-		ReadyIndicatorIsReady = true;
-		// Synchronize the processor baseline to the light's actual reported mode here, the same way
-		// ApplyState above already reflects that real mode into the UI properties. Without this, the
-		// baseline coordinator's cached tuning mode can go stale/out-of-sync with the bulb's true
-		// state across reconnects/reloads (e.g. left over from a prior session), so a later spurious
+		// Synchronize the processor baseline to the light's actual reported mode and AWAIT it to
+		// completion before this entity reports itself online/ready. Live processor log evidence
+		// (2026-07-26.log, 08:10:02-08:10:05) proved that dispatching this as a fire-and-forget
+		// background operation loses the race on every reload: Crestron Home's own Load-layer
+		// reconnect handshake renders its initial UI tile from the load's live
+		// TunableChannelStates the moment the entity reports ready, which happens well before the
+		// SSH console round-trip that corrects that stale state has a chance to land. Awaiting it
+		// here closes that race deterministically. Without this, the baseline coordinator's cached
+		// tuning mode can also go stale/out-of-sync with the bulb's true state across
+		// reconnects/reloads (e.g. left over from a prior session), so a later spurious
 		// pre-power-on mode command is wrongly treated as "already matches" and the real correction
 		// is skipped.
-		PublishCurrentLightModeProperties ("InitializeConnectedStateAsync.AfterOnlineReady", synchronizeProcessorBaseline: true);
+		if (!string.IsNullOrWhiteSpace (DeviceName))
+			{
+			await DispatchProcessorBaselineSynchronizationAsync (LightTuningDecisions.ToProcessorTuningMode (IsCurrentColorTemperatureUiMode ()), "InitializeConnectedStateAsync.BeforeOnlineReady").ConfigureAwait (false);
+			}
+
+		OnlineIndicatorIsOnline = true;
+		ReadyIndicatorIsReady = true;
+		PublishCurrentLightModeProperties ("InitializeConnectedStateAsync.AfterOnlineReady", synchronizeProcessorBaseline: false);
 
 		// Arm the startup dimmer-replay guard (see remarks on the fields above) whenever the bulb is
 		// actually reported on, regardless of its real brightness level - even a genuinely low level
@@ -1719,6 +1755,16 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		LogInfo ($"Light entity '{ControllerId}' UpdateDescriptorFromConnectedDevice: resolvedAlias='{resolvedAlias}', deviceAlias='{device.Alias ?? "<null>"}', systemInfoAlias='{device.SystemInfo?.Alias ?? "<null>"}', previousName='{_descriptor.Name ?? "<null>"}'.");
 
 		_descriptor.Name = resolvedAlias;
+
+		// ManagedLightDescriptor.Kind's setter already no-ops when the recomputed value matches what
+		// is already assigned, and only throws if it would actually change after being resolved once
+		// (see its setter) - by design, recomputing it here on every connect/reconnect is intentional
+		// so a light whose Kind has not yet been resolved (still Unknown) gets classified as soon as
+		// real device state is available. That contract only holds because InferManagedLightKind
+		// itself must be deterministic for a given bulb's fixed hardware capability - it must never
+		// depend on transient state (e.g. which mode happens to be active right now), since two
+		// different connect attempts reading different transient states would then race to assign
+		// two different Kind values and the second one would trip the immutability guard.
 		_descriptor.Kind = InferManagedLightKind (device, _descriptor.DiscoveredDeviceType);
 
 		DeviceName = _descriptor.Name;
@@ -1975,6 +2021,16 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private async Task ExecutePowerAsync (KasaDevice device, bool on, CancellationToken cancellationToken)
 		{
+		// See _suppressDevicePowerCalls remarks above: while this flag is set, any power command
+		// reaching here is a direct, deterministic side effect of our own processor console
+		// synchronization toggle being relayed back by Crestron's Load layer, not a genuine user
+		// action, so the physical device must not be touched at all.
+		if (_suppressDevicePowerCalls)
+			{
+			LogInfo ($"Light entity '{ControllerId}' suppressing physical device power call during processor baseline synchronization: on={on}.");
+			return;
+			}
+
 		string? childId = ChildId;
 		if (!string.IsNullOrWhiteSpace (childId))
 			{
@@ -2144,7 +2200,50 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 
 	private void SynchronizeProcessorBaseline (ProcessorLightTuningMode mode, string context)
 		{
-		if (!_supportsFullColor || !_sharedConfiguration.EnableProcessorBaselineWorkaround || _synchronizeProcessorBaselineAsync is null || string.IsNullOrWhiteSpace (DeviceName))
+		// The processor baseline workaround exists solely to correct confusion between the two
+		// tuning modes the processor's own Load layer can render (Color vs White/CT) - a bulb that
+		// supports full color but has no white/CT mode at all (_supportsColorTemperature is false)
+		// can only ever be in Color mode, so there is nothing for the baseline to ever disagree
+		// about and this must be skipped entirely for such bulbs.
+		if (!_supportsFullColor || !_supportsColorTemperature || !_sharedConfiguration.EnableProcessorBaselineWorkaround || _synchronizeProcessorBaselineAsync is null || string.IsNullOrWhiteSpace (DeviceName))
+			{
+			return;
+			}
+
+		// The processor only ever asserts BaselineSetting.TuningMode into the Crestron Home UI on an
+		// actual off->on power transition (see ProcessorBaselineCoordinator.SynchronizeCoreAsync),
+		// which is the only reason the coordinator forces a real SetLoadState off/on toggle in the
+		// first place. While the light is already on, nothing currently rendered depends on the
+		// console-level baseline, so synchronizing now would only force that toggle - and the
+		// several-second physical flicker that comes with it - for no visible benefit. Skip it
+		// entirely here; SynchronizeProcessorBaselineForPowerOff recomputes the actual mode from live
+		// state and synchronizes right before the light is actually turned off instead.
+		if (LightIsOn)
+			{
+			return;
+			}
+
+		DispatchProcessorBaselineSynchronization (mode, context);
+		}
+
+	// Synchronizes the processor's console-level baseline using the light's actual current mode,
+	// called immediately before the light is commanded off. There is nothing to cache: by the time
+	// the light is genuinely being turned off, LightColorHue/LightColorSaturation/color-temperature
+	// already reflect the real, settled mode, so it can simply be read and applied here rather than
+	// tracked speculatively while the light was on.
+	private void SynchronizeProcessorBaselineForPowerOff (string context)
+		{
+		if (!_supportsFullColor || !_supportsColorTemperature)
+			{
+			return;
+			}
+
+		DispatchProcessorBaselineSynchronization (LightTuningDecisions.ToProcessorTuningMode (IsCurrentColorTemperatureUiMode ()), context);
+		}
+
+	private void DispatchProcessorBaselineSynchronization (ProcessorLightTuningMode mode, string context)
+		{
+		if (!_supportsFullColor || !_supportsColorTemperature || !_sharedConfiguration.EnableProcessorBaselineWorkaround || _synchronizeProcessorBaselineAsync is null || string.IsNullOrWhiteSpace (DeviceName))
 			{
 			return;
 			}
@@ -2166,8 +2265,58 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		double saturation = LightColorSaturation;
 		long colorTemperature = GetActiveColorTemperatureLevel ();
 		StartBackgroundOperation (
-			() => _synchronizeProcessorBaselineAsync (DeviceName, mode, dimmerLevel, hue, saturation, colorTemperature, _lifetimeCancellationSource.Token),
+			() => RunProcessorBaselineSynchronizationSuppressingPowerCalls (mode, dimmerLevel, hue, saturation, colorTemperature),
 			$"ProcessorBaseline:{context}");
+		}
+
+	// Awaited counterpart of DispatchProcessorBaselineSynchronization, used only from
+	// InitializeConnectedStateAsync. Live processor log evidence (2026-07-26.log, 08:10:02-08:10:05)
+	// showed the fire-and-forget background dispatch losing the race every time on a reload: the SSH
+	// console round-trip that corrects the processor's stale TunableChannelStates.TuningMode does not
+	// land until ~1-2 seconds after OnlineIndicatorIsOnline/ReadyIndicatorIsReady are published, and
+	// Crestron Home's own Load-layer reconnect handshake renders its initial UI tile from the load's
+	// live TunableChannelStates immediately once the entity reports ready - well before that toggle
+	// commits. Awaiting the synchronization here, before the entity is marked online/ready, closes
+	// that race deterministically instead of leaving the initial UI tile dependent on background
+	// timing. Physical device power calls are still suppressed for the duration via
+	// RunProcessorBaselineSynchronizationSuppressingPowerCalls.
+	private async Task DispatchProcessorBaselineSynchronizationAsync (ProcessorLightTuningMode mode, string context)
+		{
+		if (!_supportsFullColor || !_supportsColorTemperature || !_sharedConfiguration.EnableProcessorBaselineWorkaround || _synchronizeProcessorBaselineAsync is null || string.IsNullOrWhiteSpace (DeviceName))
+			{
+			return;
+			}
+
+		double dimmerLevel = LightDimmerLevel;
+		double hue = LightColorHue;
+		double saturation = LightColorSaturation;
+		long colorTemperature = GetActiveColorTemperatureLevel ();
+		try
+			{
+			await RunProcessorBaselineSynchronizationSuppressingPowerCalls (mode, dimmerLevel, hue, saturation, colorTemperature).ConfigureAwait (false);
+			}
+		catch (Exception ex)
+			{
+			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' awaited processor baseline synchronization '{context}' failed: {ex}");
+			}
+		}
+
+	// Wraps the actual console round-trip with the deterministic power-call suppression flag: the
+	// off->on SetLoadState toggle performed inside _synchronizeProcessorBaselineAsync (see
+	// ProcessorBaselineCoordinator.SynchronizeCoreAsync) is what causes Crestron's Load layer to
+	// relay a power command back at this entity, so the flag only ever needs to be armed for the
+	// exact duration of this awaited call - no timeout guess required.
+	private async Task RunProcessorBaselineSynchronizationSuppressingPowerCalls (ProcessorLightTuningMode mode, double dimmerLevel, double hue, double saturation, long colorTemperature)
+		{
+		_suppressDevicePowerCalls = true;
+		try
+			{
+			await _synchronizeProcessorBaselineAsync! (DeviceName, mode, dimmerLevel, hue, saturation, colorTemperature, _lifetimeCancellationSource.Token);
+			}
+		finally
+			{
+			_suppressDevicePowerCalls = false;
+			}
 		}
 
 	private long GetActiveColorTemperatureLevel ()
@@ -2636,17 +2785,20 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		bool hasColorState = HasCurrentFullColorState (device.LightState);
 		bool supportsFullColor = (supportsHue && supportsSaturation) || hasColorState;
 
-		// A full-color-capable bulb (e.g. KL130) always reports retained hue/saturation values from
-		// the device, even while it is currently operating in white/color-temperature mode - the
-		// bulb keeps its last HSV color in memory purely so it can be restored later. supportsFullColor
-		// above only reflects that reporting *capability*, not which mode is presently active, so it
-		// must not be used on its own to decide the managed identity/kind that is published to Crestron
-		// Home and used to select the tile's initial UI. Only classify the light as Color when full
-		// color is genuinely the active mode right now (i.e. color temperature is not currently active);
-		// otherwise a color-temperature-capable bulb sitting in white mode must report TunableWhite.
-		bool isCurrentlyInColorTemperatureMode = HasCurrentColorTemperatureState (device.LightState);
-
-		if (supportsFullColor && !isCurrentlyInColorTemperatureMode)
+		// ManagedLightDescriptor.Kind is a one-time/locked classification (see
+		// ManagedLightDescriptor.Kind's setter) that PlatformDriver uses to select the managed
+		// entity type and identity for this controllerId for the entity's entire lifetime - it must
+		// therefore reflect the bulb's fixed hardware *capability*, never its transient currently
+		// active mode. A full-color-capable bulb (e.g. KL130) always reports retained hue/saturation
+		// values from the device, even while it is currently operating in white/color-temperature
+		// mode - the bulb keeps its last HSV color in memory purely so it can be restored later - so
+		// supportsFullColor already reflects the real, permanent capability on its own. Gating this on
+		// whichever mode happens to be active at the moment this particular connect attempt reads the
+		// device is a race: a bulb sitting in white mode would infer TunableWhite here, but if an
+		// earlier or later reconnect within the same startup retry loop reads it while in color mode
+		// it would infer Color instead, and the second assignment then throws (Kind cannot change
+		// after initialization), aborting startup.
+		if (supportsFullColor)
 			{
 			return ManagedLightKind.Color;
 			}
