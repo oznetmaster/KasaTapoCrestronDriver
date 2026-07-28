@@ -56,6 +56,13 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 	// the stored baseline, this field can be changed at any time by ordinary color/CT commands that
 	// never touch this coordinator, so a cached value would quickly go stale.
 	private static readonly Regex ActiveTuningModeExpression = new (@"LoadId\s*:\s*(?<id>\d+)(?:(?!\s*LightLoadState\s*#).)*?TunableChannelStates\s*:(?:(?!\s*LightLoadState\s*#).)*?TuningMode\s*:\s*(?<mode>\w+)", RegexOptions.Singleline | RegexOptions.CultureInvariant);
+	// EXPERIMENTAL (see SynchronizeCoreAsync): captures the stored BaselineSetting's Hue,
+	// Saturation, and ColorTemperature so they can be compared against the currently requested
+	// values even when TuningMode already matches. This is being trialed to determine whether a
+	// stale baseline Hue/Saturation (left over from an earlier color) - not just a stale
+	// TuningMode - can itself cause a visible flash/incorrect color on power-on before the driver's
+	// own ReassertColorModeAfterPowerOn correction lands.
+	private static readonly Regex BaselineColorExpression = new (@"LoadId\s*:\s*(?<id>\d+)(?:(?!\s*LightLoadState\s*#).)*?BaselineSetting\s*:(?:(?!\s*LightLoadState\s*#).)*?Hue\s*:\s*(?<hue>\d+)(?:(?!\s*LightLoadState\s*#).)*?Saturation\s*:\s*(?<saturation>\d+)(?:(?!\s*LightLoadState\s*#).)*?ColorTemperature\s*:\s*(?<colorTemperature>\d+)", RegexOptions.Singleline | RegexOptions.CultureInvariant);
 	// Detects a .NET exception echoed back on the processor console (e.g. RpcLightsManager
 	// rejecting a SetLoadState call whose parameters don't match the load's current tuning mode).
 	private static readonly Regex ConsoleExceptionExpression = new (@"^\s*\S*Exception\s*:", RegexOptions.Multiline | RegexOptions.CultureInvariant);
@@ -140,6 +147,11 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 				}
 
 			string tuningMode = mode == ProcessorLightTuningMode.White ? "WhiteTuning" : "ColorTuning";
+			int hueDegrees = (int)Math.Round (Math.Max (0d, Math.Min (1d, hue)) * 360d, MidpointRounding.AwayFromZero);
+			int saturationPercent = (int)Math.Round (Math.Max (0d, Math.Min (1d, saturation)) * 100d, MidpointRounding.AwayFromZero);
+			long temperature = Math.Max (1L, colorTemperature);
+			int levelPercent = (int)Math.Round (Math.Max (0d, Math.Min (100d, level)), MidpointRounding.AwayFromZero);
+
 			if (!_baselineTuningModesByLoadId.TryGetValue (loadId, out string? cachedProcessorTuningMode))
 				{
 				string processorTuningMode = await ResolveBaselineTuningModeAsync (loadId, cancellationToken).ConfigureAwait (false)
@@ -158,19 +170,38 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 				// (never cached) and only skip the toggle entirely when it also already matches;
 				// otherwise fall through so the toggle below can correct it.
 				string? activeTuningMode = await ResolveActiveTuningModeAsync (loadId, cancellationToken).ConfigureAwait (false);
-				if (string.Equals (activeTuningMode, tuningMode, StringComparison.OrdinalIgnoreCase))
+				bool activeTuningModeMatches = string.Equals (activeTuningMode, tuningMode, StringComparison.OrdinalIgnoreCase);
+
+				// EXPERIMENTAL: even when both TuningMode fields already match, the stored
+				// BaselineSetting's Hue/Saturation/ColorTemperature can independently be stale -
+				// left over from whatever color was baselined the first time this coordinator ran -
+				// while the light's actual/live color has since drifted away from it via ordinary
+				// color commands that never touch this coordinator. Being trialed to see whether
+				// this stale baseline color (replayed by the processor's Load layer on every
+				// off->on transition) is itself a source of a visible flash/incorrect color on
+				// power-on, independent of TuningMode.
+				(int hueDegrees, int saturationPercent, long colorTemperature)? baselineColor = await ResolveBaselineColorAsync (loadId, cancellationToken).ConfigureAwait (false);
+				bool baselineColorMatches = baselineColor is null
+					|| (baselineColor.Value.hueDegrees == hueDegrees
+						&& baselineColor.Value.saturationPercent == saturationPercent
+						&& baselineColor.Value.colorTemperature == temperature);
+
+				if (activeTuningModeMatches && baselineColorMatches)
 					{
 					_logInfo ($"Processor baseline already matches cached mode: loadName='{loadName}', loadId={loadId}, tuningMode={tuningMode}.");
 					return;
 					}
 
-				_logInfo ($"Processor baseline stored value matches but active channel state diverged: loadName='{loadName}', loadId={loadId}, tuningMode={tuningMode}, activeTuningMode={activeTuningMode}.");
-				}
+				if (!activeTuningModeMatches)
+					{
+					_logInfo ($"Processor baseline stored value matches but active channel state diverged: loadName='{loadName}', loadId={loadId}, tuningMode={tuningMode}, activeTuningMode={activeTuningMode}.");
+					}
 
-			int hueDegrees = (int)Math.Round (Math.Max (0d, Math.Min (1d, hue)) * 360d, MidpointRounding.AwayFromZero);
-			int saturationPercent = (int)Math.Round (Math.Max (0d, Math.Min (1d, saturation)) * 100d, MidpointRounding.AwayFromZero);
-			long temperature = Math.Max (1L, colorTemperature);
-			int levelPercent = (int)Math.Round (Math.Max (0d, Math.Min (100d, level)), MidpointRounding.AwayFromZero);
+				if (!baselineColorMatches && baselineColor.HasValue)
+					{
+					_logInfo ($"Processor baseline stored color diverged from requested color: loadName='{loadName}', loadId={loadId}, storedHue={baselineColor.Value.hueDegrees}, storedSaturation={baselineColor.Value.saturationPercent}, storedColorTemperature={baselineColor.Value.colorTemperature}, requestedHue={hueDegrees}, requestedSaturation={saturationPercent}, requestedColorTemperature={temperature}.");
+					}
+				}
 			string baselineCommand = string.Format (CultureInfo.InvariantCulture, "ch rpc lights SetBaselineSetting {0} {1} {2} {3} false {4}", loadId, hueDegrees, saturationPercent, temperature, tuningMode);
 			// Wait for the baseline command to fully complete (rather than fire-and-forget) so the
 			// SetLoadState toggle below is issued against a load whose baseline has already been
@@ -316,6 +347,28 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 				&& stateLoadId == loadId)
 				{
 				return match.Groups["mode"].Value;
+				}
+			}
+
+		return null;
+		}
+
+	// EXPERIMENTAL: resolves the stored BaselineSetting's Hue/Saturation/ColorTemperature (never
+	// cached, since ordinary color commands never update this coordinator's cache but can leave the
+	// stored baseline pointing at stale values). Returns null if the fields cannot be parsed, in
+	// which case the caller falls back to the previous TuningMode-only comparison.
+	private async Task<(int hueDegrees, int saturationPercent, long colorTemperature)?> ResolveBaselineColorAsync (long loadId, CancellationToken cancellationToken)
+		{
+		string loadStates = await ExecuteCommandAsync ("ch rpc lights ListAllLoadStates", cancellationToken).ConfigureAwait (false);
+		foreach (Match match in BaselineColorExpression.Matches (loadStates))
+			{
+			if (long.TryParse (match.Groups["id"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out long stateLoadId)
+				&& stateLoadId == loadId
+				&& int.TryParse (match.Groups["hue"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int hueDegrees)
+				&& int.TryParse (match.Groups["saturation"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int saturationPercent)
+				&& long.TryParse (match.Groups["colorTemperature"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out long colorTemperature))
+				{
+				return (hueDegrees, saturationPercent, colorTemperature);
 				}
 			}
 

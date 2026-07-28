@@ -16,8 +16,8 @@
       "Website": "",
       "PhoneNumber": ""
     },
-    "DriverVersion": "1.0.006.0284",
-    "VersionDate": "2026-07-26 12:42:12.321"
+    "DriverVersion": "1.0.006.0291",
+    "VersionDate": "2026-07-28 13:13:02.936"
   },
   "ConfigurationSteps": {
     "Items": [
@@ -26,7 +26,7 @@
         "Title": "Tapo User Name",
         "Description": "Optional Tapo account user name or email address. Leave blank to disable Tapo discovery and discover only Kasa devices.",
         "Availability": "Always",
-        "UsageContext": "Authentication.Username",
+        "UsageContext": "Generic.Prompt",
         "Required": false,
         "Persistent": true,
         "ValueType": "String"
@@ -36,7 +36,7 @@
         "Title": "Tapo Password",
         "Description": "Optional Tapo password used with the supplied Tapo user name. Leave blank to disable Tapo discovery and discover only Kasa devices.",
         "Availability": "Always",
-        "UsageContext": "Authentication.Password",
+        "UsageContext": "Generic.Prompt",
         "Required": false,
         "Persistent": true,
         "ValueType": "String",
@@ -124,7 +124,7 @@
         "Title": "Processor SSH User Name",
         "Description": "Processor SSH user for the baseline workaround.",
         "Availability": "Always",
-        "UsageContext": "Authentication.Username",
+        "UsageContext": "Generic.Prompt",
         "Required": false,
         "Persistent": true,
         "ValueType": "String"
@@ -134,7 +134,7 @@
         "Title": "Processor SSH Password",
         "Description": "Processor SSH password for the baseline workaround.",
         "Availability": "Always",
-        "UsageContext": "Authentication.Password",
+        "UsageContext": "Generic.Prompt",
         "Required": false,
         "Persistent": true,
         "ValueType": "String",
