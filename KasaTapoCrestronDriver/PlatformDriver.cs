@@ -584,6 +584,8 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private readonly HashSet<string> _inUseChildControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _connectedIdentityResolvedControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, byte> _aliasResolutionInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, List<ManagedLightDescriptor>> _resolvedStripChildDescriptors = new (StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, byte> _stripChildResolutionInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _materializationInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _previousDiscoveredControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private ConcurrentDictionary<string, PlatformManagedDevice> _managedDevices = new (StringComparer.OrdinalIgnoreCase);
@@ -1129,6 +1131,18 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				continue;
 				}
 
+			if (discoveryResult.DeviceType == KasaDeviceType.Strip && _sharedConfiguration.TreatPlugsAsLights)
+				{
+				// Strips are always itemized into one managed device per child outlet
+				// (ResolveStripChildDescriptorsAsync); the strip's own root controllerId is never a
+				// valid managed device and must never be published/persisted. A stale root entry can
+				// still exist in _managedDevices/_managedDeviceCacheMetadata from before itemization
+				// was introduced (or from a session where TreatPlugsAsLights was previously false), so
+				// proactively purge it here rather than waiting for the multi-cycle removal-miss
+				// threshold, which would otherwise leave the parent strip visibly listed for a long time.
+				PurgeStaleStripRootManagedDevice (controllerId);
+				}
+
 			try
 				{
 				if (IsTapoDiscoveryResult (discoveryResult) && string.IsNullOrWhiteSpace (discoveryResult.Alias))
@@ -1156,7 +1170,7 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 						}
 					}
 
-				foreach (ManagedLightDescriptor descriptor in CreateManagedLightDescriptors (discoveryResult))
+				foreach (ManagedLightDescriptor descriptor in await ResolveManagedLightDescriptorsAsync (discoveryResult, configuration, cancellationToken).ConfigureAwait (false))
 					{
 					_knownDescriptors[descriptor.ControllerId] = descriptor;
 					discoveredControllerIds.Add (descriptor.ControllerId);
@@ -2334,6 +2348,23 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		return string.Empty;
 		}
 
+	private async Task<IReadOnlyList<ManagedLightDescriptor>> ResolveManagedLightDescriptorsAsync (
+		DiscoveryResult discoveryResult,
+		DeviceConfiguration configuration,
+		CancellationToken cancellationToken)
+		{
+		if (discoveryResult.DeviceType == KasaDeviceType.Strip)
+			{
+			// Strips are the only device type whose managed devices (child outlets) cannot be
+			// determined synchronously from DiscoveryResult; see ResolveStripChildDescriptorsAsync.
+			return _sharedConfiguration.TreatPlugsAsLights
+				? await ResolveStripChildDescriptorsAsync (discoveryResult, configuration, cancellationToken).ConfigureAwait (false)
+				: Array.Empty<ManagedLightDescriptor> ();
+			}
+
+		return CreateManagedLightDescriptors (discoveryResult).ToArray ();
+		}
+
 	private IEnumerable<ManagedLightDescriptor> CreateManagedLightDescriptors (DiscoveryResult discoveryResult)
 		{
 		string controllerId = CreateControllerId (discoveryResult);
@@ -2360,7 +2391,6 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				yield break;
 
 			case KasaDeviceType.Plug when _sharedConfiguration.TreatPlugsAsLights:
-			case KasaDeviceType.Strip when _sharedConfiguration.TreatPlugsAsLights:
 				yield return new ManagedLightDescriptor (
 					controllerId,
 					discoveryResult.Host,
@@ -2373,18 +2403,10 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					discoveryResult.DeviceId);
 				yield break;
 
-			case KasaDeviceType.Strip:
-				yield return new ManagedLightDescriptor (
-					controllerId,
-					discoveryResult.Host,
-					discoveryResult.DeviceType,
-					rootName,
-					rootModel,
-					rootSerial,
-					ManagedLightKind.OnOff,
-						awaitingConnectedIdentity: IsTapoDiscoveryResult (discoveryResult) && string.IsNullOrWhiteSpace (discoveryResult.Alias),
-					discoveryResult.DeviceId);
-				yield break;
+			// KasaDeviceType.Strip is itemized into one descriptor per child outlet by
+			// ResolveStripChildDescriptorsAsync instead of being yielded here, because the strip's
+			// child outlets are only known after connecting to the device (DiscoveryResult alone does
+			// not expose them). See RefreshPlatformAsync's strip pre-resolution pass.
 			}
 		}
 
@@ -2407,6 +2429,139 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 	private static DeviceConfiguration CreateDeviceConfiguration (DiscoveryResult discoveryResult, DeviceCredentials? credentials, TimeSpan timeout)
 		{
 		return Discover.CreateConfiguration (discoveryResult, credentials, timeout);
+		}
+
+	// Power strip child outlets (KasaDeviceType.Strip) are only known once connected -
+	// DiscoveryResult alone does not expose them - so, unlike every other supported device type,
+	// strips must be itemized into one ManagedLightDescriptor per child outlet via a one-shot
+	// connect rather than synchronously in CreateManagedLightDescriptors. Each child is a simple
+	// on/off outlet: no light-specific baseline/color/dimmer handling ever applies to it, because
+	// ManagedLightKind.OnOff already disables all of that in KasaLightEntity.
+	private async Task<IReadOnlyList<ManagedLightDescriptor>> ResolveStripChildDescriptorsAsync (
+		DiscoveryResult discoveryResult,
+		DeviceConfiguration configuration,
+		CancellationToken cancellationToken)
+		{
+		string stripControllerId = CreateControllerId (discoveryResult);
+
+		if (_resolvedStripChildDescriptors.TryGetValue (stripControllerId, out List<ManagedLightDescriptor>? cachedChildDescriptors))
+			{
+			// _deviceConfigurations/_discoveryResults are cleared and rebuilt every refresh pass
+			// (see RefreshPlatformAsync), so cached child descriptors must be re-registered here
+			// on every call, not just when they are first resolved, otherwise later materialization
+			// lookups fail with "no device configuration is available" and the child is marked missing.
+			foreach (ManagedLightDescriptor cachedChildDescriptor in cachedChildDescriptors)
+				{
+				_deviceConfigurations[cachedChildDescriptor.ControllerId] = configuration;
+				_discoveryResults[cachedChildDescriptor.ControllerId] = discoveryResult;
+				}
+
+			return cachedChildDescriptors;
+			}
+
+		if (!_stripChildResolutionInFlightControllerIds.TryAdd (stripControllerId, 0))
+			{
+			LogInfo ($"ResolveStripChildDescriptorsAsync: skipped duplicate in-flight strip child resolution for controllerId='{stripControllerId}', host='{discoveryResult.Host}'.");
+			return Array.Empty<ManagedLightDescriptor> ();
+			}
+
+		try
+			{
+			string rootName = ResolveManagedDeviceName (stripControllerId, ResolveDiscoveryName (discoveryResult), discoveryResult.DeviceId, discoveryResult.Host);
+			string rootModel = discoveryResult.Model ?? "Kasa/Tapo Device";
+
+			LogInfo ($"ResolveStripChildDescriptorsAsync: attempting one-shot child expansion connect for host='{discoveryResult.Host}', deviceId='{discoveryResult.DeviceId ?? "<null>"}', model='{rootModel}'.");
+
+			using var expansionTimeoutSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken);
+			TimeSpan expansionTimeout = configuration.Timeout > TimeSpan.Zero
+				? configuration.Timeout + TimeSpan.FromSeconds (2)
+				: DefaultDiscoveryTimeout + TimeSpan.FromSeconds (2);
+			expansionTimeoutSource.CancelAfter (expansionTimeout);
+
+			KasaDevice? device = null;
+			bool deviceAdopted = false;
+			try
+				{
+				device = await Discover.GetOrConnectSharedAsync (configuration, updateState: true, cancellationToken: expansionTimeoutSource.Token).ConfigureAwait (false);
+
+				if (device.Children.Count == 0)
+					{
+					LogInfo ($"ResolveStripChildDescriptorsAsync: host='{discoveryResult.Host}' reported 0 child outlets after connecting; skipping itemization for this pass.");
+					return Array.Empty<ManagedLightDescriptor> ();
+					}
+
+				var childDescriptors = new List<ManagedLightDescriptor> (device.Children.Count);
+				int outletIndex = 0;
+				foreach (ChildDeviceInfo child in device.Children)
+					{
+					outletIndex++;
+					string childName = string.IsNullOrWhiteSpace (child.Alias)
+						? $"{rootName} Outlet {outletIndex}"
+						: child.Alias!;
+					string childModel = child.Model ?? rootModel;
+					string childSerial = child.Id;
+					string childControllerId = CreateControllerId (discoveryResult, child.Id);
+
+					// Each child outlet gets its own controllerId (distinct from the strip's root
+					// controllerId), but shares the same physical device/connection configuration.
+					// Materialization (CreateManagedDeviceCacheEntry) looks up _deviceConfigurations
+					// and _discoveryResults by controllerId, so both must be registered here or
+					// materialization fails with "no device configuration is available" and the
+					// child gets marked missing.
+					_deviceConfigurations[childControllerId] = configuration;
+					_discoveryResults[childControllerId] = discoveryResult;
+
+					childDescriptors.Add (new ManagedLightDescriptor (
+						childControllerId,
+						discoveryResult.Host,
+						discoveryResult.DeviceType,
+						childName,
+						childModel,
+						childSerial,
+						ManagedLightKind.OnOff,
+						awaitingConnectedIdentity: false,
+						discoveryResult.DeviceId,
+						child.Id));
+					}
+
+				_resolvedStripChildDescriptors[stripControllerId] = childDescriptors;
+				LogInfo ($"ResolveStripChildDescriptorsAsync: resolved {childDescriptors.Count} child outlet(s) for host='{discoveryResult.Host}'.");
+
+				// The shared connection is intentionally left for the child light entities'
+				// own startup connects (Discover.GetOrConnectSharedAsync shares one instance
+				// per Host:Port), exactly like EnrichDiscoveryAliasCacheAsync does for bulbs;
+				// it is not adopted directly by any single entity here because there may be
+				// multiple child entities for one physical strip.
+				deviceAdopted = true;
+				return childDescriptors;
+				}
+			finally
+				{
+				if (!deviceAdopted)
+					{
+					device?.Dispose ();
+					}
+				}
+			}
+		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+			{
+			LogInfo ($"ResolveStripChildDescriptorsAsync: timed out for controllerId='{stripControllerId}', host='{discoveryResult.Host}'.");
+			return Array.Empty<ManagedLightDescriptor> ();
+			}
+		catch (OperationCanceledException)
+			{
+			LogInfo ($"ResolveStripChildDescriptorsAsync: canceled for host='{discoveryResult.Host}'.");
+			return Array.Empty<ManagedLightDescriptor> ();
+			}
+		catch (Exception ex) when (!(ex is OperationCanceledException))
+			{
+			LogInfo ($"ResolveStripChildDescriptorsAsync: child expansion failed for host='{discoveryResult.Host}': {ex.Message}");
+			return Array.Empty<ManagedLightDescriptor> ();
+			}
+		finally
+			{
+			_stripChildResolutionInFlightControllerIds.TryRemove (stripControllerId, out _);
+			}
 		}
 
 	private Task StartAliasEnrichmentAsync (DiscoveryResult discoveryResult, DeviceConfiguration configuration)
@@ -3121,6 +3276,47 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 		return true;
 		}
 
+	private void PurgeStaleStripRootManagedDevice (string stripRootControllerId)
+		{
+		bool hadManagedDeviceEntry = _managedDevices.ContainsKey (stripRootControllerId);
+		bool hadCacheMetadata = _managedDeviceCacheMetadata.ContainsKey (stripRootControllerId);
+
+		if (!hadManagedDeviceEntry && !hadCacheMetadata)
+			{
+			return;
+			}
+
+		LogInfo ($"PurgeStaleStripRootManagedDevice: removing stale strip-root managed-device entry for controllerId='{stripRootControllerId}' because strips are itemized into per-child managed devices and the root is never itself a managed device.");
+
+		if (hadManagedDeviceEntry)
+			{
+			ConcurrentDictionary<string, PlatformManagedDevice> removalCopy = new (_managedDevices, StringComparer.OrdinalIgnoreCase);
+			removalCopy.TryRemove (stripRootControllerId, out _);
+			_managedDevices = removalCopy;
+			}
+
+		_managedDeviceCacheMetadata.Remove (stripRootControllerId);
+
+		if (_lightEntities.TryGetValue (stripRootControllerId, out IKasaManagedLightEntity? staleRootEntity))
+			{
+			staleRootEntity.Stop ();
+			staleRootEntity.Dispose ();
+			}
+
+		if (_childControllers.ContainsKey (stripRootControllerId))
+			{
+			UpdateSubControllers (null, new List<string> { stripRootControllerId });
+			}
+
+		ClearChildRuntimeState (stripRootControllerId, "stale-strip-root-purge");
+
+		if (hadManagedDeviceEntry)
+			{
+			PersistManagedDeviceCache ();
+			NotifyManagedDevicesSnapshotChanged ();
+			}
+		}
+
 	private void PersistManagedDeviceCache ()
 		{
 		string cachePath = GetManagedDeviceCachePath ();
@@ -3142,25 +3338,19 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 					.OrderBy (entry => entry.Key, StringComparer.OrdinalIgnoreCase)
 					.ToList ();
 
+				var cacheEntries = new List<ManagedDeviceCacheEntry> ();
+
 				foreach (KeyValuePair<string, PlatformManagedDevice> entry in cacheableDevices)
 					{
 					if (!_managedDeviceCacheMetadata.TryGetValue (entry.Key, out ManagedDeviceCacheEntry? metadata)
 						|| !IsCompleteManagedDeviceCacheIdentity (metadata))
 						{
-						LogError ($"Managed-device cache write skipped because controllerId='{entry.Key}' has no complete immutable cache metadata. This indicates a discovery publication bug; discovery will rebuild metadata on the next refresh.");
-						return;
+						LogError ($"Managed-device cache entry skipped for controllerId='{entry.Key}' because it has no complete immutable cache metadata. This indicates a discovery publication bug; discovery will rebuild metadata on the next refresh.");
+						continue;
 						}
-					}
 
-				var document = new ManagedDeviceCacheDocument
-					{
-					Version = MANAGED_DEVICE_CACHE_VERSION,
-					Devices = cacheableDevices
-						.Select (entry =>
-							{
-							ManagedDeviceCacheEntry metadata = _managedDeviceCacheMetadata[entry.Key];
-							return new ManagedDeviceCacheEntry
-							{
+					cacheEntries.Add (new ManagedDeviceCacheEntry
+						{
 						Immutable = new ManagedDeviceImmutableCacheFields
 							{
 							ControllerId = entry.Key,
@@ -3191,9 +3381,13 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 							UseSecurePassthrough = metadata.UseSecurePassthrough,
 							TpapKeepAliveIntervalMs = metadata.TpapKeepAliveIntervalMs
 							}
-							};
-							})
-						.ToList ()
+						});
+					}
+
+				var document = new ManagedDeviceCacheDocument
+					{
+					Version = MANAGED_DEVICE_CACHE_VERSION,
+					Devices = cacheEntries
 					};
 
 				using var stream = File.Create (cachePath);
