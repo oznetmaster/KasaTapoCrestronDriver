@@ -25,7 +25,15 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 	private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds (8);
 	private static readonly TimeSpan ConsoleResponseQuietPeriod = TimeSpan.FromMilliseconds (250);
 	private static readonly TimeSpan IdleSessionLifetime = TimeSpan.FromMinutes (90);
-	// SSH.NET's ConnectionInfo.Timeout does not reliably bound a stalled TCP connect on this
+	// When a bulb was just added/discovered, Crestron Home's own Load entry for it can briefly not
+	// exist yet in "ch rpc lights ListAllLoads" at the exact moment InitializeConnectedStateAsync
+	// awaits the baseline synchronization (confirmed live: 2026-07-29.log 08:15:08 - "matched 0
+	// processor loads" - followed 17 seconds later by the load appearing and the stale WhiteTuning
+	// baseline only getting corrected on the next power-off). A single zero-match attempt is
+	// therefore not conclusive proof the load will never exist; retry briefly before giving up.
+	private static readonly TimeSpan LoadResolutionRetryInterval = TimeSpan.FromSeconds (2);
+	private static readonly int LoadResolutionMaxAttempts = 5;
+
 	// platform (packets can be silently dropped rather than rejected), so Connect()/WaitForPrompt()
 	// can block well past CommandTimeout. Without an outer hard deadline, a single stall permanently
 	// holds _gate and silently disables all future baseline synchronization for the process lifetime.
@@ -281,6 +289,37 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 			return cachedLoadId;
 			}
 
+		for (int attempt = 1; attempt <= LoadResolutionMaxAttempts; attempt++)
+			{
+			List<long> matchingIds = await ListMatchingLoadIdsAsync (loadName, cancellationToken).ConfigureAwait (false);
+			if (matchingIds.Count == 1)
+				{
+				_loadIdsByName[loadName] = matchingIds[0];
+				_logInfo ($"Processor baseline load resolved: loadName='{loadName}', loadId={matchingIds[0]}.");
+				return matchingIds[0];
+				}
+
+			if (matchingIds.Count > 1)
+				{
+				_logError ($"Processor baseline synchronization skipped: loadName='{loadName}' matched {matchingIds.Count} processor loads. Load names must be unique.");
+				return 0;
+				}
+
+			// Zero matches: the processor's own Load entry for a just-added device may not exist
+			// yet. Retry a few times with a short delay instead of giving up on the first attempt.
+			if (attempt < LoadResolutionMaxAttempts)
+				{
+				_logInfo ($"Processor baseline load not yet found: loadName='{loadName}', attempt={attempt}/{LoadResolutionMaxAttempts}; retrying in {LoadResolutionRetryInterval.TotalSeconds:0} second(s).");
+				await Task.Delay (LoadResolutionRetryInterval, cancellationToken).ConfigureAwait (false);
+				}
+			}
+
+		_logError ($"Processor baseline synchronization skipped: loadName='{loadName}' matched 0 processor loads after {LoadResolutionMaxAttempts} attempts.");
+		return 0;
+		}
+
+	private async Task<List<long>> ListMatchingLoadIdsAsync (string loadName, CancellationToken cancellationToken)
+		{
 		string loads = await ExecuteCommandAsync ("ch rpc lights ListAllLoads", cancellationToken).ConfigureAwait (false);
 		var matchingIds = new List<long> ();
 		long? currentLoadId = null;
@@ -312,15 +351,7 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 				}
 			}
 
-		if (matchingIds.Count != 1)
-			{
-			_logError ($"Processor baseline synchronization skipped: loadName='{loadName}' matched {matchingIds.Count} processor loads. Load names must be unique.");
-			return 0;
-			}
-
-		_loadIdsByName[loadName] = matchingIds[0];
-		_logInfo ($"Processor baseline load resolved: loadName='{loadName}', loadId={matchingIds[0]}.");
-		return matchingIds[0];
+		return matchingIds;
 		}
 
 	private async Task<string?> ResolveBaselineTuningModeAsync (long loadId, CancellationToken cancellationToken)
