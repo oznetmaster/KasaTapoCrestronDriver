@@ -2000,8 +2000,8 @@ public sealed class PlatformDriver : ReflectedAttributeDriverEntity, IDisposable
 				new ()
 					{
 					Id = "ActivationMarker",
-					Title = "Activate Device",
-					Description = "Persistent marker used to observe child configuration install/reload flow.",
+					Title = "Ready",
+					Description = "Confirms the device configuration has been applied.",
 					Availability = Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationItemAvailability.Always,
 					ValueType = Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationItemValueType.Boolean,
 					UsageContext = ConfigurationItemContext.Generic.Prompt,
