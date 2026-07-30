@@ -13,6 +13,7 @@ permissions:
 jobs:
   build-and-upload-package:
     runs-on: windows-latest
+    environment: release
     env:
       MANIFESTUTIL_VERSION: 27.0.24
       OFFICE_CORE_VERSION: 12.0.0
