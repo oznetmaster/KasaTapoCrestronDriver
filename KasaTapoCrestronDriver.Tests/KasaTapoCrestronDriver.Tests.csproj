@@ -41,10 +41,10 @@
     </Reference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)' == 'Debug' AND !Exists('C:\Projects\KasaClient\KasaClient\bin\Debug\net472\KasaTapoClient.dll')">
-    <PackageReference Include="KasaTapoClient" Version="1.1.9" />
+    <PackageReference Include="KasaTapoClient" Version="1.2.4" />
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)' != 'Debug'">
-    <PackageReference Include="KasaTapoClient" Version="1.1.9" />
+    <PackageReference Include="KasaTapoClient" Version="1.2.4" />
   </ItemGroup>
 
 </Project>
