@@ -1,0 +1,251 @@
+name: Release Package
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build-and-upload-package:
+    runs-on: windows-latest
+    env:
+      MANIFESTUTIL_VERSION: 27.0.24
+      OFFICE_CORE_VERSION: 12.0.0
+      WORD_INTEROP_VERSION: 15.0.4797.1004
+      NET472_REFERENCE_ASSEMBLIES: C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2
+      NETFX_RUNTIME_DIR: C:\Windows\Microsoft.NET\Framework64\v4.0.30319
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Set up NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Install ILRepack tool
+        shell: pwsh
+        run: |
+          dotnet tool install --global dotnet-ilrepack
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Install ManifestUtil package
+        shell: pwsh
+        run: |
+          nuget install Crestron.DeviceDrivers.ManifestUtil -Version $env:MANIFESTUTIL_VERSION -OutputDirectory "$env:RUNNER_TEMP\nuget-tools"
+
+      - name: Install Word interop package
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Office.Interop.Word -Version $env:WORD_INTEROP_VERSION -OutputDirectory "$env:RUNNER_TEMP\nuget-tools"
+
+      - name: Install Office core package
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Office.Core -Version $env:OFFICE_CORE_VERSION -OutputDirectory "$env:RUNNER_TEMP\nuget-tools"
+
+      - name: Resolve ManifestUtil path
+        id: manifestutil
+        shell: pwsh
+        run: |
+          $toolRoot = Join-Path $env:RUNNER_TEMP "nuget-tools\Crestron.DeviceDrivers.ManifestUtil.$env:MANIFESTUTIL_VERSION"
+          $manifestUtil = Get-ChildItem -Path $toolRoot -Filter ManifestUtil.exe -Recurse | Select-Object -First 1
+          if ($null -eq $manifestUtil) {
+            throw "ManifestUtil.exe was not found under $toolRoot"
+          }
+
+          $wordInteropRoot = Join-Path $env:RUNNER_TEMP "nuget-tools\Microsoft.Office.Interop.Word.$env:WORD_INTEROP_VERSION"
+          $wordInterop = Get-ChildItem -Path $wordInteropRoot -Filter Microsoft.Office.Interop.Word.dll -Recurse | Select-Object -First 1
+          if ($null -eq $wordInterop) {
+            throw "Microsoft.Office.Interop.Word.dll was not found under $wordInteropRoot"
+          }
+
+          $officeCoreRoot = Join-Path $env:RUNNER_TEMP "nuget-tools\Microsoft.Office.Core.$env:OFFICE_CORE_VERSION"
+          $officeCore = Get-ChildItem -Path $officeCoreRoot -Filter office.dll -Recurse | Select-Object -First 1
+          if ($null -eq $officeCore) {
+            throw "office.dll was not found under $officeCoreRoot"
+          }
+
+          Copy-Item $wordInterop.FullName (Join-Path $manifestUtil.Directory.FullName 'Microsoft.Office.Interop.Word.dll') -Force
+          Copy-Item $officeCore.FullName (Join-Path $manifestUtil.Directory.FullName 'office.dll') -Force
+
+          $manifestUtilConfig = @'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <runtime>
+              <assemblyBinding xmlns="urn:schemas-microsoft-com:asm.v1">
+                <dependentAssembly>
+                  <assemblyIdentity name="office" publicKeyToken="71e9bce111e9429c" culture="neutral" />
+                  <bindingRedirect oldVersion="0.0.0.0-15.0.0.0" newVersion="12.0.0.0" />
+                </dependentAssembly>
+              </assemblyBinding>
+            </runtime>
+          </configuration>
+          '@
+          Set-Content -Path (Join-Path $manifestUtil.Directory.FullName 'ManifestUtil.exe.config') -Value $manifestUtilConfig -Encoding UTF8
+
+          "exe_path=$($manifestUtil.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Restore dependencies
+        run: dotnet restore KasaTapoCrestronDriver.slnx
+
+      - name: Write release notes
+        id: release_notes
+        shell: pwsh
+        env:
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          # Reuses the published GitHub Release's description as the NuGet package's release notes, so the
+          # two stay in sync without duplicating the text. Only populated for an actual "release" event;
+          # a manual workflow_dispatch run has no release body, so the NuGet package simply omits notes.
+          $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.txt'
+          if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_BODY)) {
+            Set-Content -Path $notesPath -Value $env:RELEASE_BODY -Encoding UTF8 -NoNewline
+            "path=$notesPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+          else {
+            "path=" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: Determine release version
+        id: package_version
+        shell: pwsh
+        run: |
+          $refName = if ($env:GITHUB_EVENT_NAME -eq 'release' -and $env:GITHUB_EVENT_PATH) {
+            $event = Get-Content $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+            $event.release.tag_name
+          }
+          else {
+            $env:GITHUB_REF_NAME
+          }
+
+          $tagVersion = if (-not [string]::IsNullOrWhiteSpace($refName)) { $refName.TrimStart('v', 'V') } else { $null }
+
+          if ($tagVersion -match '^\d+\.\d+\.\d+-[0-9A-Za-z.-]+$') {
+            # Prerelease-suffixed tag (e.g. v0.1.0-preview): publish this exact version verbatim so
+            # NuGet/the package receive the prerelease version, bypassing the manifest-derived release
+            # version and its consistency check below (which only applies to plain major.minor.patch tags).
+            $releaseVersion = $tagVersion
+          }
+          else {
+            $manifestPath = Join-Path $env:GITHUB_WORKSPACE 'KasaTapoCrestronDriver\KasaTapoCrestronDriver.json'
+            if (-not (Test-Path $manifestPath)) {
+              throw "Driver manifest was not found at '$manifestPath'."
+            }
+
+            $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+            $driverVersion = $manifest.GeneralInformation.DriverVersion
+            if ([string]::IsNullOrWhiteSpace($driverVersion)) {
+              throw 'DriverVersion is missing from the driver manifest.'
+            }
+
+            $match = [regex]::Match($driverVersion, '^(?<major>\d+)\.(?<minor>\d+)\.(?<release>\d+)\.(?<build>\d+)$')
+            if (-not $match.Success) {
+              throw "DriverVersion '$driverVersion' does not contain four numeric components."
+            }
+
+            # The checked-in manifest's major.minor.release directly is the intended release version - this
+            # commit is expected to set DriverVersion to the exact version being released before tagging.
+            $releaseVersion = '{0}.{1}.{2}' -f $match.Groups['major'].Value, $match.Groups['minor'].Value, [int]$match.Groups['release'].Value
+
+            if ($tagVersion -match '^\d+\.\d+\.\d+$' -and $tagVersion -ne $releaseVersion) {
+              throw "GitHub tag version '$tagVersion' does not match expected Release version '$releaseVersion' derived from pre-build DriverVersion '$driverVersion'."
+            }
+          }
+
+          "value=$releaseVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build release package
+        shell: pwsh
+        run: |
+          dotnet build KasaTapoCrestronDriver.slnx -c Release -p:ManifestUtilExe="${{ steps.manifestutil.outputs.exe_path }}" -p:LocalNet472ReferenceAssemblies="$env:NET472_REFERENCE_ASSEMBLIES" -p:LocalNetFxRuntimeDir="$env:NETFX_RUNTIME_DIR" -p:MergeDependenciesContinueOnError=false -p:PackageDriverContinueOnError=false -p:PackageDriverIgnoreExitCode=false
+
+      - name: Locate package
+        id: package
+        shell: pwsh
+        run: |
+          $pkg = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\KasaTapoCrestronDriver\bin\Release" -Filter *.pkg -Recurse | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          if ($null -eq $pkg) {
+            throw 'No .pkg file was generated in KasaTapoCrestronDriver/bin/Release.'
+          }
+
+          "pkg_path=$($pkg.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Pack NuGet package
+        shell: pwsh
+        run: |
+          $outputDir = Join-Path $env:RUNNER_TEMP 'nuget-package'
+          $manifestPath = Join-Path $env:RUNNER_TEMP 'crestron-driver-package.json'
+          New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+
+          $manifest = @{
+            standardVersion = '1.0'
+            packageType = 'CrestronHomeDriver'
+            driverPlatform = 'Crestron Home'
+            payloadType = 'pkg'
+            payloadFile = [System.IO.Path]::GetFileName("${{ steps.package.outputs.pkg_path }}")
+            containsManagedDllPayload = $false
+            packageId = 'CrestronHomeDriver.TpLink.KasaTapoPlatform'
+            packageVersion = "${{ steps.package_version.outputs.value }}"
+            displayName = 'Kasa/Tapo Platform Driver'
+            vendor = 'TP-Link'
+            driverCategory = 'Lighting'
+          } | ConvertTo-Json -Depth 5
+
+          Set-Content -Path $manifestPath -Value $manifest -Encoding UTF8
+
+          dotnet pack KasaTapoCrestronDriver/KasaTapoCrestronDriver.csproj -c Release --no-build --output $outputDir -p:PackageVersion="${{ steps.package_version.outputs.value }}" -p:PackageDriverPkgPath="${{ steps.package.outputs.pkg_path }}" -p:PackageDriverManifestPath="$manifestPath" -p:PackageReleaseNotesFile="${{ steps.release_notes.outputs.path }}"
+
+      - name: Locate NuGet package
+        id: nuget_package
+        shell: pwsh
+        run: |
+          $nupkg = Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP 'nuget-package') -Filter *.nupkg -File |
+            Where-Object { $_.Name -notlike '*.symbols.nupkg' } |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $nupkg) {
+            throw 'No NuGet package (.nupkg) was generated.'
+          }
+
+          "nupkg_path=$($nupkg.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Generate short-lived NuGet API key (Trusted Publishing)
+        id: nuget_login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Publish NuGet package
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ steps.nuget_login.outputs.NUGET_API_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) {
+            throw 'Trusted Publishing did not return a NuGet API key.'
+          }
+
+          dotnet nuget push "${{ steps.nuget_package.outputs.nupkg_path }}" --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KasaTapoCrestronDriver-pkg
+          path: ${{ steps.package.outputs.pkg_path }}
+          if-no-files-found: error
+
+      - name: Upload package asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
+          files: ${{ steps.package.outputs.pkg_path }}
+          fail_on_unmatched_files: true

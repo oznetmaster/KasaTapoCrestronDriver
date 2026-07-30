@@ -20,14 +20,14 @@
 	 <PackageId>CrestronHomeDriver.TpLink.KasaTapoPlatform</PackageId>
 	 <Authors>Neil Colvin</Authors>
 	 <Company>Neil Colvin</Company>
-	 <Description>Crestron Home platform driver for TP-Link Kasa and Tapo devices</Description>
+	 <Description>Crestron Home Entity V2 platform driver that discovers TP-Link Kasa and Tapo devices and publishes them as managed child devices.</Description>
 	 <PackageReadmeFile>README.md</PackageReadmeFile>
 	 <PackageLicenseFile>LICENSE</PackageLicenseFile>
 	 <RepositoryUrl>https://github.com/oznetmaster/KasaTapoCrestronDriver</RepositoryUrl>
 	 <RepositoryType>git</RepositoryType>
 	 <PublishRepositoryUrl>true</PublishRepositoryUrl>
 	 <PackageProjectUrl>https://github.com/oznetmaster/KasaTapoCrestronDriver</PackageProjectUrl>
-	 <PackageTags>crestron;crestron-home;driver;pkg;kasa;tapo</PackageTags>
+	 <PackageTags>crestron;crestron-home;driver;pkg;platform;kasa;tapo;tplink;smarthome</PackageTags>
 	 <PackageDriverPkgPath Condition="'$(PackageDriverPkgPath)' == ''"></PackageDriverPkgPath>
 	 <PackageDriverManifestPath Condition="'$(PackageDriverManifestPath)' == ''"></PackageDriverManifestPath>
   </PropertyGroup>
@@ -101,6 +101,7 @@
     <Folder Include="IncludeInPkg\room\uidefinitions\" />
     <Folder Include="IncludeInPkg\Translations\" />
     <Folder Include="IncludeInPkg\UiDefinitions\" />
+    <Folder Include="KasaTapoCrestronDriver\" />
   </ItemGroup>
 
   <PropertyGroup>
