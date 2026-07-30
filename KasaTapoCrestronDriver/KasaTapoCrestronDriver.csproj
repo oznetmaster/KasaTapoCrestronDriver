@@ -57,8 +57,11 @@
   </ItemGroup>
 
 	<ItemGroup>
+	 <!-- Vendored, locally patched SSH.NET build (see ../lib/Renci.SshNet/README.md for why this can't
+		  be the published NuGet package). Committed to the repository so the build is reproducible on
+		  every machine and in CI, without a separate local SSH.NET checkout. -->
 	 <Reference Include="Renci.SshNet">
-		<HintPath>C:\Temp\SSH.NET-source\src\Renci.SshNet\bin\Release\net462\Renci.SshNet.dll</HintPath>
+		<HintPath>$(MSBuildProjectDirectory)\..\lib\Renci.SshNet\Renci.SshNet.dll</HintPath>
 		<Private>true</Private>
 	 </Reference>
 	</ItemGroup>
