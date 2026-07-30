@@ -11,9 +11,6 @@ using System.Threading.Tasks;
 
 using Crestron.DeviceDrivers.EntityModel.Data;
 using Crestron.DeviceDrivers.EntityModel.Logging;
-using Crestron.DeviceDrivers.SDK;
-using Crestron.DeviceDrivers.SDK.EntityModel;
-using Crestron.DeviceDrivers.SDK.EntityModel.Attributes;
 
 using KasaTapoClient;
 
