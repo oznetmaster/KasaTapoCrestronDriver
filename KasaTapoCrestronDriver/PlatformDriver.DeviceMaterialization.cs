@@ -1,20 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 using Crestron.DeviceDrivers.EntityModel;
 using Crestron.DeviceDrivers.EntityModel.Data;
 using Crestron.DeviceDrivers.SDK;
 using Crestron.DeviceDrivers.SDK.EntityModel;
 using Crestron.DeviceDrivers.SDK.EntityModel.Data;
-
-using KasaTapoClient;
-
-using KasaDeviceType = KasaTapoClient.DeviceType;
-
 
 namespace KasaTapoCrestronDriver;
 
@@ -162,7 +152,6 @@ public sealed partial class PlatformDriver
 			LogInfo ($"ApplyChildConfigurationItems: ignoring child configuration action for controllerId='{controllerId}', action='{action}', stepId='{stepId}'. Child activation requires ActivationMarker configuration.");
 			return null;
 			}
-
 
 		try
 			{

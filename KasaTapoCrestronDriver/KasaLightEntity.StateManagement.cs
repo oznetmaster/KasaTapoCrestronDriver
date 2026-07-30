@@ -1,20 +1,11 @@
-﻿using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
-using System.Linq;
 using System.Reflection;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
 using Crestron.DeviceDrivers.EntityModel.Data;
 using Crestron.DeviceDrivers.EntityModel.Logging;
-
-using KasaTapoClient;
-
-using KasaDeviceType = KasaTapoClient.DeviceType;
 
 namespace KasaTapoCrestronDriver;
 

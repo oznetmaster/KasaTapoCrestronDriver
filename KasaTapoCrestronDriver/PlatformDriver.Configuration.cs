@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-
 using Crestron.DeviceDrivers.EntityModel.Data;
-
 
 namespace KasaTapoCrestronDriver;
 

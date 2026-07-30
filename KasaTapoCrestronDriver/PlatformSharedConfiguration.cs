@@ -1,5 +1,3 @@
-using System;
-
 namespace KasaTapoCrestronDriver;
 
 internal interface IPlatformSharedConfiguration
