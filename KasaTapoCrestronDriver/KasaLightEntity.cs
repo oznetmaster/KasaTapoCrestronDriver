@@ -95,13 +95,12 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private sealed class ColorTemperatureMembers : IColorTemperatureLevelHolder
 		{
 		private readonly KasaLightEntity _owner;
-		private long _lightColorTemperatureLevel;
 
 		public ColorTemperatureMembers (KasaLightEntity owner, DriverEntityValueRange range, long level)
 			{
 			_owner = owner;
 			LightColorTemperatureRange = range;
-			_lightColorTemperatureLevel = level;
+			LightColorTemperatureLevel = level;
 			}
 
 		string IColorTemperatureLevelHolder.LevelPropertyId => "lightColorTemperature:level";
@@ -112,8 +111,8 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		[EntityProperty (Id = "lightColorTemperature:level", RangeProperty = "lightColorTemperature:range", Units = "Kelvin")]
 		public long LightColorTemperatureLevel
 			{
-			get => _lightColorTemperatureLevel;
-			set => _owner.SetAndNotify ("lightColorTemperature:level", value, ref _lightColorTemperatureLevel);
+			get;
+			set => _owner.SetAndNotify ("lightColorTemperature:level", value, ref field);
 			}
 
 		[EntityCommand (Id = "lightColorTemperature:setLevel")]
@@ -133,13 +132,12 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private sealed class EmulatedColorTemperatureMembers : IColorTemperatureLevelHolder
 		{
 		private readonly KasaLightEntity _owner;
-		private long _lightColorTemperatureLevel;
 
 		public EmulatedColorTemperatureMembers (KasaLightEntity owner, DriverEntityValueRange range, long level)
 			{
 			_owner = owner;
 			LightEmulatedColorTemperatureRange = range;
-			_lightColorTemperatureLevel = level;
+			LightColorTemperatureLevel = level;
 			}
 
 		string IColorTemperatureLevelHolder.LevelPropertyId => "lightEmulatedColorTemperature:level";
@@ -150,8 +148,8 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		[EntityProperty (Id = "lightEmulatedColorTemperature:level", RangeProperty = "lightEmulatedColorTemperature:range", Units = "Kelvin")]
 		public long LightColorTemperatureLevel
 			{
-			get => _lightColorTemperatureLevel;
-			set => _owner.SetAndNotify ("lightEmulatedColorTemperature:level", value, ref _lightColorTemperatureLevel);
+			get;
+			set => _owner.SetAndNotify ("lightEmulatedColorTemperature:level", value, ref field);
 			}
 
 		[EntityCommand (Id = "lightEmulatedColorTemperature:setLevel")]
@@ -164,14 +162,12 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private sealed class FullColorMembers
 		{
 		private readonly KasaLightEntity _owner;
-		private double _lightColorHue;
-		private double _lightColorSaturation;
 
 		public FullColorMembers (KasaLightEntity owner, double hue, double saturation)
 			{
 			_owner = owner;
-			_lightColorHue = hue;
-			_lightColorSaturation = saturation;
+			LightColorHue = hue;
+			LightColorSaturation = saturation;
 			}
 
 		[EntityProperty (Id = "lightColor:hueRange")]
@@ -180,8 +176,8 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		[EntityProperty (Id = "lightColor:hue", RelativeRangeProperty = "lightColor:hueRange")]
 		public double LightColorHue
 			{
-			get => _lightColorHue;
-			set => _owner.SetAndNotify ("lightColor:hue", value, ref _lightColorHue);
+			get;
+			set => _owner.SetAndNotify ("lightColor:hue", value, ref field);
 			}
 
 		[EntityProperty (Id = "lightColor:saturationRange")]
@@ -190,8 +186,8 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		[EntityProperty (Id = "lightColor:saturation", RelativeRangeProperty = "lightColor:saturationRange")]
 		public double LightColorSaturation
 			{
-			get => _lightColorSaturation;
-			set => _owner.SetAndNotify ("lightColor:saturation", value, ref _lightColorSaturation);
+			get;
+			set => _owner.SetAndNotify ("lightColor:saturation", value, ref field);
 			}
 
 		// Every UI-settable property must have a paired command (see lightTunable:setMode above for the
@@ -219,12 +215,11 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private sealed class DimmableMembers
 		{
 		private readonly KasaLightEntity _owner;
-		private double _lightDimmerLevel;
 
 		public DimmableMembers (KasaLightEntity owner, double initialLevel)
 			{
 			_owner = owner;
-			_lightDimmerLevel = initialLevel;
+			LightDimmerLevel = initialLevel;
 			}
 
 		[EntityProperty (Id = "lightDimmer:levelRange")]
@@ -233,8 +228,8 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		[EntityProperty (Id = "lightDimmer:level", RelativeRangeProperty = "lightDimmer:levelRange")]
 		public double LightDimmerLevel
 			{
-			get => _lightDimmerLevel;
-			set => _owner.SetAndNotify ("lightDimmer:level", value, ref _lightDimmerLevel);
+			get;
+			set => _owner.SetAndNotify ("lightDimmer:level", value, ref field);
 			}
 
 		[EntityCommand (Id = "lightDimmer:setLevel")]
@@ -251,19 +246,18 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	private sealed class OnOffMembers
 		{
 		private readonly KasaLightEntity _owner;
-		private bool _lightIsOn;
 
 		public OnOffMembers (KasaLightEntity owner, bool initialIsOn)
 			{
 			_owner = owner;
-			_lightIsOn = initialIsOn;
+			LightIsOn = initialIsOn;
 			}
 
 		[EntityProperty (Id = "light:isOn")]
 		public bool LightIsOn
 			{
-			get => _lightIsOn;
-			set => _owner.SetAndNotify ("light:isOn", value, ref _lightIsOn);
+			get;
+			set => _owner.SetAndNotify ("light:isOn", value, ref field);
 			}
 
 		[EntityCommand (Id = "light:off")]
@@ -466,7 +460,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 	// genuinely on) instead of applying it to the device - regardless of what the real on-level
 	// happened to be, since the replay is a Load-layer artifact unrelated to the bulb's actual level.
 	private static readonly TimeSpan StartupDimmerReplayGuardWindow = TimeSpan.FromSeconds (5);
-	private const double StartupDimmerReplaySuspectLevelThreshold = 0.02;
+	private const double STARTUP_DIMMER_REPLAY_SUSPECT_LEVEL_THRESHOLD = 0.02;
 	private DateTime? _startupDimmerReplayGuardUntilUtc { get; set; }
 	private double _startupDimmerReplayRealLevel { get; set; }
 
@@ -709,7 +703,7 @@ internal class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLig
 		// this must key off the guard window rather than the current on/off state.
 		if (_startupDimmerReplayGuardUntilUtc is DateTime guardUntilUtc)
 			{
-			if (DateTime.UtcNow <= guardUntilUtc && relativeLevel <= StartupDimmerReplaySuspectLevelThreshold)
+			if (DateTime.UtcNow <= guardUntilUtc && relativeLevel <= STARTUP_DIMMER_REPLAY_SUSPECT_LEVEL_THRESHOLD)
 				{
 				LogInfo ($"Light entity '{ControllerId}' ignoring suspected post-startup Load-layer dimmer replay: level={relativeLevel:0.####}, realLevel={_startupDimmerReplayRealLevel:0.####}.");
 				LightDimmerLevel = _startupDimmerReplayRealLevel;
