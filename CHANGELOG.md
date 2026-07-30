@@ -10,13 +10,12 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-preview]
 
-- First public preview release, published to GitHub and NuGet.
-- Added an MIT + Commons Clause `LICENSE` and standardized copyright/license headers on all first-party source files.
-- Rewrote `README.md` to describe the driver as a Crestron Home platform driver (one instance manages many child light devices), documented local-only device discovery/access (no Tapo/Kasa cloud account access), and documented installation via NuGet/the Crestron Home Driver Feed Installer.
-- Added [`docs/ProcessorBaselineWorkaround.md`](docs/ProcessorBaselineWorkaround.md), a self-contained explanation of the Crestron `lightTunable:mode` tuning-mode defect (including its effect on UI initialization), and the optional SSH-based `ProcessorBaselineCoordinator` workaround.
-- Added this `CHANGELOG.md` as a scannable version-history index, with full details remaining in GitHub Releases.
-- Added a GitHub Actions release workflow (`.github/workflows/release-package.yml`) that builds the driver `.pkg`, packs a NuGet wrapper package, publishes it to NuGet.org using Trusted Publishing (OIDC, no long-lived API keys), and attaches the `.pkg` to the GitHub release.
-- Vendored a patched build of `Renci.SshNet` (`lib/Renci.SshNet/`) used by `ProcessorBaselineCoordinator`, replacing a machine-local reference so the project builds reproducibly on any machine and in CI.
+Initial public preview release.
+
+- Crestron Home platform driver for TP-Link Kasa and Tapo smart lights: a single driver instance discovers devices on the local network and publishes each as a managed child light entity.
+- Local-only device access: devices are discovered and controlled directly over the local network. No Tapo or Kasa cloud account is used or required.
+- Includes an optional, SSH-based workaround (`ProcessorBaselineCoordinator`) for a Crestron Home processor defect in which the `lightTunable:mode` property has no effect, which can also cause the UI to initialize incorrectly at startup. See [`docs/ProcessorBaselineWorkaround.md`](docs/ProcessorBaselineWorkaround.md) for details.
+- Distributed as a NuGet package containing the driver `.pkg`, installable via the Crestron Home Driver Feed Installer.
 
 ## [1.0.001.0001]
 
