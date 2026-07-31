@@ -129,12 +129,13 @@ items:
 | Field | Description |
 |---|---|
 | **Enable Processor Baseline Workaround** | Master switch. When disabled (the default), none of the console logic runs and the driver behaves exactly as it would if this workaround did not exist. |
-| **Processor SSH Host** | Hostname or IP address of the Crestron Home processor's console/SSH endpoint. |
+| **Processor SSH Host** | Optional. Hostname or IP address of the Crestron Home processor's console/SSH endpoint. Leave blank to have the driver automatically use the processor's primary (non-loopback) IPv4 address instead. |
 | **Processor SSH User Name** | SSH login user name for the processor console. |
 | **Processor SSH Password** | SSH login password for the processor console. |
 
-If the workaround is disabled, or the SSH fields are left blank, the driver simply skips baseline
-synchronization and relies solely on the (currently non-functional) `lightTunable:mode` publication
+If the workaround is disabled, or the SSH user name/password are left blank, the driver simply
+skips baseline synchronization and relies solely on the (currently non-functional)
+`lightTunable:mode` publication
 — i.e., the driver behaves as if this workaround did not exist at all.
 
 ## Risks and Limitations

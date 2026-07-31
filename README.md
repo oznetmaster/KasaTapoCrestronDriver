@@ -44,7 +44,8 @@ The platform driver instance exposes these configuration items in Crestron Home:
 | **Light Poll Interval (Seconds)** | Polling interval used when light polling is enabled. |
 | **Sensor/Button Poll Interval (Seconds)** | Reserved for future sensor and button child entity support. |
 | **Enable Processor Baseline Workaround** | Optional. Enables an SSH-based workaround for a Crestron Home tuning-mode defect. Disabled by default. See [Known Issue](#known-issue-processor-baseline-workaround) below. |
-| **Processor SSH Host** / **Processor SSH User Name** / **Processor SSH Password** | Required only if the workaround above is enabled — console/SSH credentials for the Crestron Home processor itself. |
+| **Processor SSH Host** | Optional. Hostname or IP address of the Crestron Home processor's console/SSH endpoint. Leave blank to have the driver automatically use the processor's own primary IPv4 address. Only used if the workaround above is enabled. |
+| **Processor SSH User Name** / **Processor SSH Password** | Required only if the workaround above is enabled — console/SSH credentials for the Crestron Home processor itself. |
 
 Each discovered device is published automatically as its own child device once the platform driver is added and configured; no additional per-device "add device" step is needed in Crestron Home.
 
