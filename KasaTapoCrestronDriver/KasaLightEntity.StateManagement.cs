@@ -725,9 +725,9 @@ internal partial class KasaLightEntity
 		return features.Any (feature => string.Equals (feature.Id, featureId, StringComparison.Ordinal));
 		}
 
-	private static ManagedLightKind InferManagedLightKind (KasaDevice device, KasaDeviceType discoveredDeviceType)
+	internal static ManagedLightKind InferManagedLightKind (KasaDevice device, KasaDeviceType discoveredDeviceType)
 		{
-		if (discoveredDeviceType == KasaDeviceType.Plug || discoveredDeviceType == KasaDeviceType.Strip && device.LightState is null)
+		if ((discoveredDeviceType == KasaDeviceType.Plug || discoveredDeviceType == KasaDeviceType.Strip) && device.LightState is null)
 			{
 			return ManagedLightKind.OnOff;
 			}

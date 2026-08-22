@@ -13,9 +13,51 @@ namespace KasaTapoCrestronDriver;
 
 public sealed partial class PlatformDriver
 	{
-	private static bool IsSupportedLightDeviceType (KasaDeviceType deviceType, bool treatPlugsAsLights)
+	// Model prefixes for plugs that are dimmable hardware despite classifying as
+	// KasaDeviceType.Plug (DetermineSmartDeviceType matches the "PLUG" branch before the dimmer
+	// branch is reached). A dimmable plug can only ever be used to dim a light - there is nothing
+	// else a dim level could control - so it must always be treated as a light regardless of
+	// TreatPlugsAsLights, the same way WallSwitch/KS240 always is below. On current evidence P135
+	// is the only such device; add further model prefixes here if more are identified.
+	private static readonly string[] _dimmablePlugModelPrefixes = { "P135" };
+
+	internal static bool IsDimmablePlugModel (string? model)
 		{
-		if (deviceType is KasaDeviceType.Bulb or KasaDeviceType.LightStrip or KasaDeviceType.Dimmer)
+		if (string.IsNullOrWhiteSpace (model))
+			{
+			return false;
+			}
+
+		foreach (string prefix in _dimmablePlugModelPrefixes)
+			{
+			if (model!.StartsWith (prefix, StringComparison.OrdinalIgnoreCase))
+				{
+				return true;
+				}
+			}
+
+		return false;
+		}
+
+	internal static bool IsSupportedLightDeviceType (KasaDeviceType deviceType, bool treatPlugsAsLights, string? model = null)
+		{
+		// Wall switches (dimmer or on/off) are always genuine lighting loads, regardless of
+		// TreatPlugsAsLights - that setting only controls whether bare plugs/strips (which are not
+		// lighting loads by default) should also be exposed as lights. KasaTapoClient 1.3.0 keys
+		// brightness support on the negotiated SMART component rather than DeviceType, so dimmable
+		// switch hardware such as KS240 (dimmer+fan, reports child_device and classifies as
+		// WallSwitch rather than Dimmer) must be included here or it is silently dropped. Actual
+		// dimmable-vs-on/off classification for a WallSwitch is resolved later, from the connected
+		// device's real capability (see InferManagedLightKind), not assumed here.
+		if (deviceType is KasaDeviceType.Bulb or KasaDeviceType.LightStrip or KasaDeviceType.Dimmer or KasaDeviceType.WallSwitch)
+			{
+			return true;
+			}
+
+		// A dimmable plug (e.g. P135) can only ever be used to dim a light, so it is always a
+		// supported light regardless of TreatPlugsAsLights - unlike a plain on/off plug, which
+		// TreatPlugsAsLights continues to gate because it may control a non-lighting load.
+		if (deviceType == KasaDeviceType.Plug && IsDimmablePlugModel (model))
 			{
 			return true;
 			}
@@ -414,6 +456,7 @@ public sealed partial class PlatformDriver
 			case KasaDeviceType.Bulb:
 			case KasaDeviceType.LightStrip:
 			case KasaDeviceType.Dimmer:
+			case KasaDeviceType.WallSwitch:
 				yield return new ManagedLightDescriptor (
 					controllerId,
 					discoveryResult.Host,
@@ -426,7 +469,15 @@ public sealed partial class PlatformDriver
 					discoveryResult.DeviceId);
 				yield break;
 
-			case KasaDeviceType.Plug when _sharedConfiguration.TreatPlugsAsLights:
+			case KasaDeviceType.Plug when _sharedConfiguration.TreatPlugsAsLights || IsDimmablePlugModel (discoveryResult.Model):
+				// P135 and similar dimmable plugs advertise brightness/dimmer_calibration but still
+				// classify as DeviceType.Plug (the "PLUG" branch in DetermineSmartDeviceType matches
+				// before the dimmer branch is reached). A known dimmable plug model is always
+				// materialized here regardless of TreatPlugsAsLights, since a dim level can only ever
+				// control a light. Defer to the cached/Unknown kind here too - same as the
+				// unconditional group above - so InferManagedLightKind can resolve Dimmable vs OnOff
+				// from the connected device's actual negotiated capability instead of assuming every
+				// plug is on/off-only.
 				yield return new ManagedLightDescriptor (
 					controllerId,
 					discoveryResult.Host,
@@ -434,7 +485,7 @@ public sealed partial class PlatformDriver
 					rootName,
 					rootModel,
 					rootSerial,
-					ManagedLightKind.OnOff,
+					cachedManagedLightKind == ManagedLightKind.Unknown ? ManagedLightKind.Unknown : cachedManagedLightKind,
 						awaitingConnectedIdentity: IsTapoDiscoveryResult (discoveryResult) && string.IsNullOrWhiteSpace (discoveryResult.Alias),
 					discoveryResult.DeviceId);
 				yield break;
@@ -457,7 +508,12 @@ public sealed partial class PlatformDriver
 				}
 			}
 
-		return deviceType == KasaDeviceType.Plug || deviceType == KasaDeviceType.Strip
+		// Strip child outlets are plain on/off (see ResolveStripChildDescriptorsAsync, which always
+		// assigns ManagedLightKind.OnOff to itemized outlets directly and never calls this method for
+		// them), but a bare Plug can be a dimmable device (e.g. P135) that only reveals its real
+		// capability once connected. Leave Plug as Unknown here so InferManagedLightKind resolves it
+		// from the negotiated brightness component instead of assuming on/off-only.
+		return deviceType == KasaDeviceType.Strip
 			? ManagedLightKind.OnOff
 			: ManagedLightKind.Unknown;
 		}
