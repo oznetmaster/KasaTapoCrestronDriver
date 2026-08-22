@@ -167,7 +167,12 @@ jobs:
       - name: Build release package
         shell: pwsh
         run: |
-          dotnet build KasaTapoCrestronDriver.slnx -c Release -p:ManifestUtilExe="${{ steps.manifestutil.outputs.exe_path }}" -p:LocalNet472ReferenceAssemblies="$env:NET472_REFERENCE_ASSEMBLIES" -p:LocalNetFxRuntimeDir="$env:NETFX_RUNTIME_DIR" -p:MergeDependenciesContinueOnError=false -p:PackageDriverContinueOnError=false -p:PackageDriverIgnoreExitCode=false
+          # Build only the driver project (not the whole solution) so MSBuild doesn't also build the
+          # KasaTapoCrestronDriver.Tests project's SkipMergeDependencies=true ProjectReference to this same
+          # project as a second, parallel instance - that second instance writes to the same obj/bin outputs
+          # as this build and previously caused a CS2012 file-lock error ("... KasaTapoCrestronDriver.dll for
+          # writing ... locked by VBCSCompiler").
+          dotnet build KasaTapoCrestronDriver/KasaTapoCrestronDriver.csproj -c Release -p:ManifestUtilExe="${{ steps.manifestutil.outputs.exe_path }}" -p:LocalNet472ReferenceAssemblies="$env:NET472_REFERENCE_ASSEMBLIES" -p:LocalNetFxRuntimeDir="$env:NETFX_RUNTIME_DIR" -p:MergeDependenciesContinueOnError=false -p:PackageDriverContinueOnError=false -p:PackageDriverIgnoreExitCode=false
 
       - name: Locate package
         id: package

@@ -121,13 +121,7 @@
 	 <Exec Command="pwsh -NoProfile -NonInteractive -File &quot;$(MSBuildProjectDirectory)\BumpDriverVersion.ps1&quot; -ManifestPath &quot;$(MSBuildProjectDirectory)\KasaTapoCrestronDriver.json&quot; -Configuration &quot;$(Configuration)&quot;" />
   </Target>
 
-  <!-- The ILRepack merge rewrites $(TargetPath) in place, embedding a distinct copy of KasaTapoClient's
-		  types into the driver assembly. That's fine (even desired) for a packaged Release build, but it
-		  breaks the test project's ability to pass KasaDevice/DeviceType instances between its own
-		  KasaTapoClient package reference and the driver assembly (CS1503, distinct types with the same
-		  name). Skip the merge for Debug builds so local/test builds keep a single, shared KasaTapoClient
-		  assembly identity; Release builds (used for the shipped .pkg/NuGet package) still merge as before. -->
-  <Target Name="MergeDependencies" AfterTargets="Build" Condition="'$(SkipMergeDependencies)' != 'true' AND '$(Configuration)' != 'Debug'">
+  <Target Name="MergeDependencies" AfterTargets="Build" Condition="'$(SkipMergeDependencies)' != 'true'">
 	 <ItemGroup>
 		<MergeInputs Include="$(TargetPath)" />
 		<MergeInputs Include="$(TargetDir)*.dll" Exclude="$(TargetPath);$(TargetDir)Crestron.*.dll;$(TargetDir)RAD*.dll;$(TargetDir)Ir*.dll;$(TargetDir)SimplSharp*.dll;$(TargetDir)CrestronCertifiedDriverResourcesLibrary.dll" />
@@ -137,7 +131,7 @@
 	 <Exec Command="pwsh -NoProfile -NonInteractive -File &quot;$(MSBuildProjectDirectory)\PatchMergedAssembly.ps1&quot; -AssemblyPath &quot;$(TargetPath)&quot; -OutputPath &quot;$(TargetDir)patched\$(AssemblyName).dll&quot;" ContinueOnError="false" />
   </Target>
 
-  <Target Name="PackageDriver" AfterTargets="MergeDependencies" Condition="'$(SkipMergeDependencies)' != 'true' AND '$(Configuration)' != 'Debug'">
+  <Target Name="PackageDriver" AfterTargets="MergeDependencies" Condition="'$(SkipMergeDependencies)' != 'true'">
 	 <RemoveDir Directories="$(TargetDir)patched\IncludeInPkg" />
 	 <ItemGroup>
 		<IncludeInPkgFiles Include="$(MSBuildProjectDirectory)\IncludeInPkg\**\*" Exclude="$(MSBuildProjectDirectory)\IncludeInPkg\**\*.xsd" />

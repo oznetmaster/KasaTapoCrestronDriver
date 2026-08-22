@@ -25,17 +25,18 @@
         LightState, DeviceFeature) do not collide (CS0433) with the same types from the direct KasaTapoClient
         reference below. Files that need driver-only types (e.g. LightTuningDecisions) must declare
         `extern alias driverassembly;` and qualify types as `driverassembly::KasaTapoCrestronDriver.*`.
-        Note: no AdditionalProperties are set here (e.g. SkipMergeDependencies) - doing so would make MSBuild
-        build KasaTapoCrestronDriver.csproj as a second, distinct project instance with different global
-        properties, racing the solution's normal build of the same project and causing CS2012 file-lock
-        errors when both write to the same obj/bin paths. The driver project instead skips its ILRepack
-        merge for Debug builds unconditionally (see KasaTapoCrestronDriver.csproj), so the driver assembly's
-        KasaTapoClient types stay identical (same physical DLL) to this project's own KasaTapoClient package
-        reference above - otherwise KasaDevice/DeviceType/etc. become distinct, non-convertible types
-        (CS1503) between the two assemblies. -->
+        SkipMergeDependencies=true disables the driver's post-build ILRepack merge for this reference, so the
+        driver assembly's KasaTapoClient types stay identical (same physical DLL) to this project's own
+        KasaTapoClient package reference above - otherwise KasaDevice/DeviceType/etc. become distinct,
+        non-convertible types (CS1503) between the two assemblies. Because AdditionalProperties makes
+        MSBuild treat this as a distinct instance of KasaTapoCrestronDriver.csproj from the solution's normal
+        build of that project, the release workflow must not build both instances in parallel (see
+        BuildInParallel note in release-package.yml), otherwise both instances race to write the same
+        obj/bin outputs and a CS2012 file-lock error can occur. -->
   <ItemGroup>
     <ProjectReference Include="..\KasaTapoCrestronDriver\KasaTapoCrestronDriver.csproj">
       <Aliases>driverassembly</Aliases>
+      <AdditionalProperties>SkipMergeDependencies=true</AdditionalProperties>
     </ProjectReference>
   </ItemGroup>
 
