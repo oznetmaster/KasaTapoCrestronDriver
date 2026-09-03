@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin.
+// Copyright (c) 2026 Neil Colvin.
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 using System.Collections.Concurrent;
@@ -20,7 +20,7 @@ public sealed partial class PlatformDriver
 			? null
 			: new DeviceCredentials (configuration.UserName, configuration.Password);
 
-		foreach (KeyValuePair<string, IKasaManagedLightEntity> entry in _lightEntities)
+		foreach (KeyValuePair<string, IKasaManagedChildEntity> entry in _lightEntities)
 			{
 			if (!_discoveryResults.TryGetValue (entry.Key, out DiscoveryResult? discoveryResult))
 				{
@@ -343,6 +343,16 @@ public sealed partial class PlatformDriver
 			return false;
 			}
 
+		if (descriptor is null)
+			{
+			LogError ($"Skipping managed-device add for controllerId='{controllerId}' because discovery metadata is unavailable; cache metadata cannot be created safely.");
+			return false;
+			}
+
+		// CreateManagedDeviceEntry resolves UxCategory (Light vs Outlet) from _managedDeviceCacheMetadata,
+		// so the cache metadata must be populated first - CreateManagedDeviceEntry now throws if it isn't.
+		_managedDeviceCacheMetadata[controllerId] = CreateManagedDeviceCacheEntry (descriptor, name);
+
 		PlatformManagedDevice entry = CreateManagedDeviceEntry (controllerId, name, modelName, serialNumber);
 		ConcurrentDictionary<string, PlatformManagedDevice> additionCopy = new (_managedDevices, StringComparer.OrdinalIgnoreCase);
 		if (!additionCopy.TryAdd (controllerId, entry))
@@ -352,19 +362,7 @@ public sealed partial class PlatformDriver
 			}
 		_managedDevices = additionCopy;
 
-		if (descriptor is not null)
-			{
-			_managedDeviceCacheMetadata[controllerId] = CreateManagedDeviceCacheEntry (descriptor, name);
-			RememberResolvedDeviceName (controllerId, name, descriptor.DiscoveryDeviceId ?? descriptor.SerialNumber, descriptor.Host);
-			}
-		else
-			{
-			ConcurrentDictionary<string, PlatformManagedDevice> rollbackCopy = new (_managedDevices, StringComparer.OrdinalIgnoreCase);
-			rollbackCopy.TryRemove (controllerId, out _);
-			_managedDevices = rollbackCopy;
-			LogError ($"Skipping managed-device add for controllerId='{controllerId}' because discovery metadata is unavailable; cache metadata cannot be created safely.");
-			return false;
-			}
+		RememberResolvedDeviceName (controllerId, name, descriptor.DiscoveryDeviceId ?? descriptor.SerialNumber, descriptor.Host);
 		PersistManagedDeviceCache ();
 
 		NotifyManagedDevicesSnapshotChanged ();
@@ -501,6 +499,30 @@ public sealed partial class PlatformDriver
 	private string GetManagedDeviceCachePath ()
 		{
 		return Path.Combine (PERSISTENT_STORAGE_ROOT, MANAGED_DEVICE_CACHE_FILE_NAME);
+		}
+
+	/// <summary>
+	/// Deletes the persisted managed-device cache file. Called when the platform driver instance
+	/// is disposed/removed so that stale managed-device state does not survive removal and get
+	/// reloaded if the driver is re-added. Certificate files (managed elsewhere) are intentionally
+	/// left untouched.
+	/// </summary>
+	private void DeleteManagedDeviceCacheFile ()
+		{
+		string cachePath = GetManagedDeviceCachePath ();
+
+		try
+			{
+			if (File.Exists (cachePath))
+				{
+				File.Delete (cachePath);
+				LogInfo ($"Managed-device cache deleted on driver dispose: '{cachePath}'.");
+				}
+			}
+		catch (Exception ex)
+			{
+			LogInfo ($"Managed-device cache delete on dispose failed for '{cachePath}': {ex.Message}");
+			}
 		}
 
 	private string ResolveManagedDeviceName (string controllerId, string? candidateName, string? deviceId, string? host)
@@ -648,7 +670,7 @@ public sealed partial class PlatformDriver
 
 		_managedDeviceCacheMetadata.Remove (stripRootControllerId);
 
-		if (_lightEntities.TryGetValue (stripRootControllerId, out IKasaManagedLightEntity? staleRootEntity))
+		if (_lightEntities.TryGetValue (stripRootControllerId, out IKasaManagedChildEntity? staleRootEntity))
 			{
 			staleRootEntity.Stop ();
 			staleRootEntity.Dispose ();

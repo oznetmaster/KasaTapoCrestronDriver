@@ -1,0 +1,12 @@
+{
+	"MainPageTitle":     "Outlet",
+	"PowerLabel":        "Power",
+	"CurrentPowerLabel": "Current Power (W)",
+	"VoltageLabel":      "Voltage (V)",
+	"CurrentAmpsLabel":  "Current (A)",
+	"TodayEnergyLabel":  "Today (kWh)",
+	"MonthEnergyLabel":  "This Month (kWh)",
+	"TotalEnergyLabel":  "Total (kWh)",
+	"Event_OutletTurnedOn":  "Outlet Turned On",
+	"Event_OutletTurnedOff": "Outlet Turned Off"
+}

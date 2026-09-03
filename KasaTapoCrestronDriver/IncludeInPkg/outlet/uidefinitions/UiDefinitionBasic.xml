@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uidefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://prd-use-rad-assets.azurewebsites.net/ExtensionsSchemaDefinition.xsd">
+	<version ver="2.0" />
+	<tile icon="{outletIcon}" status="{outletStatus}" action="command:outletToggle" showinhomepage="#false" showinroompage="#true" />
+	<layouts>
+
+		<!-- No power/energy module on this outlet: tile-only control, no navigation target. -->
+		<layout id="MainPage" title="{deviceLabel}" isdefaultlayout="#true">
+			<controls>
+			</controls>
+		</layout>
+
+	</layouts>
+	<alerts/>
+</uidefinition>

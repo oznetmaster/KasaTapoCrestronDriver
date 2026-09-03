@@ -42,6 +42,18 @@
 	 <Optimize>true</Optimize>
   </PropertyGroup>
 
+  <!-- KasaTapoCrestronDriver.Tests references this project with AdditionalProperties=SkipMergeDependencies=true
+		so it gets an *unmerged* build (KasaDevice/DeviceType stay identical to the NuGet KasaTapoClient package
+		the tests project also references). Without a distinct output path, that instance and the solution's
+		normal (merged) build of this project both write to the same bin\Debug\net472 folder; whichever finishes
+		last wins, and if it's the merged build, the tests project ends up loading the merged assembly - whose
+		KasaDevice/DeviceType are physically different types from the NuGet package - causing CS1503 errors that
+		only reproduce depending on build order. Route the unmerged instance to its own output folder so the two
+		builds can never clobber each other. -->
+  <PropertyGroup Condition="'$(SkipMergeDependencies)' == 'true'">
+	 <BaseOutputPath>bin\Unmerged\</BaseOutputPath>
+  </PropertyGroup>
+
   <ItemGroup>
 	 <Reference Include="System.Data.DataSetExtensions" />
 	 <Reference Include="Microsoft.CSharp" />
@@ -101,10 +113,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="IncludeInPkg\room\uidefinitions\" />
-    <Folder Include="IncludeInPkg\Translations\" />
     <Folder Include="IncludeInPkg\UiDefinitions\" />
     <Folder Include="KasaTapoCrestronDriver\" />
+    <None Include="IncludeInPkg\Translations\en-US.json" />
+    <None Include="IncludeInPkg\outlet\uidefinitions\UiDefinitionEnergy.xml" />
+    <None Include="IncludeInPkg\outlet\uidefinitions\UiDefinitionBasic.xml" />
   </ItemGroup>
 
   <PropertyGroup>

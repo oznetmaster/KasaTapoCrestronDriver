@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin.
+// Copyright (c) 2026 Neil Colvin.
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 using System.Diagnostics;
@@ -39,14 +39,12 @@ public sealed partial class PlatformDriver
 		return false;
 		}
 
-	internal static bool IsSupportedLightDeviceType (KasaDeviceType deviceType, bool treatPlugsAsLights, string? model = null)
+	internal static bool IsSupportedLightDeviceType (KasaDeviceType deviceType, string? model = null)
 		{
-		// Wall switches (dimmer or on/off) are always genuine lighting loads, regardless of
-		// TreatPlugsAsLights - that setting only controls whether bare plugs/strips (which are not
-		// lighting loads by default) should also be exposed as lights. KasaTapoClient 1.3.0 keys
-		// brightness support on the negotiated SMART component rather than DeviceType, so dimmable
-		// switch hardware such as KS240 (dimmer+fan, reports child_device and classifies as
-		// WallSwitch rather than Dimmer) must be included here or it is silently dropped. Actual
+		// Wall switches (dimmer or on/off) are always genuine lighting loads. KasaTapoClient 1.3.0
+		// keys brightness support on the negotiated SMART component rather than DeviceType, so
+		// dimmable switch hardware such as KS240 (dimmer+fan, reports child_device and classifies
+		// as WallSwitch rather than Dimmer) must be included here or it is silently dropped. Actual
 		// dimmable-vs-on/off classification for a WallSwitch is resolved later, from the connected
 		// device's real capability (see InferManagedLightKind), not assumed here.
 		if (deviceType is KasaDeviceType.Bulb or KasaDeviceType.LightStrip or KasaDeviceType.Dimmer or KasaDeviceType.WallSwitch)
@@ -54,19 +52,53 @@ public sealed partial class PlatformDriver
 			return true;
 			}
 
-		// A dimmable plug (e.g. P135) can only ever be used to dim a light, so it is always a
-		// supported light regardless of TreatPlugsAsLights - unlike a plain on/off plug, which
-		// TreatPlugsAsLights continues to gate because it may control a non-lighting load.
-		if (deviceType == KasaDeviceType.Plug && IsDimmablePlugModel (model))
-			{
-			return true;
-			}
-
-		return treatPlugsAsLights && (deviceType == KasaDeviceType.Plug || deviceType == KasaDeviceType.Strip);
+		// Bare plugs and power strips are always discoverable and selectable for installation now
+		// - each one individually decides (via its per-child "Treat As Light" configuration item)
+		// whether it is materialized as a Light child or an Outlet child. See
+		// ResolveManagedChildKind for how that per-child decision is resolved.
+		return deviceType == KasaDeviceType.Plug || deviceType == KasaDeviceType.Strip;
 		}
 
-	private IKasaManagedLightEntity CreateManagedLightEntity (ManagedLightDescriptor descriptor, DeviceConfiguration configuration)
+	/// <summary>
+	/// Resolves whether a plug/strip-outlet-capable controllerId should be materialized as a Light
+	/// or an Outlet child. Bulbs/light strips/dimmers/wall switches are always Light and never call
+	/// this. A known dimmable-plug model (e.g. P135) is always Light, since a dim level can only
+	/// ever control a light. Otherwise the per-child "TreatAsLight" configuration item decides,
+	/// defaulting to Outlet when not yet configured.
+	/// </summary>
+	private ManagedChildKind ResolveManagedChildKind (string controllerId, KasaDeviceType deviceType, string? model)
 		{
+		if (deviceType != KasaDeviceType.Plug && deviceType != KasaDeviceType.Strip)
+			{
+			return ManagedChildKind.Light;
+			}
+
+		if (deviceType == KasaDeviceType.Plug && IsDimmablePlugModel (model))
+			{
+			return ManagedChildKind.Light;
+			}
+
+		return _childTreatAsLight.TryGetValue (controllerId, out bool treatAsLight) && treatAsLight
+			? ManagedChildKind.Light
+			: ManagedChildKind.Outlet;
+		}
+
+	private IKasaManagedChildEntity CreateManagedLightEntity (ManagedLightDescriptor descriptor, DeviceConfiguration configuration)
+		{
+		if (descriptor.ChildKind == ManagedChildKind.Outlet)
+			{
+			return new KasaOutletEntity (
+				descriptor.ControllerId,
+				descriptor,
+				configuration,
+				HandleManagedLightDescriptorNameChanged,
+				_sharedConfiguration,
+				_resources,
+				_logger,
+				_driverLogId,
+				_args.DriverDataDirectoryPath);
+			}
+
 		return new KasaLightEntity (
 			descriptor.ControllerId,
 			descriptor,
@@ -84,34 +116,163 @@ public sealed partial class PlatformDriver
 		return _processorBaselineCoordinator.SynchronizeAsync (loadName, mode, level, hue, saturation, colorTemperature, cancellationToken);
 		}
 
+	/// <summary>
+	/// When the per-child "Treat As Light" configuration item changes, the child must move
+	/// between the <see cref="KasaLightEntity"/> and <see cref="KasaOutletEntity"/> concrete
+	/// types. Those are different classes, so this cannot be done by mutating the existing
+	/// entity in place - instead the existing entity/controller is stopped and disposed and a
+	/// brand-new one is materialized and published, exactly as happens when a child is first
+	/// added after discovery.
+	///
+	/// This intentionally does NOT remove and re-add the controllerId's platform:managedDevices
+	/// entry. An earlier revision did that (PublishManagedDeviceRemoval followed by
+	/// AddInitialManagedDeviceEntry) to try to force Crestron Home to detach a stale Light/Outlet
+	/// room-tile facet, but that remove/re-add of an already room-bound managed-device entry is
+	/// what caused the processor to log "Could not find associated registry object for object
+	/// who's definition changed" and leave the device Offline/Driver Not Loaded in Configure Pro.
+	/// The original (working) approach - swap the entity/ConfigurableDriverEntity in place and
+	/// then publish an in-place UxCategory update via PublishManagedDeviceEntryUpdate - is used
+	/// here instead, since that was proven to work correctly (aside from an unrelated cache
+	/// restore-on-restart issue).
+	/// </summary>
+	private void ReconcileChildKindAfterTreatAsLightChange (string controllerId, string context)
+		{
+		if (!_knownDescriptors.TryGetValue (controllerId, out ManagedLightDescriptor? descriptor))
+			{
+			LogInfo ($"ReconcileChildKindAfterTreatAsLightChange: no known descriptor for controllerId='{controllerId}', context='{context}'; kind reconciliation deferred until (re)materialization.");
+			return;
+			}
+
+		ManagedChildKind resolvedKind = ResolveManagedChildKind (controllerId, descriptor.DiscoveredDeviceType, descriptor.ModelName);
+		if (resolvedKind == descriptor.ChildKind)
+			{
+			LogInfo ($"ReconcileChildKindAfterTreatAsLightChange: controllerId='{controllerId}' resolved kind {resolvedKind} unchanged; no recreation required.");
+			return;
+			}
+
+		if (!_deviceConfigurations.TryGetValue (controllerId, out DeviceConfiguration? deviceConfiguration))
+			{
+			LogInfo ($"ReconcileChildKindAfterTreatAsLightChange: controllerId='{controllerId}' has no device configuration available yet; kind change to {resolvedKind} deferred until next materialization.");
+			return;
+			}
+
+		LogInfo ($"ReconcileChildKindAfterTreatAsLightChange: controllerId='{controllerId}' changing kind from {descriptor.ChildKind} to {resolvedKind}, context='{context}'; disposing existing entity and recreating in place.");
+
+		bool hadManagedDeviceEntry = _managedDevices.ContainsKey (controllerId);
+
+		if (_childControllers.ContainsKey (controllerId))
+			{
+			UpdateSubControllers (null, new[] { controllerId });
+			}
+
+		if (_lightEntities.TryGetValue (controllerId, out IKasaManagedChildEntity? existingEntity))
+			{
+			existingEntity.Stop ();
+			existingEntity.Dispose ();
+			}
+
+		bool wasConfigured = _configuredChildControllerIds.Contains (controllerId);
+		ClearChildRuntimeState (controllerId, context);
+
+		descriptor.ChildKind = resolvedKind;
+
+		if (_managedDeviceCacheMetadata.TryGetValue (controllerId, out ManagedDeviceCacheEntry? cacheEntry))
+			{
+			cacheEntry.UxCategory = resolvedKind switch
+				{
+				ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
+				ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
+				ManagedChildKind.Button => DeviceUxCategory.Switch,
+				ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
+				ManagedChildKind.Light => DeviceUxCategory.Light,
+				_ => throw new InvalidOperationException ($"Cannot resolve DeviceUxCategory for controllerId='{controllerId}' because ManagedChildKind '{resolvedKind}' is unrecognized."),
+				};
+			}
+
+		IKasaManagedChildEntity newEntity = CreateManagedLightEntity (descriptor, deviceConfiguration);
+		newEntity.SetConfigured (wasConfigured, context);
+
+		LoggingDriverConfigurationController childConfigurationController = CreateChildConfigurationController (descriptor);
+		var controller = new ConfigurableDriverEntity (controllerId, (ReflectedAttributeDriverEntity)newEntity, childConfigurationController);
+		_lightEntities[controllerId] = newEntity;
+		_childControllers[controllerId] = controller;
+		_childConfigurationControllers[controllerId] = childConfigurationController;
+
+		if (wasConfigured)
+			{
+			_configuredChildControllerIds.Add (controllerId);
+			}
+
+		if (hadManagedDeviceEntry)
+			{
+			// In-place UxCategory update only - do not remove/re-add the managed-device entry.
+			// See the method summary for why a remove/re-add regressed the KP115 TreatAsLight
+			// switch (processor registry-object error, device ending up Offline/Driver Not
+			// Loaded).
+			PublishManagedDeviceEntryUpdate (controllerId, context);
+			}
+		else
+			{
+			AddInitialManagedDeviceEntry (descriptor);
+			}
+
+		UpdateSubControllers (new[] { controller }, null);
+		newEntity.NotifyChildPublished ();
+		ActivatePublishedChildIfRunning (controller, context);
+
+		LogInfo ($"ReconcileChildKindAfterTreatAsLightChange: controllerId='{controllerId}' recreated as {resolvedKind}, wasConfigured={wasConfigured}, context='{context}'.");
+		}
+
 	private LoggingDriverConfigurationController CreateChildConfigurationController (ManagedLightDescriptor descriptor)
 		{
+		bool supportsTreatAsLightChoice = IsTreatAsLightChoiceEligible (descriptor);
+		bool currentTreatAsLight = _childTreatAsLight.TryGetValue (descriptor.ControllerId, out bool treatAsLight) && treatAsLight;
+		LogInfo ($"CreateChildConfigurationController: controllerId='{descriptor.ControllerId}', supportsTreatAsLightChoice={supportsTreatAsLightChoice}, currentTreatAsLight={currentTreatAsLight} (used as TreatAsLight DefaultValue), childKind={descriptor.ChildKind}.");
+
+		var items = new List<ConfigurationItemDefinition>
+			{
+			new ()
+				{
+				Id = "ActivationMarker",
+				Title = "Ready",
+				Description = "Confirms the device configuration has been applied.",
+				Availability = Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationItemAvailability.Always,
+				ValueType = Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationItemValueType.Boolean,
+				UsageContext = ConfigurationItemContext.Generic.Prompt,
+				DefaultValue = "true",
+				Required = true,
+				Persistent = true,
+				},
+			};
+
+		var stepItems = new List<string> { "ActivationMarker" };
+
+		if (supportsTreatAsLightChoice)
+			{
+			items.Add (new ()
+				{
+				Id = "TreatAsLight",
+				Title = "Treat As Light",
+				Description = "Expose this plug/outlet as a light entity when it controls a lamp or other lighting load.",
+				Availability = Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationItemAvailability.Always,
+				ValueType = Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationItemValueType.Boolean,
+				UsageContext = ConfigurationItemContext.Generic.Prompt,
+				DefaultValue = currentTreatAsLight ? "true" : "false",
+				Required = true,
+				Persistent = true,
+				});
+			stepItems.Add ("TreatAsLight");
+			}
+
 		var definition = new ConfigurationStepsDefinition
 			{
-			Items = new List<ConfigurationItemDefinition>
-				{
-				new ()
-					{
-					Id = "ActivationMarker",
-					Title = "Ready",
-					Description = "Confirms the device configuration has been applied.",
-					Availability = Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationItemAvailability.Always,
-					ValueType = Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationItemValueType.Boolean,
-					UsageContext = ConfigurationItemContext.Generic.Prompt,
-					DefaultValue = "true",
-					Required = true,
-					Persistent = true,
-					},
-				},
+			Items = items,
 			Steps = new List<ConfigurationStepDefinition>
 				{
 				new ()
 					{
 					StepId = "Activation",
-					Items = new List<string>
-						{
-						"ActivationMarker",
-						},
+					Items = stepItems,
 					},
 				},
 			FirstStep = "Activation",
@@ -142,6 +303,18 @@ public sealed partial class PlatformDriver
 		loggingController.StatusChanged += HandleChildConfigurationControllerStatusChanged;
 		LogInfo ($"Child configuration controller created for controllerId='{descriptor.ControllerId}', model='{descriptor.ModelName}'.");
 		return loggingController;
+		}
+
+	private static bool IsTreatAsLightChoiceEligible (ManagedLightDescriptor descriptor)
+		{
+		if (descriptor.DiscoveredDeviceType != KasaDeviceType.Plug && descriptor.DiscoveredDeviceType != KasaDeviceType.Strip)
+			{
+			return false;
+			}
+
+		// A known dimmable plug model (e.g. P135) is always forced to Light - there is no
+		// meaningful outlet-only interpretation of a dim level - so it never shows the choice.
+		return descriptor.DiscoveredDeviceType != KasaDeviceType.Plug || !IsDimmablePlugModel (descriptor.ModelName);
 		}
 
 	private void HandleChildConfigurationControllerStatusChanged (object? sender, StatusChangedEventArgs args)
@@ -183,9 +356,38 @@ public sealed partial class PlatformDriver
 		IDictionary<string, DriverEntityValue?> values)
 		{
 		LogInfo ($"ApplyChildConfigurationItems: controllerId='{controllerId}', action='{action}', stepId='{stepId}', hasExistingLightEntity={_lightEntities.ContainsKey (controllerId)}, valueKeys=[{string.Join (", ", values.Keys.OrderBy (key => key, StringComparer.OrdinalIgnoreCase))}].");
+		if (values.TryGetValue ("TreatAsLight", out var treatAsLightValue) && treatAsLightValue.HasValue)
+			{
+			bool incomingTreatAsLight = treatAsLightValue.Value.GetValue<bool> ();
+			LogInfo ($"ApplyChildConfigurationItems: controllerId='{controllerId}' received TreatAsLight={incomingTreatAsLight} (previous stored value={( _childTreatAsLight.TryGetValue (controllerId, out bool previousTreatAsLight) ? previousTreatAsLight.ToString () : "<none>")}).");
+			bool kindActuallyChanging = incomingTreatAsLight != previousTreatAsLight;
+			_childTreatAsLight[controllerId] = incomingTreatAsLight;
+
+			// Disposing/recreating the child's entity and configuration controller synchronously
+			// here would tear down the very DelegateDataDrivenConfigurationController/transport
+			// that is currently in the middle of running this ApplyConfiguration call, which the
+			// SDK observes as a failed apply ("Received response Error") and reacts to by
+			// re-pushing its last-known-good (i.e. stale, pre-toggle) configuration value - which
+			// looks exactly like the toggle "changing back by itself". Deferring the actual
+			// dispose/recreate until after this callback has returned avoids tearing down the
+			// in-flight call.
+			if (kindActuallyChanging)
+				{
+				_ = Task.Run (() => ReconcileChildKindAfterTreatAsLightChange (controllerId, "child-config-callback:TreatAsLight"));
+				}
+			}
+
 		if (action == DataDrivenConfigurationController.ApplyConfigurationAction.ClearValues)
 			{
-			LogInfo ($"ApplyChildConfigurationItems: ClearValues for controllerId='{controllerId}' resets the specified child configuration values to their defaults; no install-state side effects are required for ActivationMarker.");
+			// ClearValues is what Crestron Home sends when the device is deleted from the
+			// controller's "Add a device" configuration list. Previously this was treated as a
+			// no-op, which left the child's internal configured/in-use state (and its
+			// platform:managedDevices entry) intact - so on the next discovery refresh or driver
+			// reload the deleted device would be resurrected into the managed-device list
+			// instead of staying removed. Tear the child down the same way discovery-driven
+			// removal does so the deletion actually sticks.
+			LogInfo ($"ApplyChildConfigurationItems: ClearValues for controllerId='{controllerId}'; treating as child removal from configuration.");
+			RemoveChildFromConfiguration (controllerId, "child-config-callback:ClearValues");
 			return null;
 			}
 
@@ -234,7 +436,7 @@ public sealed partial class PlatformDriver
 		PublishManagedDeviceEntryUpdate (controllerId, context);
 
 		LogInfo ($"ActivateChildControllerFromConfiguration: controllerId='{controllerId}', context='{context}', addedConfigured={addedConfigured}, addedInUse={addedInUse}.");
-		if (_lightEntities.TryGetValue (controllerId, out IKasaManagedLightEntity? lightEntity))
+		if (_lightEntities.TryGetValue (controllerId, out IKasaManagedChildEntity? lightEntity))
 			{
 			lightEntity.SetConfigured (true, context);
 			LogInfo ($"ActivateChildControllerFromConfiguration: configured controllerId='{controllerId}', context='{context}'; physical device initialization will continue in the background.");
@@ -254,7 +456,7 @@ public sealed partial class PlatformDriver
 		PublishManagedDeviceEntryUpdate (controllerId, context);
 
 		LogInfo ($"ActivateChildControllerAsync: controllerId='{controllerId}', context='{context}', addedConfigured={addedConfigured}, addedInUse={addedInUse}.");
-		if (_lightEntities.TryGetValue (controllerId, out IKasaManagedLightEntity? lightEntity))
+		if (_lightEntities.TryGetValue (controllerId, out IKasaManagedChildEntity? lightEntity))
 			{
 			await lightEntity.SetConfiguredAsync (true, context, cancellationToken).ConfigureAwait (false);
 			LogInfo ($"ActivateChildControllerAsync: activated controllerId='{controllerId}', context='{context}'; initial definition and state were prepared during child configuration.");
@@ -274,7 +476,7 @@ public sealed partial class PlatformDriver
 		PublishManagedDeviceEntryUpdate (controllerId, context);
 
 		LogInfo ($"ActivateChildController: controllerId='{controllerId}', context='{context}', addedConfigured={addedConfigured}, addedInUse={addedInUse}.");
-		if (_lightEntities.TryGetValue (controllerId, out IKasaManagedLightEntity? lightEntity))
+		if (_lightEntities.TryGetValue (controllerId, out IKasaManagedChildEntity? lightEntity))
 			{
 			lightEntity.SetConfigured (true, context);
 			lightEntity.NotifyChildRunning (context);
@@ -302,6 +504,59 @@ public sealed partial class PlatformDriver
 		entry.IsConfigured = true;
 		PersistManagedDeviceCache ();
 		LogInfo ($"MarkChildConfiguredInCache: persisted configured child marker for controllerId='{controllerId}'.");
+		}
+
+	private void RemoveChildFromConfiguration (string controllerId, string context)
+		{
+		// Capture the descriptor before ClearChildRuntimeState runs - it doesn't remove
+		// _knownDescriptors/_deviceConfigurations/_managedDeviceCacheMetadata (those are
+		// discovery-owned state, deliberately preserved so the physical device keeps its
+		// identity), so we can use it below to immediately republish the device as an
+		// available (unconfigured) entry instead of waiting for the next discovery pass.
+		_knownDescriptors.TryGetValue (controllerId, out ManagedLightDescriptor? descriptor);
+
+		_inUseChildControllerIds.Remove (controllerId);
+
+		bool removedManagedDevice = PublishManagedDeviceRemoval (controllerId);
+
+		if (_lightEntities.TryGetValue (controllerId, out IKasaManagedChildEntity? removedEntity))
+			{
+			removedEntity.Stop ();
+			removedEntity.Dispose ();
+			}
+
+		if (_childControllers.ContainsKey (controllerId))
+			{
+			UpdateSubControllers (null, new List<string> { controllerId });
+			}
+
+		ClearChildRuntimeState (controllerId, context);
+
+		// ClearValues deletes the child's entire configuration, including any per-child
+		// "Treat As Light" override - so that override must be forgotten here too. Otherwise
+		// the stale _childTreatAsLight entry (and the descriptor's now-stale ChildKind) would
+		// cause the device to be republished still classified as whatever kind it was before
+		// deletion (e.g. Light for a plug the user had switched to Light), instead of
+		// re-resolving to its correct default kind.
+		_childTreatAsLight.Remove (controllerId);
+
+		if (descriptor is not null)
+			{
+			ManagedChildKind resolvedKind = ResolveManagedChildKind (controllerId, descriptor.DiscoveredDeviceType, descriptor.ModelName);
+			descriptor.ChildKind = resolvedKind;
+			}
+
+		// The device is still physically discoverable and its identity is still known, so
+		// re-publish it immediately as an unconfigured managed-device entry - this is what
+		// makes it reappear in the "Add a device" list right away instead of only after the
+		// next discovery refresh.
+		bool republishedAsAvailable = false;
+		if (descriptor is not null && _deviceConfigurations.ContainsKey (controllerId))
+			{
+			republishedAsAvailable = AddInitialManagedDeviceEntry (descriptor);
+			}
+
+		LogInfo ($"RemoveChildFromConfiguration: controllerId='{controllerId}', context='{context}', removedManagedDevice={removedManagedDevice}, republishedAsAvailable={republishedAsAvailable}, resolvedChildKind={descriptor?.ChildKind.ToString() ?? "<none>"}.");
 		}
 
 	private void ClearChildRuntimeState (string controllerId, string context)
@@ -342,7 +597,7 @@ public sealed partial class PlatformDriver
 							LogChildPublicationState ("Before UpdateSubControllers deferred publish", descriptor.ControllerId);
 				UpdateSubControllers (new[] { deferredController }, null);
 							LogChildPublicationState ("After UpdateSubControllers deferred publish", descriptor.ControllerId);
-				if (_lightEntities.TryGetValue (descriptor.ControllerId, out IKasaManagedLightEntity? lightEntity))
+				if (_lightEntities.TryGetValue (descriptor.ControllerId, out IKasaManagedChildEntity? lightEntity))
 					{
 					lightEntity.NotifyChildPublished ();
 					}
@@ -435,9 +690,9 @@ public sealed partial class PlatformDriver
 			{
 			// Strips are the only device type whose managed devices (child outlets) cannot be
 			// determined synchronously from DiscoveryResult; see ResolveStripChildDescriptorsAsync.
-			return _sharedConfiguration.TreatPlugsAsLights
-				? await ResolveStripChildDescriptorsAsync (discoveryResult, configuration, cancellationToken).ConfigureAwait (false)
-				: Array.Empty<ManagedLightDescriptor> ();
+			// Every strip's outlets are always itemized now, each independently deciding light vs
+			// outlet via its own per-child configuration.
+			return await ResolveStripChildDescriptorsAsync (discoveryResult, configuration, cancellationToken).ConfigureAwait (false);
 			}
 
 		return CreateManagedLightDescriptors (discoveryResult).ToArray ();
@@ -466,18 +721,20 @@ public sealed partial class PlatformDriver
 					rootSerial,
 					cachedManagedLightKind == ManagedLightKind.Unknown ? ManagedLightKind.Unknown : cachedManagedLightKind,
 						awaitingConnectedIdentity: IsTapoDiscoveryResult (discoveryResult) && string.IsNullOrWhiteSpace (discoveryResult.Alias),
-					discoveryResult.DeviceId);
+					discoveryResult.DeviceId,
+					childKind: ManagedChildKind.Light);
 				yield break;
 
-			case KasaDeviceType.Plug when _sharedConfiguration.TreatPlugsAsLights || IsDimmablePlugModel (discoveryResult.Model):
+			case KasaDeviceType.Plug:
 				// P135 and similar dimmable plugs advertise brightness/dimmer_calibration but still
 				// classify as DeviceType.Plug (the "PLUG" branch in DetermineSmartDeviceType matches
 				// before the dimmer branch is reached). A known dimmable plug model is always
-				// materialized here regardless of TreatPlugsAsLights, since a dim level can only ever
-				// control a light. Defer to the cached/Unknown kind here too - same as the
-				// unconditional group above - so InferManagedLightKind can resolve Dimmable vs OnOff
-				// from the connected device's actual negotiated capability instead of assuming every
-				// plug is on/off-only.
+				// materialized as a Light, since a dim level can only ever control a light. All
+				// other plugs are always discoverable too, and individually resolve Light vs Outlet
+				// via ResolveManagedChildKind (per-child "Treat As Light" configuration). Defer to
+				// the cached/Unknown kind here too - same as the unconditional group above - so
+				// InferManagedLightKind can resolve Dimmable vs OnOff from the connected device's
+				// actual negotiated capability instead of assuming every plug is on/off-only.
 				yield return new ManagedLightDescriptor (
 					controllerId,
 					discoveryResult.Host,
@@ -487,7 +744,8 @@ public sealed partial class PlatformDriver
 					rootSerial,
 					cachedManagedLightKind == ManagedLightKind.Unknown ? ManagedLightKind.Unknown : cachedManagedLightKind,
 						awaitingConnectedIdentity: IsTapoDiscoveryResult (discoveryResult) && string.IsNullOrWhiteSpace (discoveryResult.Alias),
-					discoveryResult.DeviceId);
+					discoveryResult.DeviceId,
+					childKind: ResolveManagedChildKind (controllerId, discoveryResult.DeviceType, discoveryResult.Model));
 				yield break;
 
 			// KasaDeviceType.Strip is itemized into one descriptor per child outlet by
@@ -613,7 +871,8 @@ public sealed partial class PlatformDriver
 						ManagedLightKind.OnOff,
 						awaitingConnectedIdentity: false,
 						discoveryResult.DeviceId,
-						child.Id));
+						child.Id,
+						childKind: ResolveManagedChildKind (childControllerId, discoveryResult.DeviceType, childModel)));
 					}
 
 				_resolvedStripChildDescriptors[stripControllerId] = childDescriptors;
@@ -722,7 +981,7 @@ public sealed partial class PlatformDriver
 					LogInfo ($"EnrichDiscoveryResultAliasAsync: resolved alias for controllerId='{controllerId}' but no descriptor was present to update.");
 					}
 
-				if (_lightEntities.TryGetValue (controllerId, out IKasaManagedLightEntity? lightEntity))
+				if (_lightEntities.TryGetValue (controllerId, out IKasaManagedChildEntity? lightEntity))
 					{
 					deviceAdopted = lightEntity.TryAttachConnectedDevice (device, "alias-enrichment");
 					LogInfo ($"EnrichDiscoveryResultAliasAsync: connected device adoption for controllerId='{controllerId}' adopted={deviceAdopted}.");

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uidefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://prd-use-rad-assets.azurewebsites.net/ExtensionsSchemaDefinition.xsd">
+	<version ver="2.0" />
+	<tile icon="{outletIcon}" status="{outletStatus}" navigation="show:MainPage" action="command:outletToggle" showinhomepage="#false" showinroompage="#true" />
+	<layouts>
+
+		<!-- Main outlet control page -->
+		<layout id="MainPage" title="{deviceLabel}" isdefaultlayout="#true">
+			<controls>
+				<toggle id="OutletToggleID"
+						label="^PowerLabel"
+						value="{outletIsOn}" />
+				<textdisplay id="CurrentPowerLabelID"
+						title="^CurrentPowerLabel"
+						line1label="{outletEnergyCurrentPowerWatts}"
+						visible="{hasEnergyReporting}" />
+				<textdisplay id="VoltageLabelID"
+						title="^VoltageLabel"
+						line1label="{outletEnergyVoltageVolts}"
+						visible="{hasEnergyReporting}" />
+				<textdisplay id="CurrentAmpsLabelID"
+						title="^CurrentAmpsLabel"
+						line1label="{outletEnergyCurrentAmps}"
+						visible="{hasEnergyReporting}" />
+				<textdisplay id="TodayEnergyLabelID"
+						title="^TodayEnergyLabel"
+						line1label="{outletEnergyTodayKilowattHours}"
+						visible="{hasEnergyReporting}" />
+				<textdisplay id="MonthEnergyLabelID"
+						title="^MonthEnergyLabel"
+						line1label="{outletEnergyMonthKilowattHours}"
+						visible="{hasEnergyReporting}" />
+				<textdisplay id="TotalEnergyLabelID"
+						title="^TotalEnergyLabel"
+						line1label="{outletEnergyTotalKilowattHours}"
+						visible="{hasEnergyReporting}" />
+			</controls>
+		</layout>
+
+	</layouts>
+	<alerts/>
+</uidefinition>

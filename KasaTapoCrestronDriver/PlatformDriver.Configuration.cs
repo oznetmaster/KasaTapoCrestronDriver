@@ -82,11 +82,6 @@ public sealed partial class PlatformDriver
 			_sensorPollIntervalSeconds = sensorPollIntervalValue.Value.GetValue<string> ()?.Trim () ?? _sensorPollIntervalSeconds;
 			}
 
-		if (values.TryGetValue ("TreatPlugsAsLights", out var treatPlugsValue) && treatPlugsValue.HasValue)
-			{
-			_treatPlugsAsLights = treatPlugsValue.Value.GetValue<bool> ();
-			}
-
 		if (values.TryGetValue ("EnableProcessorBaselineWorkaround", out var enableProcessorBaselineWorkaroundValue) && enableProcessorBaselineWorkaroundValue.HasValue)
 			{
 			_enableProcessorBaselineWorkaround = enableProcessorBaselineWorkaroundValue.Value.GetValue<bool> ();

@@ -55,11 +55,6 @@ internal interface IPlatformSharedConfiguration
 		get;
 		}
 
-	bool TreatPlugsAsLights
-		{
-		get;
-		}
-
 	PlatformSharedConfigurationSnapshot Snapshot ();
 	}
 
@@ -72,7 +67,6 @@ internal readonly struct PlatformSharedConfigurationSnapshot
 		bool enableLightPolling,
 		TimeSpan lightPollInterval,
 		TimeSpan sensorPollInterval,
-		bool treatPlugsAsLights,
 		bool enableProcessorBaselineWorkaround,
 		string processorSshHost,
 		string processorSshUserName,
@@ -84,7 +78,6 @@ internal readonly struct PlatformSharedConfigurationSnapshot
 		EnableLightPolling = enableLightPolling;
 		LightPollInterval = lightPollInterval;
 		SensorPollInterval = sensorPollInterval;
-		TreatPlugsAsLights = treatPlugsAsLights;
 		EnableProcessorBaselineWorkaround = enableProcessorBaselineWorkaround;
 		ProcessorSshHost = processorSshHost;
 		ProcessorSshUserName = processorSshUserName;
@@ -122,11 +115,6 @@ internal readonly struct PlatformSharedConfigurationSnapshot
 		}
 
 	public TimeSpan SensorPollInterval
-		{
-		get;
-		}
-
-	public bool TreatPlugsAsLights
 		{
 		get;
 		}
@@ -196,12 +184,6 @@ internal sealed class PlatformSharedConfiguration : IPlatformSharedConfiguration
 		private set;
 		} = TimeSpan.FromSeconds (3);
 
-	public bool TreatPlugsAsLights
-		{
-		get { lock (_gate) { return field; } }
-		private set;
-		}
-
 	public void Update (
 		string userName,
 		string password,
@@ -209,7 +191,6 @@ internal sealed class PlatformSharedConfiguration : IPlatformSharedConfiguration
 		bool enableLightPolling,
 		TimeSpan lightPollInterval,
 		TimeSpan sensorPollInterval,
-		bool treatPlugsAsLights,
 		bool enableProcessorBaselineWorkaround,
 		string processorSshHost,
 		string processorSshUserName,
@@ -223,7 +204,6 @@ internal sealed class PlatformSharedConfiguration : IPlatformSharedConfiguration
 			EnableLightPolling = enableLightPolling;
 			LightPollInterval = lightPollInterval;
 			SensorPollInterval = sensorPollInterval;
-			TreatPlugsAsLights = treatPlugsAsLights;
 			EnableProcessorBaselineWorkaround = enableProcessorBaselineWorkaround;
 			ProcessorSshHost = processorSshHost;
 			ProcessorSshUserName = processorSshUserName;
@@ -242,7 +222,6 @@ internal sealed class PlatformSharedConfiguration : IPlatformSharedConfiguration
 				EnableLightPolling,
 				LightPollInterval,
 				SensorPollInterval,
-				TreatPlugsAsLights,
 				EnableProcessorBaselineWorkaround,
 				ProcessorSshHost,
 				ProcessorSshUserName,

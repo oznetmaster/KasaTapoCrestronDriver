@@ -709,13 +709,24 @@ internal partial class KasaLightEntity
 
 	private void UpdateDescriptorFromConnectedDevice (KasaDevice device)
 		{
-		string resolvedAlias = !string.IsNullOrWhiteSpace (device.Alias)
-			? device.Alias!
-			: !string.IsNullOrWhiteSpace (device.SystemInfo?.Alias)
-				? device.SystemInfo!.Alias!
-				: _descriptor.Name;
+		// Strip child outlets/lights (_descriptor.ChildId set) must resolve their own alias from
+		// the specific child entry - the root device's Alias/SystemInfo.Alias belongs to the
+		// strip itself (e.g. "TP-LINK_Power Strip_4BCD"), not to any individual child on it.
+		string? childAlias = !string.IsNullOrWhiteSpace (_descriptor.ChildId)
+			? device.GetChild (_descriptor.ChildId!)?.Alias
+			: null;
 
-		LogInfo ($"Light entity '{ControllerId}' UpdateDescriptorFromConnectedDevice: resolvedAlias='{resolvedAlias}', deviceAlias='{device.Alias ?? "<null>"}', systemInfoAlias='{device.SystemInfo?.Alias ?? "<null>"}', previousName='{_descriptor.Name ?? "<null>"}'.");
+		string resolvedAlias = !string.IsNullOrWhiteSpace (childAlias)
+			? childAlias!
+			: !string.IsNullOrWhiteSpace (_descriptor.ChildId)
+				? _descriptor.Name
+				: !string.IsNullOrWhiteSpace (device.Alias)
+					? device.Alias!
+					: !string.IsNullOrWhiteSpace (device.SystemInfo?.Alias)
+						? device.SystemInfo!.Alias!
+						: _descriptor.Name;
+
+		LogInfo ($"Light entity '{ControllerId}' UpdateDescriptorFromConnectedDevice: resolvedAlias='{resolvedAlias}', childId='{_descriptor.ChildId ?? "<null>"}', childAlias='{childAlias ?? "<null>"}', deviceAlias='{device.Alias ?? "<null>"}', systemInfoAlias='{device.SystemInfo?.Alias ?? "<null>"}', previousName='{_descriptor.Name ?? "<null>"}'.");
 
 		_descriptor.Name = resolvedAlias;
 

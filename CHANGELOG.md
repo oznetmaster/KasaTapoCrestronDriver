@@ -8,6 +8,12 @@ single, scannable index of the full version history.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+- Outlet child devices (plugs/power-strip outlets not configured as a light via **Treat As Light**) are now published using a dedicated `KasaOutletEntity`, instead of reusing the light entity. Outlets expose only on/off control plus energy usage telemetry (current power, today's kilowatt-hours) when the connected device reports it \u2014 they no longer carry unrelated lighting capabilities (brightness, color, color-temperature).
+- Each managed device kind now has its own standalone entity implementation and UI definition; this is the pattern future Kasa/Tapo device kinds will also follow.
+- Added a packaged `UiDefinition.xml` and `Translations/en-US.json` for outlet entities, under `IncludeInPkg/outlet/`. Unlike `Light`, `Outlet` is a Crestron extension device type and therefore requires its own custom UI/translation assets; the layout mirrors the per-kind packaging convention used by other Entity Model V2 drivers.
+
 ## [1.2.0]
 
 - Updated to `KasaTapoClient` 1.3.1, which negotiates device capabilities (e.g. brightness) directly from each device's SMART component list instead of relying solely on its device type.

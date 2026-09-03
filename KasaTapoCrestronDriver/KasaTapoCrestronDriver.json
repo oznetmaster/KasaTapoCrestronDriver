@@ -16,8 +16,8 @@
       "Website": "",
       "PhoneNumber": ""
     },
-    "DriverVersion": "1.2.000.0005",
-    "VersionDate": "2026-08-22 06:16:52.040"
+    "DriverVersion": "1.2.000.0072",
+    "VersionDate": "2026-09-03 16:07:02.280"
   },
   "ConfigurationSteps": {
     "Items": [
@@ -52,17 +52,6 @@
         "Persistent": true,
         "ValueType": "String",
         "DefaultValue": "10"
-      },
-      {
-        "Id": "TreatPlugsAsLights",
-        "Title": "Treat Plugs As Lights",
-        "Description": "Expose smart plugs as light entities when they control lamps or other lighting loads.",
-        "Availability": "Always",
-        "UsageContext": "Generic.Prompt",
-        "Required": true,
-        "Persistent": true,
-        "ValueType": "Boolean",
-        "DefaultValue": false
       },
       {
         "Id": "EnableLightPolling",
@@ -144,7 +133,7 @@
     "Steps": [
       {
         "StepId": "Settings",
-        "Items": [ "UserName", "Password", "DiscoveryTimeoutSeconds", "TreatPlugsAsLights", "EnableLightPolling", "LightPollIntervalSeconds", "SensorPollIntervalSeconds", "EnableProcessorBaselineWorkaround", "ProcessorSshHost", "ProcessorSshUserName", "ProcessorSshPassword" ],
+        "Items": [ "UserName", "Password", "DiscoveryTimeoutSeconds", "EnableLightPolling", "LightPollIntervalSeconds", "SensorPollIntervalSeconds", "EnableProcessorBaselineWorkaround", "ProcessorSshHost", "ProcessorSshUserName", "ProcessorSshPassword" ],
         "NextStep": null
       }
     ],

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin.
+// Copyright (c) 2026 Neil Colvin.
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 using Crestron.DeviceDrivers.SDK.EntityModel;
@@ -63,21 +63,21 @@ public sealed partial class PlatformDriver
 				_deviceConfigurations[discoveryDeviceId] = configuration;
 				}
 
-			if (!IsSupportedLightDeviceType (discoveryResult.DeviceType, _sharedConfiguration.TreatPlugsAsLights, discoveryResult.Model))
+			if (!IsSupportedLightDeviceType (discoveryResult.DeviceType, discoveryResult.Model))
 				{
 				LogInfo ($"Skipping unsupported discovery result: host='{discoveryResult.Host}', type={discoveryResult.DeviceType}, alias='{discoveryResult.Alias ?? "<null>"}', model='{discoveryResult.Model ?? "<null>"}', deviceId='{discoveryResult.DeviceId ?? "<null>"}'.");
 				continue;
 				}
 
-			if (discoveryResult.DeviceType == KasaDeviceType.Strip && _sharedConfiguration.TreatPlugsAsLights)
+			if (discoveryResult.DeviceType == KasaDeviceType.Strip)
 				{
 				// Strips are always itemized into one managed device per child outlet
 				// (ResolveStripChildDescriptorsAsync); the strip's own root controllerId is never a
 				// valid managed device and must never be published/persisted. A stale root entry can
 				// still exist in _managedDevices/_managedDeviceCacheMetadata from before itemization
-				// was introduced (or from a session where TreatPlugsAsLights was previously false), so
-				// proactively purge it here rather than waiting for the multi-cycle removal-miss
-				// threshold, which would otherwise leave the parent strip visibly listed for a long time.
+				// was introduced, so proactively purge it here rather than waiting for the
+				// multi-cycle removal-miss threshold, which would otherwise leave the parent strip
+				// visibly listed for a long time.
 				PurgeStaleStripRootManagedDevice (controllerId);
 				}
 
@@ -117,7 +117,7 @@ public sealed partial class PlatformDriver
 
 					descriptorsByControllerId[descriptor.ControllerId] = descriptor;
 
-					if (_lightEntities.TryGetValue (descriptor.ControllerId, out IKasaManagedLightEntity? existingLightEntity))
+					if (_lightEntities.TryGetValue (descriptor.ControllerId, out IKasaManagedChildEntity? existingLightEntity))
 						{
 						existingLightEntity.UpdateDescriptor (descriptor, configuration);
 						existingLightEntity.UpdateConfiguration (configuration);
@@ -322,7 +322,7 @@ public sealed partial class PlatformDriver
 					continue;
 					}
 
-				if (_lightEntities.TryGetValue (existingControllerId, out IKasaManagedLightEntity? removedEntity))
+				if (_lightEntities.TryGetValue (existingControllerId, out IKasaManagedChildEntity? removedEntity))
 					{
 					removedEntity.Stop ();
 					removedEntity.Dispose ();
@@ -392,7 +392,7 @@ public sealed partial class PlatformDriver
 									}
 								}
 
-							IKasaManagedLightEntity lightEntity = await materialization.Task.ConfigureAwait (false);
+							IKasaManagedChildEntity lightEntity = await materialization.Task.ConfigureAwait (false);
 							LogInfo ($"Async materialization completed for controllerId='{controllerId}', deviceName='{lightEntity.DeviceName}', model='{lightEntity.ModelName}', serial='{lightEntity.SerialNumber}'.");
 
 							bool hasManagedDeviceEntry = HasManagedDeviceEntry (controllerId);
@@ -453,7 +453,7 @@ public sealed partial class PlatformDriver
 						foreach (ConfigurableDriverEntity controller in controllersToPublish)
 							{
 							LogChildPublicationState ("After UpdateSubControllers async publish", controller.ControllerId);
-							if (_lightEntities.TryGetValue (controller.ControllerId, out IKasaManagedLightEntity? lightEntity))
+							if (_lightEntities.TryGetValue (controller.ControllerId, out IKasaManagedChildEntity? lightEntity))
 								{
 								lightEntity.NotifyChildPublished ();
 								}

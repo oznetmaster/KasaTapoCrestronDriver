@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin.
+// Copyright (c) 2026 Neil Colvin.
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 using System.Collections.Concurrent;
@@ -24,10 +24,12 @@ public sealed partial class PlatformDriver
 			return false;
 			}
 
+		// CreateManagedDeviceEntry resolves UxCategory (Light vs Outlet) from _managedDeviceCacheMetadata,
+		// so the cache metadata must be populated first - CreateManagedDeviceEntry now throws if it isn't.
+		_managedDeviceCacheMetadata[controllerId] = CreateManagedDeviceCacheEntry (descriptor, name);
 		ConcurrentDictionary<string, PlatformManagedDevice> initialEntryCopy = new (_managedDevices, StringComparer.OrdinalIgnoreCase);
 		initialEntryCopy[controllerId] = CreateManagedDeviceEntry (controllerId, name, modelName, serialNumber);
 		_managedDevices = initialEntryCopy;
-		_managedDeviceCacheMetadata[controllerId] = CreateManagedDeviceCacheEntry (descriptor, name);
 		RememberResolvedDeviceName (controllerId, name, descriptor.DiscoveryDeviceId ?? descriptor.SerialNumber, descriptor.Host);
 		PersistManagedDeviceCache ();
 		LogInfo ($"Managed-device entry added: controllerId='{controllerId}', name='{name}', model='{modelName}', serial='{serialNumber}'.");
@@ -37,8 +39,18 @@ public sealed partial class PlatformDriver
 
 	private PlatformManagedDevice CreateManagedDeviceEntry (string controllerId, string name, string modelName, string serialNumber)
 		{
+		// Every caller must seed _managedDeviceCacheMetadata (via CreateManagedDeviceCacheEntry) before
+		// calling this method. A missing entry means a caller was added/changed without doing that, and
+		// silently guessing DeviceUxCategory.Light here previously masked that bug - an outlet child
+		// would materialize correctly but its managed-device entry would be miscategorized as a Light
+		// and never render an outlet room tile. Fail loudly instead so the real defect is caught.
+		if (!_managedDeviceCacheMetadata.TryGetValue (controllerId, out ManagedDeviceCacheEntry? metadata))
+			{
+			throw new InvalidOperationException ($"Cannot create managed-device entry for controllerId='{controllerId}' because no cache metadata has been seeded; CreateManagedDeviceCacheEntry must be called first.");
+			}
+
 		return new PlatformManagedDevice (
-			DeviceUxCategory.Light,
+			metadata.UxCategory,
 			name,
 			TP_LINK_MANUFACTURER,
 			modelName,
@@ -60,12 +72,21 @@ public sealed partial class PlatformDriver
 			Immutable = new ManagedDeviceImmutableCacheFields
 				{
 				ControllerId = descriptor.ControllerId,
-				UxCategory = DeviceUxCategory.Light,
+				UxCategory = descriptor.ChildKind switch
+					{
+					ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
+					ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
+					ManagedChildKind.Button => DeviceUxCategory.Switch,
+					ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
+					ManagedChildKind.Light => DeviceUxCategory.Light,
+					_ => throw new InvalidOperationException ($"Cannot resolve DeviceUxCategory for controllerId='{descriptor.ControllerId}' because ManagedChildKind '{descriptor.ChildKind}' is unrecognized."),
+					},
 				Manufacturer = TP_LINK_MANUFACTURER,
 				Model = descriptor.ModelName,
 				DiscoveredDeviceType = descriptor.DiscoveredDeviceType,
 				ManagedLightKind = descriptor.Kind,
-				SerialNumber = descriptor.SerialNumber
+				SerialNumber = descriptor.SerialNumber,
+				ChildId = descriptor.ChildId
 				},
 			Mutable = new ManagedDeviceMutableCacheFields
 				{
@@ -106,12 +127,22 @@ public sealed partial class PlatformDriver
 		copy[controllerId] = updatedEntry;
 		_managedDevices = copy;
 
+		// Notify every field on the entry, not just "name" - Crestron Home only ever applied the
+		// UxCategory/Manufacturer/Model/SerialNumber values from the very first (pre-room, pre-"Treat
+		// As Light" resolution) snapshot notification. Because that snapshot always defaults new
+		// controllerIds to DeviceUxCategory.Light (see AddInitialManagedDeviceEntry), a subsequent
+		// name-only delta here left the UxCategory stuck at Light even after the child correctly
+		// resolved to Outlet, so the outlet room tile never rendered.
 		DriverEntityValueUpdate nameChange = DriverEntityValueUpdate.Create ("name", new DriverEntityValue (updatedEntry.Name));
+		DriverEntityValueUpdate uxCategoryChange = DriverEntityValueUpdate.Create ("uxCategory", new DriverEntityValue (updatedEntry.UxCategory.ToString ()));
+		DriverEntityValueUpdate manufacturerChange = DriverEntityValueUpdate.Create ("manufacturer", new DriverEntityValue (updatedEntry.Manufacturer));
+		DriverEntityValueUpdate modelChange = DriverEntityValueUpdate.Create ("model", new DriverEntityValue (updatedEntry.Model));
+		DriverEntityValueUpdate serialNumberChange = DriverEntityValueUpdate.Create ("serialNumber", new DriverEntityValue (updatedEntry.SerialNumber));
 		DriverEntityValueUpdate managedDevicesChange = DriverEntityValueUpdate.Create (
-			DriverEntityValueUpdate.Create (controllerId, nameChange));
+			DriverEntityValueUpdate.Create (controllerId, nameChange, uxCategoryChange, manufacturerChange, modelChange, serialNumberChange));
 		NotifyPropertyChanged ("platform:managedDevices", managedDevicesChange);
 
-		LogInfo ($"PublishManagedDeviceEntryUpdate: published managed-device entry update for controllerId='{controllerId}', name='{updatedEntry.Name}', model='{updatedEntry.Model}', serial='{updatedEntry.SerialNumber}', configured={_configuredChildControllerIds.Contains (controllerId)}, context='{context}'.");
+		LogInfo ($"PublishManagedDeviceEntryUpdate: published managed-device entry update for controllerId='{controllerId}', name='{updatedEntry.Name}', uxCategory='{updatedEntry.UxCategory}', model='{updatedEntry.Model}', serial='{updatedEntry.SerialNumber}', configured={_configuredChildControllerIds.Contains (controllerId)}, context='{context}'.");
 		}
 
 	private void NotifyManagedDevicesSnapshotChanged ()
@@ -141,7 +172,7 @@ public sealed partial class PlatformDriver
 
 			_knownDescriptors[descriptor.ControllerId] = descriptor;
 			_deviceConfigurations[descriptor.ControllerId] = deviceConfiguration;
-			IKasaManagedLightEntity lightEntity = CreateManagedLightEntity (descriptor, deviceConfiguration);
+			IKasaManagedChildEntity lightEntity = CreateManagedLightEntity (descriptor, deviceConfiguration);
 			lightEntity.SetConfigured (_configuredChildControllerIds.Contains (descriptor.ControllerId), "cached-child-controller-publication");
 
 			LoggingDriverConfigurationController childConfigurationController = CreateChildConfigurationController (descriptor);
@@ -166,7 +197,7 @@ public sealed partial class PlatformDriver
 			foreach (ConfigurableDriverEntity controller in controllersToPublish)
 				{
 				LogChildPublicationState ("After UpdateSubControllers cached publish", controller.ControllerId);
-				if (_lightEntities.TryGetValue (controller.ControllerId, out IKasaManagedLightEntity? lightEntity))
+				if (_lightEntities.TryGetValue (controller.ControllerId, out IKasaManagedChildEntity? lightEntity))
 					{
 					lightEntity.NotifyChildPublished ();
 					}
@@ -195,6 +226,15 @@ public sealed partial class PlatformDriver
 		KasaDeviceType deviceType = ResolveCachedDeviceType (entry);
 		ManagedLightKind lightKind = ResolveCachedLightKind (entry, deviceType);
 		string serialNumber = ResolveCachedSerialNumber (entry);
+		ManagedChildKind childKind = entry.UxCategory switch
+			{
+			DeviceUxCategory.Outlet => ManagedChildKind.Outlet,
+			DeviceUxCategory.Sensor => ManagedChildKind.Sensor,
+			DeviceUxCategory.Switch => ManagedChildKind.Button,
+			DeviceUxCategory.Thermostat => ManagedChildKind.Thermostat,
+			DeviceUxCategory.Light => ManagedChildKind.Light,
+			_ => throw new InvalidOperationException ($"Cannot resolve ManagedChildKind for controllerId='{entry.ControllerId}' because cached UxCategory '{entry.UxCategory}' is unrecognized."),
+			};
 
 		descriptor = new ManagedLightDescriptor (
 			entry.ControllerId,
@@ -205,7 +245,9 @@ public sealed partial class PlatformDriver
 			serialNumber,
 			lightKind,
 			entry.AwaitingConnectedIdentity,
-			serialNumber);
+			serialNumber,
+			childId: entry.ChildId,
+			childKind: childKind);
 
 		DeviceCredentials? credentials = string.IsNullOrWhiteSpace (configuration.UserName) || string.IsNullOrWhiteSpace (configuration.Password)
 			? null
@@ -338,7 +380,7 @@ public sealed partial class PlatformDriver
 		{
 		bool hasManagedDevice = _managedDevices.TryGetValue (controllerId, out PlatformManagedDevice? managedDevice);
 		bool hasChildController = _childControllers.TryGetValue (controllerId, out ConfigurableDriverEntity? childController);
-		bool hasLightEntity = _lightEntities.TryGetValue (controllerId, out IKasaManagedLightEntity? lightEntity);
+		bool hasLightEntity = _lightEntities.TryGetValue (controllerId, out IKasaManagedChildEntity? lightEntity);
 		bool isConfigured = _configuredChildControllerIds.Contains (controllerId);
 		bool isInUse = _inUseChildControllerIds.Contains (controllerId);
 

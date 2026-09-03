@@ -39,31 +39,31 @@ public sealed class DimmablePlugSupportTests
 	[TestMethod]
 	public void IsSupportedLightDeviceType_WithWallSwitch_IsAlwaysSupported ()
 		{
-		Assert.IsTrue (DriverPlatform.IsSupportedLightDeviceType (DeviceType.WallSwitch, treatPlugsAsLights: false, model: "KS240"), "A WallSwitch must be supported even when TreatPlugsAsLights is false.");
+		Assert.IsTrue (DriverPlatform.IsSupportedLightDeviceType (DeviceType.WallSwitch, model: "KS240"), "A WallSwitch must always be supported.");
 		}
 
 	[TestMethod]
-	public void IsSupportedLightDeviceType_WithPlainPlugAndTreatPlugsAsLightsFalse_IsNotSupported ()
+	public void IsSupportedLightDeviceType_WithPlainPlug_IsAlwaysSupported ()
 		{
-		Assert.IsFalse (DriverPlatform.IsSupportedLightDeviceType (DeviceType.Plug, treatPlugsAsLights: false, model: "HS100"), "A plain on/off plug must remain gated by TreatPlugsAsLights.");
+		Assert.IsTrue (DriverPlatform.IsSupportedLightDeviceType (DeviceType.Plug, model: "HS100"), "A plain on/off plug must always be discoverable/selectable, regardless of its per-child light/outlet choice.");
 		}
 
 	[TestMethod]
-	public void IsSupportedLightDeviceType_WithPlainPlugAndTreatPlugsAsLightsTrue_IsSupported ()
+	public void IsSupportedLightDeviceType_WithStrip_IsAlwaysSupported ()
 		{
-		Assert.IsTrue (DriverPlatform.IsSupportedLightDeviceType (DeviceType.Plug, treatPlugsAsLights: true, model: "HS100"), "A plain plug must be supported once TreatPlugsAsLights is enabled.");
+		Assert.IsTrue (DriverPlatform.IsSupportedLightDeviceType (DeviceType.Strip, model: "HS300"), "A power strip must always be discoverable/selectable, regardless of its per-child light/outlet choice.");
 		}
 
 	[TestMethod]
-	public void IsSupportedLightDeviceType_WithP135AndTreatPlugsAsLightsFalse_IsAlwaysSupported ()
+	public void IsSupportedLightDeviceType_WithP135_IsAlwaysSupported ()
 		{
-		Assert.IsTrue (DriverPlatform.IsSupportedLightDeviceType (DeviceType.Plug, treatPlugsAsLights: false, model: "P135"), "P135 is a dimmable plug and can only ever be used to dim a light, so it must always be supported regardless of TreatPlugsAsLights.");
+		Assert.IsTrue (DriverPlatform.IsSupportedLightDeviceType (DeviceType.Plug, model: "P135"), "P135 is a dimmable plug and can only ever be used to dim a light, so it must always be supported.");
 		}
 
 	[TestMethod]
 	public void IsSupportedLightDeviceType_WithP135ModelVariantAndLowercase_IsAlwaysSupported ()
 		{
-		Assert.IsTrue (DriverPlatform.IsSupportedLightDeviceType (DeviceType.Plug, treatPlugsAsLights: false, model: "p135(us)"), "Model matching must be case-insensitive and tolerate region-suffixed model strings.");
+		Assert.IsTrue (DriverPlatform.IsSupportedLightDeviceType (DeviceType.Plug, model: "p135(us)"), "Model matching must be case-insensitive and tolerate region-suffixed model strings.");
 		}
 
 	[TestMethod]

@@ -12,6 +12,23 @@ internal enum ManagedLightKind
 	OnOff
 	}
 
+/// <summary>
+/// Identifies which concrete entity type a managed child controllerId is materialized as:
+/// <see cref="KasaLightEntity"/>, <see cref="KasaOutletEntity"/>, a hub child sensor
+/// (<see cref="KasaSensorEntity"/>), a hub child button, or a hub child thermostat/TRV.
+/// Every new value added here must be handled explicitly everywhere this enum is switched on
+/// (see CreateManagedDeviceCacheEntry / ResolveCachedChildKind) - silently defaulting an unknown
+/// kind to Light previously hid classification bugs and must never happen again.
+/// </summary>
+internal enum ManagedChildKind
+	{
+	Light,
+	Outlet,
+	Sensor,
+	Button,
+	Thermostat
+	}
+
 internal sealed class ManagedLightDescriptor
 	{
 	public ManagedLightDescriptor (
@@ -24,7 +41,8 @@ internal sealed class ManagedLightDescriptor
 		ManagedLightKind kind,
 		bool awaitingConnectedIdentity = false,
 		string? discoveryDeviceId = null,
-		string? childId = null)
+		string? childId = null,
+		ManagedChildKind childKind = ManagedChildKind.Light)
 		{
 		ControllerId = controllerId;
 		Host = host;
@@ -39,6 +57,7 @@ internal sealed class ManagedLightDescriptor
 		AwaitingConnectedIdentity = awaitingConnectedIdentity;
 		DiscoveryDeviceId = discoveryDeviceId;
 		ChildId = childId;
+		ChildKind = childKind;
 		}
 
 	public string ControllerId
@@ -112,9 +131,21 @@ internal sealed class ManagedLightDescriptor
 		{
 		get;
 		}
+
+	/// <summary>
+	/// Whether this controllerId is currently materialized as a Light entity or an Outlet entity.
+	/// </summary>
+	public ManagedChildKind ChildKind
+		{
+		get;
+		internal set;
+		}
 	}
 
-internal interface IKasaManagedLightEntity : IDisposable
+/// <summary>
+/// Common lifecycle contract shared by both managed Light and Outlet child entities.
+/// </summary>
+internal interface IKasaManagedChildEntity : IDisposable
 	{
 	string DeviceName
 		{
@@ -152,4 +183,8 @@ internal interface IKasaManagedLightEntity : IDisposable
 	void NotifyChildRunning (string context);
 
 	void PublishStateSnapshot ();
+	}
+
+internal interface IKasaManagedLightEntity : IKasaManagedChildEntity
+	{
 	}

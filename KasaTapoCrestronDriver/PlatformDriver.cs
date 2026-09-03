@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin.
+// Copyright (c) 2026 Neil Colvin.
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 using System.Collections.Concurrent;
@@ -258,6 +258,17 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			get;
 			set;
 			} = string.Empty;
+
+		// Strip child outlets/lights must remember which physical child on the strip they are, or a
+		// managed-device cache reload (TryCreateCachedDescriptorAndConfiguration) recreates the
+		// descriptor with ChildId=null, breaking UpdateDescriptorFromConnectedDevice's per-child alias
+		// resolution (device.GetChild(ChildId)) and causing the child to display the wrong name.
+		[DataMember (Name = "childId", EmitDefaultValue = false)]
+		public string? ChildId
+			{
+			get;
+			set;
+			}
 		}
 
 	[DataContract]
@@ -448,6 +459,12 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			set => Immutable.SerialNumber = value ?? string.Empty;
 			}
 
+		public string? ChildId
+			{
+			get => Immutable.ChildId;
+			set => Immutable.ChildId = value;
+			}
+
 		public string Host
 			{
 			get => Mutable.Host;
@@ -548,7 +565,12 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 	private const string TP_LINK_MANUFACTURER = "TP-Link";
 	private const string PERSISTENT_STORAGE_ROOT = "/user/Data/ThirdParty/NeilColvin/KasaTapoCrestronDriver";
 	private const string MANAGED_DEVICE_CACHE_FILE_NAME = "managed-devices-cache.json";
-	private const int MANAGED_DEVICE_CACHE_VERSION = 6;
+	// Bumped to 7: earlier builds could persist UxCategory=Light for strip/plug outlets because
+	// CreateManagedDeviceEntry read _managedDeviceCacheMetadata before it was populated for a
+	// brand-new controllerId. That stale UxCategory was then loaded verbatim by
+	// LoadManagedDeviceCacheIntoMemory on every subsequent startup, so bump the version to force
+	// existing caches to be discarded and rebuilt with the corrected classification.
+	private const int MANAGED_DEVICE_CACHE_VERSION = 8;
 
 	private static readonly TimeSpan InitialDiscoveryRefreshInterval = TimeSpan.FromSeconds (10);
 	private static readonly TimeSpan DefaultDiscoveryTimeout = TimeSpan.FromSeconds (20);
@@ -569,7 +591,8 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 	private readonly Dictionary<string, ManagedLightDescriptor> _knownDescriptors = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, ManagedDeviceCacheEntry> _managedDeviceCacheMetadata = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, string> _resolvedDeviceNames = new (StringComparer.OrdinalIgnoreCase);
-	private readonly Dictionary<string, IKasaManagedLightEntity> _lightEntities = new (StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, IKasaManagedChildEntity> _lightEntities = new (StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, bool> _childTreatAsLight = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, int> _pendingRemovalMissCounts = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _configuredChildControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _inUseChildControllerIds = new (StringComparer.OrdinalIgnoreCase);
@@ -596,7 +619,6 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 	private string _lightPollIntervalSeconds = ((int)DefaultLightPollInterval.TotalSeconds).ToString (CultureInfo.InvariantCulture);
 	private string _sensorPollIntervalSeconds = ((int)DefaultSensorPollInterval.TotalSeconds).ToString (CultureInfo.InvariantCulture);
 	private bool _enableLightPolling;
-	private bool _treatPlugsAsLights;
 	private bool _enableProcessorBaselineWorkaround;
 	private string _processorSshHost = string.Empty;
 	private string _processorSshUserName = string.Empty;
@@ -676,7 +698,7 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 
 		CancelRuntimeRefreshes ();
 
-		foreach (IKasaManagedLightEntity lightEntity in _lightEntities.Values.ToArray ())
+		foreach (IKasaManagedChildEntity lightEntity in _lightEntities.Values.ToArray ())
 			{
 			lightEntity.Stop ();
 			}
@@ -693,7 +715,7 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 
 		Stop ();
 
-		foreach (IKasaManagedLightEntity lightEntity in _lightEntities.Values.ToArray ())
+		foreach (IKasaManagedChildEntity lightEntity in _lightEntities.Values.ToArray ())
 			{
 			lightEntity.Dispose ();
 			}
@@ -703,6 +725,9 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 		_scheduledRefreshGate.Dispose ();
 		_managedDeviceCacheWriteGate.Dispose ();
 		_refreshGate.Dispose ();
+
+		DeleteManagedDeviceCacheFile ();
+
 		_disposed = true;
 		}
 
@@ -832,14 +857,13 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			_enableLightPolling,
 			lightPollInterval,
 			sensorPollInterval,
-			_treatPlugsAsLights,
 			_enableProcessorBaselineWorkaround,
 			_processorSshHost,
 			_processorSshUserName,
 			_processorSshPassword);
 
 		PlatformSharedConfigurationSnapshot currentConfiguration = _sharedConfiguration.Snapshot ();
-		LogInfo ($"ApplyConfigurationItems resolved configuration: mode={applyMode}, timeoutSeconds={currentConfiguration.DiscoveryTimeout.TotalSeconds:0.###}, enableLightPolling={currentConfiguration.EnableLightPolling}, lightPollIntervalSeconds={currentConfiguration.LightPollInterval.TotalSeconds:0.###}, sensorPollIntervalSeconds={currentConfiguration.SensorPollInterval.TotalSeconds:0.###}, treatPlugsAsLights={currentConfiguration.TreatPlugsAsLights}, hasTapoCredentials={HasTapoCredentials ()}.");
+		LogInfo ($"ApplyConfigurationItems resolved configuration: mode={applyMode}, timeoutSeconds={currentConfiguration.DiscoveryTimeout.TotalSeconds:0.###}, enableLightPolling={currentConfiguration.EnableLightPolling}, lightPollIntervalSeconds={currentConfiguration.LightPollInterval.TotalSeconds:0.###}, sensorPollIntervalSeconds={currentConfiguration.SensorPollInterval.TotalSeconds:0.###}, hasTapoCredentials={HasTapoCredentials ()}.");
 
 		switch (applyMode)
 			{
@@ -876,15 +900,14 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 				bool discoveryTimeoutChanged = previousConfiguration.DiscoveryTimeout != currentConfiguration.DiscoveryTimeout;
 				bool connectionInputsChanged = credentialsChanged
 					|| discoveryTimeoutChanged;
-				bool discoveryInputsChanged = connectionInputsChanged
-					|| previousConfiguration.TreatPlugsAsLights != currentConfiguration.TreatPlugsAsLights;
+				bool discoveryInputsChanged = connectionInputsChanged;
 
 				if (connectionInputsChanged)
 					{
 					RefreshExistingDeviceConfigurations (currentConfiguration);
 					}
 
-				foreach (IKasaManagedLightEntity lightEntity in _lightEntities.Values)
+				foreach (IKasaManagedChildEntity lightEntity in _lightEntities.Values)
 					{
 					lightEntity.ApplyRuntimeConfiguration (previousConfiguration, currentConfiguration);
 					}
