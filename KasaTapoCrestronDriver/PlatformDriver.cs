@@ -302,6 +302,20 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			set;
 			}
 
+		// Persisted so that on reload, an unassigned plug/strip child's managed-device UxCategory
+		// can be recomputed from the user's actual "Treat As Light" preference (via
+		// ResolveManagedChildKind) instead of blindly trusting the cached UxCategory snapshot -
+		// which previously went stale whenever the child was removed from configuration (its kind
+		// is re-resolved in memory via RemoveChildFromConfiguration, but _childTreatAsLight/the
+		// on-disk cache never reflected that reset), causing it to reappear with the wrong
+		// category (e.g. still "Light") after a driver reload.
+		[DataMember (Name = "treatAsLight", EmitDefaultValue = false)]
+		public bool TreatAsLight
+			{
+			get;
+			set;
+			}
+
 		[DataMember (Name = "port", EmitDefaultValue = false)]
 		public int Port
 			{
@@ -481,6 +495,12 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			{
 			get => Mutable.IsConfigured;
 			set => Mutable.IsConfigured = value;
+			}
+
+		public bool TreatAsLight
+			{
+			get => Mutable.TreatAsLight;
+			set => Mutable.TreatAsLight = value;
 			}
 
 		public int Port

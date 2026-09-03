@@ -94,6 +94,7 @@ public sealed partial class PlatformDriver
 				Host = configuration.Host,
 				AwaitingConnectedIdentity = descriptor.AwaitingConnectedIdentity,
 				IsConfigured = _configuredChildControllerIds.Contains (descriptor.ControllerId),
+				TreatAsLight = _childTreatAsLight.TryGetValue (descriptor.ControllerId, out bool treatAsLight) && treatAsLight,
 				Port = configuration.Port,
 				TransportKind = options.TransportKind,
 				DeviceFamily = parameters.DeviceFamily,

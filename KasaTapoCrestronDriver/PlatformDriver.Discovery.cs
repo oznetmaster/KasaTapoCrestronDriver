@@ -429,8 +429,34 @@ public sealed partial class PlatformDriver
 							continue;
 							}
 
+						// Restore the per-child "Treat As Light" preference before recomputing
+						// UxCategory below - otherwise ResolveManagedChildKind would see an empty
+						// _childTreatAsLight (this dictionary is never itself persisted directly)
+						// and default every plug/strip child back to Outlet.
+						_childTreatAsLight[entry.ControllerId] = entry.TreatAsLight;
+
+						// Only trust the cached UxCategory for entries that are still configured
+						// (in a room) - an unconfigured entry's UxCategory can go stale (e.g. it
+						// was switched to Light, then removed from configuration, which resolves
+						// the in-memory ChildKind back to Outlet without updating this on-disk
+						// cache entry). Recomputing here from the restored TreatAsLight preference
+						// ensures an unassigned device reappears with its correct current kind
+						// instead of the last-published one.
+						DeviceUxCategory resolvedUxCategory = entry.IsConfigured
+							? entry.UxCategory
+							: ResolveManagedChildKind (entry.ControllerId, entry.DiscoveredDeviceType, entry.Model) switch
+								{
+								ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
+								ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
+								ManagedChildKind.Button => DeviceUxCategory.Switch,
+								ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
+								ManagedChildKind.Light => DeviceUxCategory.Light,
+								_ => entry.UxCategory,
+								};
+						entry.UxCategory = resolvedUxCategory;
+
 						cacheSeedCopy[entry.ControllerId] = new PlatformManagedDevice (
-							entry.UxCategory,
+							resolvedUxCategory,
 							entry.Name,
 							entry.Manufacturer,
 							entry.Model,
@@ -444,6 +470,7 @@ public sealed partial class PlatformDriver
 
 					RememberResolvedDeviceName (entry.ControllerId, entry.Name, cacheSerialNumber, entry.Host);
 					}
+
 
 				_managedDevices = cacheSeedCopy;
 				LogInfo ($"Managed-device cache seeded {_managedDevices.Count} device entries from '{cachePath}', cachedConfiguredChildCount={cachedConfiguredEntryCount}; current session child configuration state will be established only by child configuration callbacks.");
