@@ -49,12 +49,18 @@ public sealed partial class PlatformDriver
 			throw new InvalidOperationException ($"Cannot create managed-device entry for controllerId='{controllerId}' because no cache metadata has been seeded; CreateManagedDeviceCacheEntry must be called first.");
 			}
 
+		// Configure Pro renders a managed device's secondary info line as the serial number
+		// whenever one is supplied, and falls back to manufacturer/model only when it is
+		// null. Every other entity v2 driver (e.g. the Overkiz driver) always passes null
+		// here for exactly this reason, so pass null too instead of the real serial number -
+		// the real serial number is still tracked separately in _managedDeviceCacheMetadata
+		// for reconnect/identity purposes and is unaffected by this.
 		return new PlatformManagedDevice (
 			metadata.UxCategory,
 			name,
 			TP_LINK_MANUFACTURER,
 			modelName,
-			serialNumber);
+			null!);
 		}
 
 	private ManagedDeviceCacheEntry CreateManagedDeviceCacheEntry (ManagedLightDescriptor descriptor, string name)
@@ -173,14 +179,47 @@ public sealed partial class PlatformDriver
 
 			_knownDescriptors[descriptor.ControllerId] = descriptor;
 			_deviceConfigurations[descriptor.ControllerId] = deviceConfiguration;
+			bool wasConfigured = _configuredChildControllerIds.Contains (descriptor.ControllerId);
 			IKasaManagedChildEntity lightEntity = CreateManagedLightEntity (descriptor, deviceConfiguration);
-			lightEntity.SetConfigured (_configuredChildControllerIds.Contains (descriptor.ControllerId), "cached-child-controller-publication");
+			lightEntity.SetConfigured (wasConfigured, "cached-child-controller-publication");
 
 			LoggingDriverConfigurationController childConfigurationController = CreateChildConfigurationController (descriptor);
 			var controller = new ConfigurableDriverEntity (descriptor.ControllerId, (ReflectedAttributeDriverEntity)lightEntity, childConfigurationController);
 			_lightEntities[descriptor.ControllerId] = lightEntity;
 			_childControllers[descriptor.ControllerId] = controller;
 			_childConfigurationControllers[descriptor.ControllerId] = childConfigurationController;
+
+			if (wasConfigured)
+				{
+				// The freshly-constructed configuration controller has no CurrentValue for
+				// ActivationMarker (or TreatAsLight) yet, so it starts life as NotConfigured -
+				// that only becomes Configured/Running when Configure Pro's UI submits an
+				// ApplyConfiguration for it. On a driver reload this child controller is
+				// recreated programmatically from the on-disk cache, so Configure Pro is never
+				// asked to resubmit anything for it. Left alone, the child stays permanently
+				// NotConfigured after every reload, which is why Crestron Home drops it out of
+				// its room even though the managed-device list still shows its last-known
+				// UxCategory (e.g. Light). Since the cache says this child was configured
+				// before the reload, replay the same values Configure Pro would have sent so
+				// the new controller transitions itself straight back to Configured/Running.
+				bool replayTreatAsLight = entry.TreatAsLight;
+				var replayValues = new Dictionary<string, string> { ["ActivationMarker"] = "true" };
+				if (IsTreatAsLightChoiceEligible (descriptor))
+					{
+					replayValues["TreatAsLight"] = replayTreatAsLight ? "true" : "false";
+					}
+
+				try
+					{
+					childConfigurationController.ApplyConfiguration (replayValues);
+					LogInfo ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' replayed prior configuration values into the recreated configuration controller to avoid it getting stuck NotConfigured after reload.");
+					}
+				catch (Exception ex)
+					{
+					LogError ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' failed to replay configuration values into the recreated configuration controller: {ex}");
+					}
+				}
+
 			LogChildPublicationState ("Cached child controller staged for publication", descriptor.ControllerId);
 			controllersToAdd ??= new List<ConfigurableDriverEntity> ();
 			controllersToAdd.Add (controller);

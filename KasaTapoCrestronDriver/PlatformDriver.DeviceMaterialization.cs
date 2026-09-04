@@ -201,6 +201,33 @@ public sealed partial class PlatformDriver
 		if (wasConfigured)
 			{
 			_configuredChildControllerIds.Add (controllerId);
+
+			// The freshly-constructed configuration controller has no CurrentValue for
+			// ActivationMarker (or TreatAsLight) yet, so it starts life as NotConfigured -
+			// normally that only becomes Configured/Running when Configure Pro's UI submits an
+			// ApplyConfiguration for it. But this recreation happens programmatically in the
+			// background, so Configure Pro is never asked to resubmit anything for this new
+			// controller instance. Left alone, the child stays permanently NotConfigured and
+			// Configure Pro reports that the driver needs reconfiguring. Since this child was
+			// already configured before the kind swap, replay the same values Configure Pro
+			// would have sent so the new controller transitions itself straight back to
+			// Configured/Running.
+			bool replayTreatAsLight = _childTreatAsLight.TryGetValue (controllerId, out bool replayValue) && replayValue;
+			var replayValues = new Dictionary<string, string> { ["ActivationMarker"] = "true" };
+			if (IsTreatAsLightChoiceEligible (descriptor))
+				{
+				replayValues["TreatAsLight"] = replayTreatAsLight ? "true" : "false";
+				}
+
+			try
+				{
+				childConfigurationController.ApplyConfiguration (replayValues);
+				LogInfo ($"ReconcileChildKindAfterTreatAsLightChange: controllerId='{controllerId}' replayed prior configuration values into the recreated configuration controller to avoid it getting stuck NotConfigured.");
+				}
+			catch (Exception ex)
+				{
+				LogError ($"ReconcileChildKindAfterTreatAsLightChange: controllerId='{controllerId}' failed to replay configuration values into the recreated configuration controller: {ex}");
+				}
 			}
 
 		if (hadManagedDeviceEntry)

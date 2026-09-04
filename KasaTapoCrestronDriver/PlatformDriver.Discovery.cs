@@ -767,6 +767,13 @@ public sealed partial class PlatformDriver
 							Host = metadata.Host,
 							AwaitingConnectedIdentity = metadata.AwaitingConnectedIdentity,
 							IsConfigured = _configuredChildControllerIds.Contains (entry.Key) || metadata.IsConfigured,
+							// TreatAsLight was previously omitted here, so every cache rewrite
+							// silently reset it to false regardless of the actual in-memory
+							// preference - discarding the user's "Treat As Light" choice even
+							// though the device was never assigned to a room. Restore it from
+							// _childTreatAsLight (falling back to the existing metadata value)
+							// so a driver reload/rewrite doesn't lose the preference.
+							TreatAsLight = _childTreatAsLight.TryGetValue (entry.Key, out bool treatAsLight) ? treatAsLight : metadata.TreatAsLight,
 							Port = metadata.Port,
 							TransportKind = metadata.TransportKind,
 							DeviceFamily = metadata.DeviceFamily,
