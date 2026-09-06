@@ -33,7 +33,6 @@ public sealed partial class PlatformDriver
 		RememberResolvedDeviceName (controllerId, name, descriptor.DiscoveryDeviceId ?? descriptor.SerialNumber, descriptor.Host);
 		PersistManagedDeviceCache ();
 		LogInfo ($"Managed-device entry added: controllerId='{controllerId}', name='{name}', model='{modelName}', serial='{serialNumber}'.");
-		LogChildPublicationState ("Managed-device entry added state", controllerId);
 		return true;
 		}
 
@@ -147,14 +146,19 @@ public sealed partial class PlatformDriver
 		DriverEntityValueUpdate serialNumberChange = DriverEntityValueUpdate.Create ("serialNumber", new DriverEntityValue (updatedEntry.SerialNumber));
 		DriverEntityValueUpdate managedDevicesChange = DriverEntityValueUpdate.Create (
 			DriverEntityValueUpdate.Create (controllerId, nameChange, uxCategoryChange, manufacturerChange, modelChange, serialNumberChange));
-		NotifyPropertyChanged ("platform:managedDevices", managedDevicesChange);
 
-		LogInfo ($"PublishManagedDeviceEntryUpdate: published managed-device entry update for controllerId='{controllerId}', name='{updatedEntry.Name}', uxCategory='{updatedEntry.UxCategory}', model='{updatedEntry.Model}', serial='{updatedEntry.SerialNumber}', configured={_configuredChildControllerIds.Contains (controllerId)}, context='{context}'.");
+		NotifyPropertyChanged ("platform:managedDevices", managedDevicesChange);
 		}
 
 	private void NotifyManagedDevicesSnapshotChanged ()
 		{
-		NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (ManagedDevices));
+		NotifyManagedDevicesSnapshotChanged ("unspecified");
+		}
+
+	private void NotifyManagedDevicesSnapshotChanged (string context)
+		{
+		var snapshot = ManagedDevices;
+		NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (snapshot));
 		}
 
 	private bool HasManagedDeviceEntry (string controllerId)
@@ -217,7 +221,6 @@ public sealed partial class PlatformDriver
 				controllersNeedingReplay.Add ((controller, childConfigurationController, entry, descriptor));
 				}
 
-			LogChildPublicationState ("Cached child controller staged for publication", descriptor.ControllerId);
 			controllersToAdd ??= new List<ConfigurableDriverEntity> ();
 			controllersToAdd.Add (controller);
 			LogInfo ($"Cached child controller published early for controllerId='{descriptor.ControllerId}', name='{descriptor.Name}', model='{descriptor.ModelName}', host='{descriptor.Host}'.");
@@ -226,14 +229,9 @@ public sealed partial class PlatformDriver
 		if ((controllersToAdd?.Count ?? 0) > 0)
 			{
 			List<ConfigurableDriverEntity> controllersToPublish = controllersToAdd!;
-			foreach (ConfigurableDriverEntity controller in controllersToPublish)
-				{
-				LogChildPublicationState ("Before UpdateSubControllers cached publish", controller.ControllerId);
-				}
 			UpdateSubControllers (controllersToPublish, null);
 			foreach (ConfigurableDriverEntity controller in controllersToPublish)
 				{
-				LogChildPublicationState ("After UpdateSubControllers cached publish", controller.ControllerId);
 				if (_lightEntities.TryGetValue (controller.ControllerId, out IKasaManagedChildEntity? lightEntity))
 					{
 					lightEntity.NotifyChildPublished ();
@@ -242,8 +240,24 @@ public sealed partial class PlatformDriver
 
 			if (controllersNeedingReplay is not null)
 				{
+				bool isFirstReplay = true;
 				foreach (var (_, childConfigurationController, entry, descriptor) in controllersNeedingReplay)
 					{
+					// Firing every cached child's configuration-controller status transition and
+					// platform:managedDevices publish back-to-back in the same tick could race with
+					// the host's own asynchronous notification processing (observed on a different
+					// CSTP worker thread than the one driving this loop), causing the host to lose
+					// track of one child per reload when several were replayed together - a different
+					// child each time, ruling out a defect tied to any specific device. Staggering the
+					// replay gives the host time to fully process each child's transition before the
+					// next one arrives; verified stable across multiple consecutive reloads with all
+					// children remaining online after this change.
+					if (!isFirstReplay)
+						{
+						System.Threading.Thread.Sleep (500);
+						}
+					isFirstReplay = false;
+
 					bool replayTreatAsLight = entry.TreatAsLight;
 					var replayValues = new Dictionary<string, string> { ["ActivationMarker"] = "true" };
 					if (IsTreatAsLightChoiceEligible (descriptor))
@@ -253,8 +267,30 @@ public sealed partial class PlatformDriver
 
 					try
 						{
-						childConfigurationController.ApplyConfiguration (replayValues);
-						LogInfo ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' replayed prior configuration values into the recreated configuration controller (after host registration) to avoid it getting stuck NotConfigured after reload.");
+						// Replay via the same step-based GetFirstConfigurationStep/ApplyConfigurationStep
+						// sequence that Configure Pro itself drives, instead of only calling
+						// ApplyConfiguration(dict) directly, so the host observes the same
+						// NotConfigured->Configured transition it would see from a real Configure Pro
+						// submission.
+						//
+						// NOTE: the calls below go through the same LoggingDriverConfigurationController
+						// wrapper used for host-initiated calls, so "GetFirstConfigurationStep called"/
+						// "ApplyConfigurationStep called" log lines cannot be distinguished from an actual
+						// Configure Pro/Setup Program call by message text alone - the explicit
+						// "PublishCachedChildControllers: about to replay..." line immediately below marks
+						// which calls originate from this internal replay rather than from the host.
+						LogInfo ($"PublishCachedChildControllers: about to replay configuration for controllerId='{descriptor.ControllerId}' via internal GetFirstConfigurationStep/ApplyConfigurationStep call (not a host/Configure Pro request).");
+						Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationStep firstStep = childConfigurationController.GetFirstConfigurationStep ();
+						if (firstStep is not null && !string.IsNullOrWhiteSpace (firstStep.Id))
+							{
+							childConfigurationController.ApplyConfigurationStep (firstStep.Id, replayValues);
+							LogInfo ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' replayed prior configuration values via step-based ApplyConfigurationStep(stepId='{firstStep.Id}') into the recreated configuration controller (after host registration).");
+							}
+						else
+							{
+							childConfigurationController.ApplyConfiguration (replayValues);
+							LogInfo ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' had no first configuration step available; fell back to replaying prior configuration values via ApplyConfiguration into the recreated configuration controller (after host registration).");
+							}
 						}
 					catch (Exception ex)
 						{
@@ -300,6 +336,28 @@ public sealed partial class PlatformDriver
 			_ => throw new InvalidOperationException ($"Cannot resolve ManagedChildKind for controllerId='{entry.ControllerId}' because cached UxCategory '{entry.UxCategory}' is unrecognized."),
 			};
 
+		// Cache files written before the ChildId-persistence fix (see PersistManagedDeviceCache)
+		// already have ChildId=null baked in for every strip child outlet - the fix only stops
+		// *future* rewrites from dropping it, it cannot repair entries that were already
+		// corrupted on disk. Without recovery here, those children permanently resolve their
+		// alias/identity to the parent strip (see UpdateDescriptorFromConnectedDevice) even
+		// after the fix is deployed, because the cache is never regenerated from scratch.
+		// ControllerId for a strip child is always built by CreateControllerId(discoveryResult,
+		// child.Id) as "device_{parentDeviceId}_{childId}" (see PlatformDriver.Discovery.cs);
+		// since both halves are already alnum, sanitization does not touch the delimiter, so the
+		// original childId can be losslessly recovered by splitting on the single remaining '_'.
+		string? recoveredChildId = entry.ChildId;
+		if (string.IsNullOrWhiteSpace (recoveredChildId))
+			{
+			recoveredChildId = TryRecoverChildIdFromControllerId (entry.ControllerId);
+			if (!string.IsNullOrWhiteSpace (recoveredChildId))
+				{
+				entry.ChildId = recoveredChildId;
+				LogInfo ($"Cached child controller for controllerId='{entry.ControllerId}' had a null ChildId; recovered '{recoveredChildId}' from the controllerId pattern and will persist it.");
+				PersistManagedDeviceCache ();
+				}
+			}
+
 		descriptor = new ManagedLightDescriptor (
 			entry.ControllerId,
 			entry.Host,
@@ -310,7 +368,7 @@ public sealed partial class PlatformDriver
 			lightKind,
 			entry.AwaitingConnectedIdentity,
 			serialNumber,
-			childId: entry.ChildId,
+			childId: recoveredChildId,
 			childKind: childKind);
 
 		DeviceCredentials? credentials = string.IsNullOrWhiteSpace (configuration.UserName) || string.IsNullOrWhiteSpace (configuration.Password)
@@ -342,6 +400,39 @@ public sealed partial class PlatformDriver
 			configuration.DiscoveryTimeout);
 
 		return true;
+		}
+
+	// A strip child's controllerId is always built by CreateControllerId(discoveryResult, child.Id)
+	// as CreateControllerIdFromSource($"{deviceId}_{childId}"), then prefixed with "device_". A
+	// root (non-child) controllerId can also legitimately contain '_' though - e.g. an IP-based
+	// fallback host like "192.168.1.5" is sanitized to "192_168_1_5" - so naively splitting on the
+	// last '_' is not safe on its own. Kasa's own child-id scheme happens to always derive a
+	// child's id by appending a short numeric suffix (e.g. "00", "01", "02") to its parent device's
+	// id (see the "…d709_…d70900" / "…d70901" pattern), so the recovered child-id candidate must
+	// itself start with the recovered parent-id candidate before it is trusted; this rejects
+	// unrelated '_'-joined fallback ids (like sanitized hosts) that don't share that prefix
+	// relationship, while still recovering genuine strip-child controllerIds.
+	private static string? TryRecoverChildIdFromControllerId (string controllerId)
+		{
+		const string prefix = "device_";
+		if (string.IsNullOrWhiteSpace (controllerId)
+			|| !controllerId.StartsWith (prefix, StringComparison.OrdinalIgnoreCase))
+			{
+			return null;
+			}
+
+		string remainder = controllerId.Substring (prefix.Length);
+		int separatorIndex = remainder.LastIndexOf ('_');
+		if (separatorIndex < 0 || separatorIndex == remainder.Length - 1)
+			{
+			return null;
+			}
+
+		string parentIdCandidate = remainder.Substring (0, separatorIndex);
+		string childIdCandidate = remainder.Substring (separatorIndex + 1);
+		return childIdCandidate.StartsWith (parentIdCandidate, StringComparison.OrdinalIgnoreCase)
+			? childIdCandidate
+			: null;
 		}
 
 	private static string ResolveCachedSerialNumber (ManagedDeviceCacheEntry entry)
@@ -438,18 +529,6 @@ public sealed partial class PlatformDriver
 	private void LogManagedDeviceSnapshot (string context, IDictionary<string, PlatformManagedDevice> entries)
 		{
 		LogInfo ($"{context}: entries=[{string.Join (", ", entries.OrderBy (entry => entry.Key, StringComparer.OrdinalIgnoreCase).Select (entry => $"{entry.Key}='{entry.Value.Name}'"))}].");
-		}
-
-	private void LogChildPublicationState (string context, string controllerId)
-		{
-		bool hasManagedDevice = _managedDevices.TryGetValue (controllerId, out PlatformManagedDevice? managedDevice);
-		bool hasChildController = _childControllers.TryGetValue (controllerId, out ConfigurableDriverEntity? childController);
-		bool hasLightEntity = _lightEntities.TryGetValue (controllerId, out IKasaManagedChildEntity? lightEntity);
-		bool isConfigured = _configuredChildControllerIds.Contains (controllerId);
-		bool isInUse = _inUseChildControllerIds.Contains (controllerId);
-
-		LogInfo (
-			$"{context}: controllerId='{controllerId}', hasManagedDevice={hasManagedDevice}, managedDeviceName='{managedDevice?.Name ?? string.Empty}', managedDeviceModel='{managedDevice?.Model ?? string.Empty}', hasChildController={hasChildController}, childControllerType='{childController?.GetType ().FullName ?? string.Empty}', hasLightEntity={hasLightEntity}, lightEntityType='{lightEntity?.GetType ().FullName ?? string.Empty}', isConfigured={isConfigured}, isInUse={isInUse}.");
 		}
 
 	private async Task RefreshPlatformSafelyAsync (CancellationToken cancellationToken)

@@ -314,6 +314,20 @@ public sealed partial class PlatformDriver
 					},
 				},
 			FirstStep = "Activation",
+			// Both default to false when left unset. IsNotOfflineConfigurable=false is required so
+			// Configure Pro treats this child as configurable while the device is not actively
+			// mid-handshake with the host (matches the root driver's own configuration args).
+			// IncludePersistentValueData=true is the actual fix for the KP303-vs-KP115 Installer
+			// Settings discrepancy: without it, Configure Pro only recognizes a child controller as
+			// "configured" after ITS OWN live ApplyConfiguration round-trip through the host - our
+			// internal replay in PublishCachedChildControllers (which calls
+			// GetFirstConfigurationStep/ApplyConfigurationStep programmatically, not through a real
+			// Configure Pro session) is invisible to that tracking. Setting this true tells Configure
+			// Pro to honor the controller's persisted configuration values directly, so a
+			// recreated-from-cache child is recognized as already configured (and shows Installer
+			// Settings) without requiring the user to have manually reconfigured it since the reload.
+			IncludePersistentValueData = true,
+			IsNotOfflineConfigurable = false,
 			};
 
 		string childDeviceModel = !string.IsNullOrWhiteSpace (descriptor.ModelName)
@@ -660,9 +674,7 @@ public sealed partial class PlatformDriver
 
 			if (_childControllers.TryGetValue (descriptor.ControllerId, out ConfigurableDriverEntity? deferredController))
 				{
-							LogChildPublicationState ("Before UpdateSubControllers deferred publish", descriptor.ControllerId);
 				UpdateSubControllers (new[] { deferredController }, null);
-							LogChildPublicationState ("After UpdateSubControllers deferred publish", descriptor.ControllerId);
 				if (_lightEntities.TryGetValue (descriptor.ControllerId, out IKasaManagedChildEntity? lightEntity))
 					{
 					lightEntity.NotifyChildPublished ();

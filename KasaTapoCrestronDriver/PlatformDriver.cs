@@ -915,9 +915,9 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 				// RealtimeChange branch below does, so credentials are always retrieved fresh on
 				// every apply rather than staying cached in a stale configuration.
 				RefreshExistingDeviceConfigurations (currentConfiguration);
-				NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (ManagedDevices));
-				SetOnline (false);
-				SetReady (false);
+					NotifyManagedDevicesSnapshotChanged ("initial-or-saved-configuration-apply");
+					SetOnline (false);
+					SetReady (false);
 					_ = StartCachedIdentityResolutionsAsync (currentConfiguration);
 				_ = ScheduleRefreshAsync ();
 				break;

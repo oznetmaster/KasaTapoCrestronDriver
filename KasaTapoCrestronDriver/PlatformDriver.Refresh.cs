@@ -287,10 +287,10 @@ public sealed partial class PlatformDriver
 		else
 			{
 			if (isInitialLoad)
-				{
-				NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (ManagedDevices));
+					{
+				NotifyManagedDevicesSnapshotChanged ("initial-materialization-complete");
 				LogInfo ($"Managed-device publish after initial materialization skipped/no-op: count={_managedDevices.Count}, controllerIds=[{string.Join (", ", _managedDevices.Keys.OrderBy (key => key, StringComparer.OrdinalIgnoreCase))}].");
-				}
+					}
 
 			RestartDiscoveryRefreshLoop (nextRefreshInterval);
 			}
@@ -435,7 +435,6 @@ public sealed partial class PlatformDriver
 							_lightEntities[controllerId] = lightEntity;
 							_childControllers[controllerId] = controller;
 							_childConfigurationControllers[controllerId] = childConfigurationController;
-							LogChildPublicationState ("Async materialization stored child publication state", controllerId);
 							if (HasManagedDeviceEntry (controllerId))
 								{
 								controllersToAdd ??= new List<ConfigurableDriverEntity> ();
@@ -461,15 +460,10 @@ public sealed partial class PlatformDriver
 					if ((controllersToAdd?.Count ?? 0) > 0)
 						{
 						List<ConfigurableDriverEntity> controllersToPublish = controllersToAdd!;
-						foreach (ConfigurableDriverEntity controller in controllersToPublish)
-							{
-							LogChildPublicationState ("Before UpdateSubControllers async publish", controller.ControllerId);
-							}
 						UpdateSubControllers (controllersToPublish, null);
 
 						foreach (ConfigurableDriverEntity controller in controllersToPublish)
 							{
-							LogChildPublicationState ("After UpdateSubControllers async publish", controller.ControllerId);
 							if (_lightEntities.TryGetValue (controller.ControllerId, out IKasaManagedChildEntity? lightEntity))
 								{
 								lightEntity.NotifyChildPublished ();
@@ -480,7 +474,7 @@ public sealed partial class PlatformDriver
 
 					if (managedDevicesChanged || pendingMaterializations.Count > 0)
 						{
-						NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (ManagedDevices));
+						NotifyManagedDevicesSnapshotChanged ("async-materialization-completed");
 						}
 
 					if (_initialMaterializationStageActive)

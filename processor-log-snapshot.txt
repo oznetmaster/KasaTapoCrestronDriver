@@ -1,0 +1,10 @@
+2026-09-03 16:42:48.903 [  28] [Thread ~rker] [INFO]    Devices\Adapters\RadSmartVideoDisplayWrapper\LG\86NANO75UPA-SmartTV\52254|LG TV: HandleStateChangeEvents(HandleStateChangeEvents: {0} event received., Connection)
+2026-09-03 16:42:48.903 [  28] [Thread ~rker] [INFO]    Devices\Adapters\RadSmartVideoDisplayWrapper\LG\86NANO75UPA-SmartTV\52254|LG TV: HandleStateChangeEvents(HandleStateChangeEvents: {0} event received., Power)
+2026-09-03 16:42:48.905 [  28] [Thread ~rker] [INFO]    Devices\Adapters\RadSmartVideoDisplayWrapper\LG\86NANO75UPA-SmartTV\52254|LG TV: HandleStateChangeEvents(HandleStateChangeEvents: {0} event received., Power)
+2026-09-03 16:42:53.907 [  28] [Thread ~rker] [INFO]    Devices\Adapters\RadSmartVideoDisplayWrapper\LG\86NANO75UPA-SmartTV\52254|LG TV: HandleStateChangeEvents(HandleStateChangeEvents: {0} event received., Connection)
+2026-09-03 16:42:53.908 [  28] [Thread ~rker] [INFO]    Devices\Adapters\RadSmartVideoDisplayWrapper\LG\86NANO75UPA-SmartTV\52254|LG TV: HandleStateChangeEvents(HandleStateChangeEvents: {0} event received., Power)
+2026-09-03 16:42:53.910 [  28] [Thread ~rker] [INFO]    Devices\Adapters\RadSmartVideoDisplayWrapper\LG\86NANO75UPA-SmartTV\52254|LG TV: HandleStateChangeEvents(HandleStateChangeEvents: {0} event received., Power)
+2026-09-03 16:42:58.911 [  28] [Thread ~rker] [INFO]    Devices\Adapters\RadSmartVideoDisplayWrapper\LG\86NANO75UPA-SmartTV\52254|LG TV: HandleStateChangeEvents(HandleStateChangeEvents: {0} event received., Connection)
+2026-09-03 16:42:58.911 [  28] [Thread ~rker] [INFO]    Devices\Adapters\RadSmartVideoDisplayWrapper\LG\86NANO75UPA-SmartTV\52254|LG TV: HandleStateChangeEvents(HandleStateChangeEvents: {0} event received., Power)
+2026-09-03 16:42:58.913 [  28] [Thread ~rker] [INFO]    Devices\Adapters\RadSmartVideoDisplayWrapper\LG\86NANO75UPA-SmartTV\52254|LG TV: HandleStateChangeEvents(HandleStateChangeEvents: {0} event received., Power)
+

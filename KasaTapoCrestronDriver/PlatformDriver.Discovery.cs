@@ -469,7 +469,6 @@ public sealed partial class PlatformDriver
 							entry.Model,
 							null!);
 						_managedDeviceCacheMetadata[entry.ControllerId] = entry;
-						LogChildPublicationState ("Managed-device cache seeded state", entry.ControllerId);
 						if (entry.IsConfigured)
 							{
 							cachedConfiguredEntryCount++;
