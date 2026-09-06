@@ -45,6 +45,7 @@ plans/**
 *.bak
 *.orig
 *.testlog
+*.txt
 testlog.manifest
 
 # OS files
