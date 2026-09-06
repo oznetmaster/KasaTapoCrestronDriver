@@ -165,6 +165,7 @@ public sealed partial class PlatformDriver
 	private void PublishCachedChildControllers (PlatformSharedConfigurationSnapshot configuration)
 		{
 		List<ConfigurableDriverEntity>? controllersToAdd = null;
+		List<(ConfigurableDriverEntity Controller, LoggingDriverConfigurationController ConfigurationController, ManagedDeviceCacheEntry Entry, ManagedLightDescriptor Descriptor)>? controllersNeedingReplay = null;
 		foreach (ManagedDeviceCacheEntry entry in _managedDeviceCacheMetadata.Values.ToArray ())
 			{
 			if (_childControllers.ContainsKey (entry.ControllerId))
@@ -202,22 +203,18 @@ public sealed partial class PlatformDriver
 				// UxCategory (e.g. Light). Since the cache says this child was configured
 				// before the reload, replay the same values Configure Pro would have sent so
 				// the new controller transitions itself straight back to Configured/Running.
-				bool replayTreatAsLight = entry.TreatAsLight;
-				var replayValues = new Dictionary<string, string> { ["ActivationMarker"] = "true" };
-				if (IsTreatAsLightChoiceEligible (descriptor))
-					{
-					replayValues["TreatAsLight"] = replayTreatAsLight ? "true" : "false";
-					}
-
-				try
-					{
-					childConfigurationController.ApplyConfiguration (replayValues);
-					LogInfo ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' replayed prior configuration values into the recreated configuration controller to avoid it getting stuck NotConfigured after reload.");
-					}
-				catch (Exception ex)
-					{
-					LogError ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' failed to replay configuration values into the recreated configuration controller: {ex}");
-					}
+				//
+				// This replay must happen AFTER the controller is registered with the host via
+				// UpdateSubControllers below - not before, as previously done here. Replaying
+				// the configuration before the host even knows about the controller means the
+				// NotConfigured->Configured/Running transition happens "invisibly" from the
+				// host's perspective, which is why Configure Pro's Setup/Configure device list
+				// (built from host-observed configuration-controller state changes) never
+				// picked the child back up after a reload, even though its runtime state -
+				// and therefore the Room UI, which reads platform:managedDevices directly -
+				// was otherwise perfectly correct.
+				controllersNeedingReplay ??= new List<(ConfigurableDriverEntity, LoggingDriverConfigurationController, ManagedDeviceCacheEntry, ManagedLightDescriptor)> ();
+				controllersNeedingReplay.Add ((controller, childConfigurationController, entry, descriptor));
 				}
 
 			LogChildPublicationState ("Cached child controller staged for publication", descriptor.ControllerId);
@@ -241,6 +238,33 @@ public sealed partial class PlatformDriver
 					{
 					lightEntity.NotifyChildPublished ();
 					}
+				}
+
+			if (controllersNeedingReplay is not null)
+				{
+				foreach (var (_, childConfigurationController, entry, descriptor) in controllersNeedingReplay)
+					{
+					bool replayTreatAsLight = entry.TreatAsLight;
+					var replayValues = new Dictionary<string, string> { ["ActivationMarker"] = "true" };
+					if (IsTreatAsLightChoiceEligible (descriptor))
+						{
+						replayValues["TreatAsLight"] = replayTreatAsLight ? "true" : "false";
+						}
+
+					try
+						{
+						childConfigurationController.ApplyConfiguration (replayValues);
+						LogInfo ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' replayed prior configuration values into the recreated configuration controller (after host registration) to avoid it getting stuck NotConfigured after reload.");
+						}
+					catch (Exception ex)
+						{
+						LogError ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' failed to replay configuration values into the recreated configuration controller: {ex}");
+						}
+					}
+				}
+
+			foreach (ConfigurableDriverEntity controller in controllersToPublish)
+				{
 				ActivatePublishedChildIfRunning (controller, "cached-publication-status-reconciliation");
 				}
 			}

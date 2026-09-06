@@ -455,18 +455,34 @@ public sealed partial class PlatformDriver
 								};
 						entry.UxCategory = resolvedUxCategory;
 
+						// Configure Pro renders a managed device's secondary info line as the serial
+						// number whenever one is supplied, and falls back to manufacturer/model only
+						// when it is null (see CreateManagedDeviceCacheEntry for the same rule). Pass
+						// null here too instead of cacheSerialNumber, otherwise every device restored
+						// from the on-disk cache on driver startup reverts to showing its serial
+						// number again. The real serial number is still tracked separately in
+						// _managedDeviceCacheMetadata for reconnect/identity purposes.
 						cacheSeedCopy[entry.ControllerId] = new PlatformManagedDevice (
 							resolvedUxCategory,
 							entry.Name,
 							entry.Manufacturer,
 							entry.Model,
-							cacheSerialNumber);
+							null!);
 						_managedDeviceCacheMetadata[entry.ControllerId] = entry;
 						LogChildPublicationState ("Managed-device cache seeded state", entry.ControllerId);
-					if (entry.IsConfigured)
-						{
-						cachedConfiguredEntryCount++;
-						}
+						if (entry.IsConfigured)
+							{
+							cachedConfiguredEntryCount++;
+							// _configuredChildControllerIds is in-memory only and would otherwise start
+							// empty on every process restart, even though the cache on disk still says
+							// this child was configured/installed. Without restoring it here,
+							// PublishCachedChildControllers later reads wasConfigured=false for every
+							// cached child and skips replaying ActivationMarker/TreatAsLight into the
+							// recreated configuration controller, leaving it stuck NotConfigured (and the
+							// device permanently Offline in Configure Pro) no matter how many times
+							// discovery re-runs.
+							_configuredChildControllerIds.Add (entry.ControllerId);
+							}
 
 					RememberResolvedDeviceName (entry.ControllerId, entry.Name, cacheSerialNumber, entry.Host);
 					}
@@ -526,30 +542,6 @@ public sealed partial class PlatformDriver
 	private string GetManagedDeviceCachePath ()
 		{
 		return Path.Combine (PERSISTENT_STORAGE_ROOT, MANAGED_DEVICE_CACHE_FILE_NAME);
-		}
-
-	/// <summary>
-	/// Deletes the persisted managed-device cache file. Called when the platform driver instance
-	/// is disposed/removed so that stale managed-device state does not survive removal and get
-	/// reloaded if the driver is re-added. Certificate files (managed elsewhere) are intentionally
-	/// left untouched.
-	/// </summary>
-	private void DeleteManagedDeviceCacheFile ()
-		{
-		string cachePath = GetManagedDeviceCachePath ();
-
-		try
-			{
-			if (File.Exists (cachePath))
-				{
-				File.Delete (cachePath);
-				LogInfo ($"Managed-device cache deleted on driver dispose: '{cachePath}'.");
-				}
-			}
-		catch (Exception ex)
-			{
-			LogInfo ($"Managed-device cache delete on dispose failed for '{cachePath}': {ex.Message}");
-			}
 		}
 
 	private string ResolveManagedDeviceName (string controllerId, string? candidateName, string? deviceId, string? host)
@@ -759,7 +751,14 @@ public sealed partial class PlatformDriver
 							Model = metadata.Model,
 							DiscoveredDeviceType = metadata.DiscoveredDeviceType,
 							ManagedLightKind = metadata.ManagedLightKind,
-							SerialNumber = metadata.SerialNumber
+							SerialNumber = metadata.SerialNumber,
+							// ChildId identifies which physical child on a strip this controllerId
+							// is (see PlatformDriver.cs's ManagedDeviceImmutableCacheFields.ChildId
+							// comment). Omitting it here silently drops it from every persisted
+							// cache rewrite, so a subsequent reload recreates the descriptor with
+							// ChildId=null and UpdateDescriptorFromConnectedDevice falls back to
+							// the strip root's own alias/identity instead of this specific child's.
+							ChildId = metadata.ChildId
 							},
 						Mutable = new ManagedDeviceMutableCacheFields
 							{

@@ -746,7 +746,15 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 		_managedDeviceCacheWriteGate.Dispose ();
 		_refreshGate.Dispose ();
 
-		DeleteManagedDeviceCacheFile ();
+		// NOTE: Do NOT delete the managed-device cache file here. Dispose() is called by the
+		// Crestron Home host on every driver reload/restart, not only when the driver instance is
+		// actually removed - the SDK provides no reliable signal to distinguish the two. Deleting
+		// the cache unconditionally on every Dispose wiped out persisted managed-device state
+		// (friendly names, identity, UxCategory, etc.) on every routine reload, forcing a full
+		// rediscovery and leaving Configure Pro showing every device as offline/not-configured
+		// until identities re-resolved. See CHANGELOG/commit history for the removal-cleanup intent
+		// that originally motivated this call; that intent still needs a real removal signal before
+		// it can be reinstated safely.
 
 		_disposed = true;
 		}

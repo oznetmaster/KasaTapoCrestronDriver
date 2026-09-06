@@ -329,6 +329,23 @@ public sealed partial class PlatformDriver
 					}
 
 				ClearChildRuntimeState (existingControllerId, "managed-device-removal");
+
+				// Mirror RemoveChildFromConfiguration's kind-reversion here: this removal path
+				// (discovery no longer sees the child in a room, e.g. after "Remove Device" in
+				// Configure Pro) is the one that actually fires in practice - ClearValues never
+				// does. Without forgetting the per-child "Treat As Light" override and
+				// re-resolving the in-memory descriptor's ChildKind, the next republish (e.g.
+				// AddInitialManagedDeviceEntry from a subsequent discovery pass) still reads the
+				// stale Light ChildKind from _knownDescriptors and republishes the live
+				// "Add a device" entry as Light, even though ClearChildRuntimeState already
+				// corrected the on-disk cache's IsConfigured/UxCategory so a driver reload shows
+				// Outlet correctly.
+				_childTreatAsLight.Remove (existingControllerId);
+				if (_knownDescriptors.TryGetValue (existingControllerId, out ManagedLightDescriptor? removedDescriptor))
+					{
+					removedDescriptor.ChildKind = ResolveManagedChildKind (existingControllerId, removedDescriptor.DiscoveredDeviceType, removedDescriptor.ModelName);
+					}
+
 				controllersToRemove ??= new List<string> ();
 				controllersToRemove.Add (existingControllerId);
 				}

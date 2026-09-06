@@ -187,6 +187,17 @@ public sealed partial class PlatformDriver
 				ManagedChildKind.Light => DeviceUxCategory.Light,
 				_ => throw new InvalidOperationException ($"Cannot resolve DeviceUxCategory for controllerId='{controllerId}' because ManagedChildKind '{resolvedKind}' is unrecognized."),
 				};
+
+			// This UxCategory change must be flushed to the on-disk managed-device cache
+			// immediately, not left in memory only. LoadManagedDeviceCacheIntoMemory (run on the
+			// next driver reload) explicitly trusts the persisted UxCategory - rather than
+			// re-resolving it - for any cache entry that is still IsConfigured (i.e. still sitting
+			// in a room), specifically so an intentionally-published Light/Outlet choice survives a
+			// reload. Without persisting here, a TreatAsLight revert while still configured in a
+			// room updates the in-memory category correctly but leaves the on-disk cache pointing
+			// at the old (pre-revert) category, so the next reload reconstructs the child with the
+			// stale kind instead of the one the user actually chose.
+			PersistManagedDeviceCache ();
 			}
 
 		IKasaManagedChildEntity newEntity = CreateManagedLightEntity (descriptor, deviceConfiguration);
@@ -398,9 +409,23 @@ public sealed partial class PlatformDriver
 			// looks exactly like the toggle "changing back by itself". Deferring the actual
 			// dispose/recreate until after this callback has returned avoids tearing down the
 			// in-flight call.
+			//
+			// A bare Task.Run is not sufficient: it is scheduled on the thread pool immediately
+			// and can start running (and complete the dispose/recreate) before this
+			// ApplyConfigurationItems call has actually returned control back up to the SDK's
+			// ApplyConfiguration dispatch, which is exactly the same "tear down the in-flight
+			// call" race the comment above describes, just moved from synchronous-in-this-call to
+			// synchronous-in-the-async-continuation. A short delay before the reconcile body runs
+			// gives ApplyConfiguration/ApplyConfigurationItems time to unwind and return the
+			// ConfigurationItemErrors? result to the SDK first, so the dispose/recreate never races
+			// the in-flight apply.
 			if (kindActuallyChanging)
 				{
-				_ = Task.Run (() => ReconcileChildKindAfterTreatAsLightChange (controllerId, "child-config-callback:TreatAsLight"));
+				_ = Task.Run (async () =>
+					{
+					await Task.Delay (TimeSpan.FromMilliseconds (250)).ConfigureAwait (false);
+					ReconcileChildKindAfterTreatAsLightChange (controllerId, "child-config-callback:TreatAsLight");
+					});
 				}
 			}
 
@@ -413,8 +438,22 @@ public sealed partial class PlatformDriver
 			// reload the deleted device would be resurrected into the managed-device list
 			// instead of staying removed. Tear the child down the same way discovery-driven
 			// removal does so the deletion actually sticks.
+			//
+			// RemoveChildFromConfiguration disposes/tears down the very entity and
+			// configuration controller that is currently in the middle of running this
+			// ApplyConfiguration call if done synchronously here - the SDK observes that as a
+			// failed apply and reacts by re-pushing its last-known-good (i.e. stale,
+			// pre-removal) configuration/state, which looks exactly like the managed-device
+			// entry "staying Light" immediately after removal even though the on-disk cache was
+			// already correctly updated to Outlet. This is the same race described in
+			// ReconcileChildKindAfterTreatAsLightChange's summary above; deferring the actual
+			// dispose/removal until after this callback has returned avoids it here too.
 			LogInfo ($"ApplyChildConfigurationItems: ClearValues for controllerId='{controllerId}'; treating as child removal from configuration.");
-			RemoveChildFromConfiguration (controllerId, "child-config-callback:ClearValues");
+			_ = Task.Run (async () =>
+				{
+				await Task.Delay (TimeSpan.FromMilliseconds (250)).ConfigureAwait (false);
+				RemoveChildFromConfiguration (controllerId, "child-config-callback:ClearValues");
+				});
 			return null;
 			}
 
@@ -640,11 +679,38 @@ public sealed partial class PlatformDriver
 		_managedDeviceCacheMetadata.TryGetValue (descriptor.ControllerId, out ManagedDeviceCacheEntry? existingMetadata);
 		bool kindChanged = existingMetadata is null || existingMetadata.ManagedLightKind != descriptor.Kind;
 
-		if (string.Equals (existingEntry.Name, descriptor.Name, StringComparison.Ordinal) && !kindChanged)
+		// A rediscovery pass can leave the device's name and raw ManagedLightKind unchanged
+		// while its resolved ChildKind (Outlet vs Light) has actually changed - e.g. after
+		// RemoveChildFromConfiguration re-resolves ChildKind back to Outlet in memory once a
+		// plug that had been switched to "Treat As Light" is removed from the room. If that
+		// UxCategory mismatch is ignored here, PublishManagedDeviceEntryUpdate never runs and
+		// the stale platform:managedDevices entry keeps reporting the old category (e.g. Light)
+		// even though the device has already reverted to Outlet internally.
+		DeviceUxCategory resolvedUxCategory = descriptor.ChildKind switch
+			{
+			ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
+			ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
+			ManagedChildKind.Button => DeviceUxCategory.Switch,
+			ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
+			ManagedChildKind.Light => DeviceUxCategory.Light,
+			_ => existingEntry.UxCategory,
+			};
+		bool uxCategoryChanged = existingEntry.UxCategory != resolvedUxCategory;
+
+		if (string.Equals (existingEntry.Name, descriptor.Name, StringComparison.Ordinal) && !kindChanged && !uxCategoryChanged)
 			{
 			descriptor.AwaitingConnectedIdentity = false;
 			LogInfo ($"HandleManagedLightDescriptorNameChanged: no effective managed-device identity change for controllerId='{descriptor.ControllerId}'.");
 			return;
+			}
+
+		if (uxCategoryChanged)
+			{
+			LogInfo ($"HandleManagedLightDescriptorNameChanged: controllerId='{descriptor.ControllerId}' UxCategory mismatch detected (existing={existingEntry.UxCategory}, resolved={resolvedUxCategory}); republishing managed-device entry.");
+			if (existingMetadata is not null)
+				{
+				existingMetadata.UxCategory = resolvedUxCategory;
+				}
 			}
 
 		existingEntry.Name = descriptor.Name;
