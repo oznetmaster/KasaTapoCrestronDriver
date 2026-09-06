@@ -2,7 +2,7 @@
 
 `KasaTapoCrestronDriver` is a **Crestron Home Entity V2 platform driver** for TP-Link Kasa and Tapo smart home devices. Unlike a single-entity/extension driver that represents one device, this is a **platform driver**: a single instance of it discovers every supported Kasa/Tapo device on the local network, then dynamically creates, publishes, and manages a separate child light entity for each one directly inside Crestron Home. This driver is designed strictly for **local network access** to devices; it does not access Tapo cloud accounts to discover devices, and there are no plans to add cloud-based discovery.
 
-**Current scope:** this release discovers and manages **lighting and outlet devices** — bulbs, light strips, smart wall switches (for example, `KS200`/`KS205`/`KS240`; always treated as light loads, since this driver only supports wall switches as light loads, not as generic switched-outlet controls), and plugs/power-strip outlets.
+**Current scope:** this release discovers and manages **lighting and outlet devices** — bulbs, light strips, smart wall switches (for example, `KS200`/`KS205`/`KS240`; currently always treated as light loads — support for using a smart wall switch as a plain switched-outlet control, the same way plugs already work, is planned for a future release), and plugs/power-strip outlets.
 
 TP-Link, Kasa, and Tapo are trademarks of their respective owners. This project is an independent, unofficial driver and is not affiliated with, endorsed by, or sponsored by TP-Link. Crestron and Crestron Home are trademarks or registered trademarks of Crestron Electronics, Inc. This project is not affiliated with, endorsed by, or sponsored by Crestron Electronics, Inc.
 
@@ -59,7 +59,7 @@ Every plug and every power-strip outlet is always discovered and can be installe
 - A plain **Outlet** (default) — a Crestron extension device exposing simple on/off control, plus current-power and today's-energy-usage telemetry when the connected device reports it, or
 - A **Light** — a standard Entity V2 light load, for a plug or power-strip outlet actually wiring a lamp or other light fixture, alongside the bulbs, light strips, and wall switches this driver already publishes as lights.
 
-Known dimmable plug models (for example, `P135`) are always treated as lights and do not expose this choice, since a dim level can only ever control a light; a wall switch is likewise always treated as a light, since this driver only supports wall switches as light loads.
+Known dimmable plug models (for example, `P135`) are always treated as lights and do not expose this choice, since a dim level can only ever control a light; a wall switch is likewise always treated as a light in this release — support for treating a wall switch as a plain switched-outlet control is planned for a future release.
 
 ### Known Issue: Configure Pro and Outlet ↔ Light Conversion
 

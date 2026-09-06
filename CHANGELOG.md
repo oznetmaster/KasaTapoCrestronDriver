@@ -27,7 +27,7 @@ project follows [Semantic Versioning](https://semver.org/).
 
 - Updated to `KasaTapoClient` 1.3.1, which negotiates device capabilities (e.g. brightness) directly from each device's SMART component list instead of relying solely on its device type.
 - Fixed a discovery/classification bug so brightness-capable devices that don't classify as a `Dimmer` device type are still correctly published as dimmable lights: `P135` (a dimmable smart plug) and `KS240` (a dimmer wall switch/fan controller) are now always surfaced as `Dimmable`, regardless of the `Treat Plugs As Lights` setting.
-- `WallSwitch`-classified devices are now always treated as supported light loads (previously gated in some code paths the same way plugs are), since this driver only supports wall switches as light loads.
+- `WallSwitch`-classified devices are now always treated as supported light loads (previously gated in some code paths the same way plugs are); this release does not yet support treating a wall switch as a plain switched-outlet control.
 - Added regression test coverage for the above capability-driven classification behavior.
 
 ## [1.1.0]
