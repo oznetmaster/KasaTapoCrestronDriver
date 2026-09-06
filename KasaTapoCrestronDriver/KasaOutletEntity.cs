@@ -532,8 +532,6 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 				}
 			}
 
-		PublishProperty ("onlineIndicatorIsOnline", new DriverEntityValue (OnlineIndicatorIsOnline), "PublishStateSnapshot");
-		PublishProperty ("readyIndicatorIsReady", new DriverEntityValue (ReadyIndicatorIsReady), "PublishStateSnapshot");
 		PublishProperty ("deviceLabel", new DriverEntityValue (DeviceLabel), "PublishStateSnapshot");
 		PublishProperty ("outletIsOn", new DriverEntityValue (OutletIsOn), "PublishStateSnapshot");
 		PublishProperty ("outletIcon", new DriverEntityValue (OutletIcon), "PublishStateSnapshot");
@@ -548,6 +546,21 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			PublishProperty ("outletEnergyVoltageVolts", new DriverEntityValue (OutletEnergyVoltageVolts), "PublishStateSnapshot");
 			PublishProperty ("outletEnergyCurrentAmps", new DriverEntityValue (OutletEnergyCurrentAmps), "PublishStateSnapshot");
 			}
+
+		// The online/ready indicators are published last so the host sees a complete payload
+		// (UI definition plus every value property) before either indicator flips.
+		//
+		// NOTE: this ordering was introduced as an attempted fix for the Light -> Outlet
+		// Configure Pro enumeration problem and it did NOT fix it - see the capture of
+		// 2026-09-06 15:43:01, where extension:uiDefinition was sent at .511 ahead of every
+		// indicator and the Load adapter was still removed at .067 of the following second by
+		// the host's own "Validate driver definition" pass. That turned out not to be a driver
+		// defect at all (a reload restores the correct outlet view, and the Outlet -> Light
+		// direction refreshes correctly in-session; see the notes on
+		// ReconcileChildKindAfterTreatAsLightChange). The ordering is kept only because sending
+		// a complete payload before the indicators is defensible on its own terms.
+		PublishProperty ("onlineIndicatorIsOnline", new DriverEntityValue (OnlineIndicatorIsOnline), "PublishStateSnapshot");
+		PublishProperty ("readyIndicatorIsReady", new DriverEntityValue (ReadyIndicatorIsReady), "PublishStateSnapshot");
 		}
 
 	private void PublishProperty (string propertyId, DriverEntityValue value, string context)

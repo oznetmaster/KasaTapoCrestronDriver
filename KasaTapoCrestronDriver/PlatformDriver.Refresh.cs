@@ -330,11 +330,19 @@ public sealed partial class PlatformDriver
 
 				ClearChildRuntimeState (existingControllerId, "managed-device-removal");
 
-				// Mirror RemoveChildFromConfiguration's kind-reversion here: this removal path
+				// Mirror RemoveChildFromConfiguration's kind-reversion here. This removal path
 				// (discovery no longer sees the child in a room, e.g. after "Remove Device" in
-				// Configure Pro) is the one that actually fires in practice - ClearValues never
-				// does. Without forgetting the per-child "Treat As Light" override and
-				// re-resolving the in-memory descriptor's ChildKind, the next republish (e.g.
+				// Configure Pro) is not the only one that fires: the ClearValues path in
+				// ApplyChildConfigurationItems reaches RemoveChildFromConfiguration as well. An
+				// earlier revision of this comment asserted "ClearValues never does", which is
+				// why the two removal paths were never designed to coexist; processor logs show
+				// ClearValues firing for a child in both TreatAsLight directions with identical
+				// payloads (valueKeys=[ActivationMarker, DriverDataStore, TreatAsLight]) and
+				// invoking RemoveChildFromConfiguration each time. Keep the kind-reversion below
+				// in sync with that path rather than assuming this one is exclusive.
+				//
+				// Without forgetting the per-child "Treat As Light" override and re-resolving the
+				// in-memory descriptor's ChildKind, the next republish (e.g.
 				// AddInitialManagedDeviceEntry from a subsequent discovery pass) still reads the
 				// stale Light ChildKind from _knownDescriptors and republishes the live
 				// "Add a device" entry as Light, even though ClearChildRuntimeState already

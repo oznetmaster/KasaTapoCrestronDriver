@@ -133,12 +133,13 @@ public sealed partial class PlatformDriver
 		copy[controllerId] = updatedEntry;
 		_managedDevices = copy;
 
-		// Notify every field on the entry, not just "name" - Crestron Home only ever applied the
-		// UxCategory/Manufacturer/Model/SerialNumber values from the very first (pre-room, pre-"Treat
-		// As Light" resolution) snapshot notification. Because that snapshot always defaults new
-		// controllerIds to DeviceUxCategory.Light (see AddInitialManagedDeviceEntry), a subsequent
-		// name-only delta here left the UxCategory stuck at Light even after the child correctly
-		// resolved to Outlet, so the outlet room tile never rendered.
+		// Notify every field on the entry, not just "name". A name-only delta left the UxCategory
+		// stuck at whatever the very first (pre-room, pre-"Treat As Light" resolution) snapshot
+		// published, and because that snapshot always defaults new controllerIds to
+		// DeviceUxCategory.Light (see AddInitialManagedDeviceEntry), the child stayed Light even
+		// after it correctly resolved to Outlet, so the outlet room tile never rendered. The host
+		// does apply uxCategory from this delta once it is actually included - both transition
+		// directions rely on that - so no full-snapshot follow-up is needed here.
 		DriverEntityValueUpdate nameChange = DriverEntityValueUpdate.Create ("name", new DriverEntityValue (updatedEntry.Name));
 		DriverEntityValueUpdate uxCategoryChange = DriverEntityValueUpdate.Create ("uxCategory", new DriverEntityValue (updatedEntry.UxCategory.ToString ()));
 		DriverEntityValueUpdate manufacturerChange = DriverEntityValueUpdate.Create ("manufacturer", new DriverEntityValue (updatedEntry.Manufacturer));
@@ -148,6 +149,7 @@ public sealed partial class PlatformDriver
 			DriverEntityValueUpdate.Create (controllerId, nameChange, uxCategoryChange, manufacturerChange, modelChange, serialNumberChange));
 
 		NotifyPropertyChanged ("platform:managedDevices", managedDevicesChange);
+		LogInfo ($"PublishManagedDeviceEntryUpdate: controllerId='{controllerId}', context='{context}', publishedUxCategory={updatedEntry.UxCategory}, name='{updatedEntry.Name}'.");
 		}
 
 	private void NotifyManagedDevicesSnapshotChanged ()
@@ -158,6 +160,7 @@ public sealed partial class PlatformDriver
 	private void NotifyManagedDevicesSnapshotChanged (string context)
 		{
 		var snapshot = ManagedDevices;
+		LogInfo ($"NotifyManagedDevicesSnapshotChanged: context='{context}', entryCount={snapshot.Count}, categories=[{string.Join (", ", snapshot.Select (pair => $"{pair.Key}={pair.Value.UxCategory}"))}].");
 		NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (snapshot));
 		}
 
@@ -264,6 +267,16 @@ public sealed partial class PlatformDriver
 						{
 						replayValues["TreatAsLight"] = replayTreatAsLight ? "true" : "false";
 						}
+
+					// NOTE: ApplyConfigurationStep below always comes back with
+					// errorKeys=DriverDataStore, because DriverDataStore is a host-owned
+					// configuration item (it is not declared in
+					// CreateChildConfigurationController's item list) that only Crestron Home can
+					// populate - the host logs it as "Remaining configuration item to be set was
+					// not known yet: DriverDataStore; Device configuration required." The driver
+					// has no legitimate value to supply for it, so this error is expected here and
+					// must NOT be papered over by injecting a placeholder into replayValues. Every
+					// cached child reports it, including ones that go on to reach Running normally.
 
 					try
 						{

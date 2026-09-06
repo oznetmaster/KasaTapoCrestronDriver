@@ -134,6 +134,109 @@ public sealed partial class PlatformDriver
 	/// then publish an in-place UxCategory update via PublishManagedDeviceEntryUpdate - is used
 	/// here instead, since that was proven to work correctly (aside from an unrelated cache
 	/// restore-on-restart issue).
+	///
+	/// NOT A DRIVER DEFECT (Light -&gt; Outlet, investigated 2026-09-06): after switching a
+	/// room-bound child back from Light to Outlet, Configure Pro can no longer enumerate it for
+	/// the remainder of that session - it appears in neither the room list nor the
+	/// available-device list, while the room count still includes it. The device stays fully
+	/// functional on the touchpanel and correct in the setup UI throughout.
+	///
+	/// RESOLVED: after a driver reload the child is present in its room as an outlet and is
+	/// fully configurable. Nothing in the driver's persisted or published model is malformed, so
+	/// do not write driver code against this. Two earlier attempts to "fix" it from the driver (a
+	/// full managedDevices snapshot after the delta, and reordering the outlet's property
+	/// publication) were both based on incorrect theories and neither changed the outcome.
+	///
+	/// Note this is NOT a general "Configure Pro cannot refresh mid-session" limitation, which
+	/// would be an overstatement: the Outlet -&gt; Light direction refreshes perfectly in the same
+	/// session, picking up the new category with the correct light icon and light dialog. Only
+	/// Light -&gt; Outlet fails to re-enumerate, and the reason appears to be which data source
+	/// each UI reads (see below), not any inability to refresh.
+	///
+	/// The room membership is never lost. Four independent observations establish this: the
+	/// touchpanel renders the device as part of its room, the setup UI shows it correctly,
+	/// Configure Pro's own room count still includes it, and a reload restores the correct view.
+	/// The device was also absent from the room list AND the available-device list simultaneously
+	/// while still being counted - a device cannot be genuinely unbound and also absent from the
+	/// available pool. The count is telling the truth; only Configure Pro's two lists go stale.
+	///
+	/// The 2026-09-06 15:43:01 capture localised the trigger. The driver side is correct and
+	/// fully ordered: uxCategory=Outlet is published three times (TreatAsLight, ApplyAll,
+	/// child-controller-status-running) and extension:uiDefinition is sent ahead of every value
+	/// and indicator property. The teardown happens afterwards, driven by the host itself:
+	///
+	///   15:43:01.602  Status changed: Running
+	///   15:43:02.057  Validate driver definition
+	///   15:43:02.067  Remove Load adapter ID 52756 ... from Location "Office"
+	///   15:43:02.070  Unloaded programming data for: Load adapter ID 52756
+	///   15:43:02.092  DeviceIsOnline deviceId: 52754 status: 0
+	///
+	/// Removing the Load adapter is correct, not a fault: a Load adapter is a lighting construct
+	/// and the child is no longer a light. It is not the room binding, which stays intact (see
+	/// above). The evidence points at Configure Pro and the setup UI reading different data for
+	/// their device lists:
+	///
+	/// - The "Unassigned:UNIVERSAL" flip logged at 15:43:02 is a Lights|Load|RemoveDevice event.
+	///   What is unassigned is the load adapter, not device 52754; the removal line itself reads
+	///   "Remove Load adapter ID 52756 for Demo KP115 ID 52754 from Location Office".
+	/// - Locations.json is saved immediately afterwards and a reload reads back a correct
+	///   outlet-in-Office, so the persisted location model was never wrong.
+	/// - Critically, NO "Add Load adapter" occurs for this device after the transition, including
+	///   across the reload at 15:48:24 ("Reload driver for Device Kasa/Tapo Controller ID
+	///   #52677", with the log running to 15:55). The last was 52756 at 15:28:29, removed at
+	///   15:43:02. Configure Pro nonetheless shows the child correctly in its room as a fully
+	///   configurable outlet after that reload.
+	///
+	/// Note "Load adapter" here means specifically a LIGHTING load: every add/remove is tagged
+	/// Lights|Load|AddDevice / Lights|Load|RemoveDevice. It is what backs the child while it is
+	/// a light. While it is an outlet the extension device backs it instead - which is why the
+	/// touchpanel kept working after the load adapter was destroyed at 15:43:02, with
+	/// outletToggle/outletOn executing successfully at 15:43:18. So the absence of a load
+	/// adapter after a Light -&gt; Outlet change is expected and correct, not a missing binding.
+	///
+	/// The host maintains a different representation for each state - a Load adapter backs the
+	/// lighting view, an extension device backs the outlet view - and each is required for the
+	/// touchpanel to render the child while it is in that state. They are alternatives, not
+	/// concurrent: the child is a light or an outlet, never both. The driver mirrors this
+	/// correctly. ManagedChildKind maps one-to-one onto DeviceUxCategory, and each child has
+	/// exactly one entity in _lightEntities and one ConfigurableDriverEntity in
+	/// _childControllers, replaced (not supplemented) when the kind changes.
+	///
+	/// That last point rules out the earlier guess that Configure Pro's lists are driven off
+	/// Load adapter creation. The consistent reading is that Configure Pro holds an in-memory
+	/// projection seeded from the lighting registry: when the load adapter is destroyed it drops
+	/// the row and does not re-derive the device as an extension-type room member, until a
+	/// reload rebuilds that projection from Locations.json. The setup UI and the touchpanel read
+	/// the live location/device model, which is correct throughout - which is why they never
+	/// show the problem and why this is not a "Configure Pro cannot refresh" limitation: the
+	/// Outlet -&gt; Light direction refreshes fine because it ADDS a row to the source it watches.
+	///
+	/// Practical remediation for an installer who hits this: reload the driver (or restart the
+	/// processor). No configuration is lost and no re-add is required.
+	///
+	/// Ruled out by experiment:
+	/// - The host ignoring uxCategory on a per-entry delta. It does not ignore it; if it did,
+	///   neither direction would apply the category at all, and the log shows Outlet published
+	///   and honoured (the device functions as a real outlet, outletToggle/outletOn succeed).
+	/// - A full managedDevices snapshot following the delta. Tried and reverted; the category
+	///   was never the problem.
+	/// - Entity property publication ordering. KasaOutletEntity.PublishStateSnapshot now sends
+	///   the UI definition first and the online/ready indicators last, and the Load adapter is
+	///   still removed 455ms after Running by "Validate driver definition".
+	/// - Driver-level publication ordering. The entity is registered (UpdateSubControllers/
+	///   NotifyChildPublished) before SetConfigured publishes any state.
+	/// - Where the change is initiated. Configure Pro and the setup UI behave identically.
+	/// - Remove/re-add of the managed-device entry (registry-object error, device left
+	///   Offline/Driver Not Loaded).
+	/// - Loss of room membership. Disproven by the touchpanel, the setup UI, the room count, and
+	///   a reload restoring the correct outlet view with configuration intact.
+	/// - Corruption of the persisted managed-device cache. Disproven by the same reload: the
+	///   child comes back as a fully configurable outlet in its room, so IsConfigured and
+	///   UxCategory are being persisted and restored correctly.
+	///
+	/// The captured sequence for a Light -&gt; Outlet change carries no ClearValues at all - only
+	/// ApplyConfiguration[TreatAsLight] followed by ApplyConfiguration[ActivationMarker,
+	/// DriverDataStore, TreatAsLight] - so this always takes the in-place recreate path below.
 	/// </summary>
 	private void ReconcileChildKindAfterTreatAsLightChange (string controllerId, string context)
 		{
@@ -197,11 +300,24 @@ public sealed partial class PlatformDriver
 			// room updates the in-memory category correctly but leaves the on-disk cache pointing
 			// at the old (pre-revert) category, so the next reload reconstructs the child with the
 			// stale kind instead of the one the user actually chose.
+			//
+			// IsConfigured must be restored here as well. ClearChildRuntimeState (called above to
+			// tear down the outgoing entity) unconditionally sets IsConfigured=false and flushes
+			// that to disk, because for its normal callers the child really is leaving
+			// configuration. Here it is not - the child stays installed in its room and only its
+			// concrete kind changes - so leaving the flag false silently corrupts the cache: the
+			// in-memory _configuredChildControllerIds entry is restored below, but the on-disk
+			// entry keeps IsConfigured=false. On the next reload LoadManagedDeviceCacheIntoMemory
+			// then (a) refuses to trust the persisted UxCategory and re-resolves the kind, and
+			// (b) skips restoring _configuredChildControllerIds, so PublishCachedChildControllers
+			// never replays ActivationMarker/TreatAsLight and the child comes back permanently
+			// NotConfigured/Offline in Configure Pro. That is why toggling a plug to Light and
+			// back to Outlet appears to work in the live session but breaks after a reload.
+			cacheEntry.IsConfigured = wasConfigured;
 			PersistManagedDeviceCache ();
 			}
 
 		IKasaManagedChildEntity newEntity = CreateManagedLightEntity (descriptor, deviceConfiguration);
-		newEntity.SetConfigured (wasConfigured, context);
 
 		LoggingDriverConfigurationController childConfigurationController = CreateChildConfigurationController (descriptor);
 		var controller = new ConfigurableDriverEntity (controllerId, (ReflectedAttributeDriverEntity)newEntity, childConfigurationController);
@@ -256,6 +372,18 @@ public sealed partial class PlatformDriver
 
 		UpdateSubControllers (new[] { controller }, null);
 		newEntity.NotifyChildPublished ();
+
+		// SetConfigured must not run before the entity above has actually been registered with
+		// the host. It synchronously starts the connect/initialize work that flips
+		// onlineIndicator/readyIndicator and publishes the first state snapshot; raised against
+		// an entity the host has not yet seen, those notifications are simply dropped. The
+		// recreated child then reaches Running while the processor still believes it is offline
+		// (SystemManager_DeviceStatusChanged status: 0), which is what made a Light->Outlet
+		// switch disappear from Configure Pro even though the room UI and touchscreen were fine.
+		// The reverse direction never showed this because KasaLightEntity defers and replays its
+		// startup snapshot (TryPublishDeferredStartupSnapshot) whereas KasaOutletEntity does not.
+		newEntity.SetConfigured (wasConfigured, context);
+
 		ActivatePublishedChildIfRunning (controller, context);
 
 		LogInfo ($"ReconcileChildKindAfterTreatAsLightChange: controllerId='{controllerId}' recreated as {resolvedKind}, wasConfigured={wasConfigured}, context='{context}'.");
@@ -411,8 +539,29 @@ public sealed partial class PlatformDriver
 		if (values.TryGetValue ("TreatAsLight", out var treatAsLightValue) && treatAsLightValue.HasValue)
 			{
 			bool incomingTreatAsLight = treatAsLightValue.Value.GetValue<bool> ();
-			LogInfo ($"ApplyChildConfigurationItems: controllerId='{controllerId}' received TreatAsLight={incomingTreatAsLight} (previous stored value={( _childTreatAsLight.TryGetValue (controllerId, out bool previousTreatAsLight) ? previousTreatAsLight.ToString () : "<none>")}).");
-			bool kindActuallyChanging = incomingTreatAsLight != previousTreatAsLight;
+			bool hasPreviousTreatAsLight = _childTreatAsLight.TryGetValue (controllerId, out bool previousTreatAsLight);
+			LogInfo ($"ApplyChildConfigurationItems: controllerId='{controllerId}' received TreatAsLight={incomingTreatAsLight} (previous stored value={(hasPreviousTreatAsLight ? previousTreatAsLight.ToString () : "<none>")}).");
+
+			// An absent _childTreatAsLight entry means "no known preference", NOT "Outlet".
+			// RemoveChildFromConfiguration (and the refresh removal path) erase this entry, so a
+			// re-add after a removal arrives here with no baseline. Defaulting the missing value
+			// to false made every re-add carrying TreatAsLight=true look like a genuine
+			// Outlet->Light toggle, which tore the child down and recreated it as a Light - that
+			// is what caused the host to mint an uncommissioned lighting-load record for a plug
+			// that the user had never re-classified. Compare against the descriptor's actual
+			// current kind instead, so a re-add only counts as a change when it truly disagrees
+			// with what the child already is.
+			bool currentlyLight = hasPreviousTreatAsLight
+				? previousTreatAsLight
+				: _knownDescriptors.TryGetValue (controllerId, out ManagedLightDescriptor? existingDescriptor)
+					&& existingDescriptor.ChildKind == ManagedChildKind.Light;
+
+			bool kindActuallyChanging = incomingTreatAsLight != currentlyLight;
+			if (!hasPreviousTreatAsLight)
+				{
+				LogInfo ($"ApplyChildConfigurationItems: controllerId='{controllerId}' had no stored TreatAsLight preference; resolved current kind as {(currentlyLight ? "Light" : "Outlet")} from the descriptor, kindActuallyChanging={kindActuallyChanging}.");
+				}
+
 			_childTreatAsLight[controllerId] = incomingTreatAsLight;
 
 			// Disposing/recreating the child's entity and configuration controller synchronously
@@ -452,6 +601,15 @@ public sealed partial class PlatformDriver
 			// reload the deleted device would be resurrected into the managed-device list
 			// instead of staying removed. Tear the child down the same way discovery-driven
 			// removal does so the deletion actually sticks.
+			//
+			// NOTE: deletion is not the only trigger. Processor logs show Crestron Home also
+			// sending ClearValues around a per-child "Treat As Light" transition, in both
+			// directions, with the same valueKeys as the deletion case. The values themselves
+			// arrive null on ClearValues (the TreatAsLight block above does not run, because
+			// HasValue is false), so this path is safe to treat uniformly as a teardown. What
+			// must NOT be assumed is that the erased _childTreatAsLight entry can be
+			// re-defaulted to false on the way back in - see the descriptor-based fallback in
+			// the TreatAsLight block above.
 			//
 			// RemoveChildFromConfiguration disposes/tears down the very entity and
 			// configuration controller that is currently in the middle of running this
