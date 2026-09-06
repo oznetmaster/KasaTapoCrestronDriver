@@ -2,7 +2,7 @@
 
 `KasaTapoCrestronDriver` is a **Crestron Home Entity V2 platform driver** for TP-Link Kasa and Tapo smart home devices. Unlike a single-entity/extension driver that represents one device, this is a **platform driver**: a single instance of it discovers every supported Kasa/Tapo device on the local network, then dynamically creates, publishes, and manages a separate child light entity for each one directly inside Crestron Home. This driver is designed strictly for **local network access** to devices; it does not access Tapo cloud accounts to discover devices, and there are no plans to add cloud-based discovery.
 
-**Current scope:** this release discovers and manages **lighting and outlet devices** — bulbs, light strips, wall switches (always treated as light loads, since a switch can only be wired to a light), and plugs/power-strip outlets. Every plug and every power-strip outlet is always discovered and selectable for installation; each one is individually configured (per child device, not globally) as either a **Light** or an **Outlet**, via that child's own **Treat As Light** configuration item. Known dimmable plugs (for example, `P135`) are always treated as lights, since a dimmable plug can only meaningfully be used to dim a light. Other Kasa/Tapo device types (for example, power-monitoring plugs' energy telemetry, sensors, thermostats, buttons) are not yet published as child devices, though some groundwork for future device types already exists in the platform's discovery and caching layers. Support for additional device types is planned for future releases.
+**Current scope:** this release discovers and manages **lighting and outlet devices** — bulbs, light strips, smart wall switches (for example, `KS200`/`KS205`/`KS240`; always treated as light loads, since this driver only supports wall switches as light loads, not as generic switched-outlet controls), and plugs/power-strip outlets.
 
 TP-Link, Kasa, and Tapo are trademarks of their respective owners. This project is an independent, unofficial driver and is not affiliated with, endorsed by, or sponsored by TP-Link. Crestron and Crestron Home are trademarks or registered trademarks of Crestron Electronics, Inc. This project is not affiliated with, endorsed by, or sponsored by Crestron Electronics, Inc.
 
@@ -49,6 +49,26 @@ The platform driver instance exposes these configuration items in Crestron Home:
 | **Processor SSH User Name** / **Processor SSH Password** | Required only if the workaround above is enabled — console/SSH credentials for the Crestron Home processor itself. |
 
 Each discovered device is published automatically as its own child device once the platform driver is added and configured; no additional per-device "add device" step is needed in Crestron Home. Every discovered plug and power-strip outlet also exposes its own per-child **Treat As Light** configuration item (found on that specific child device, not on the platform driver) — enable it to expose that plug/outlet as a light entity; leave it disabled (the default) to expose it as a plain outlet. Known dimmable plug models (for example, `P135`) are always treated as lights and do not show this choice, since a dim level can only ever control a light.
+
+---
+
+## Outlet / Plug / Power-Strip Support
+
+Every plug and every power-strip outlet is always discovered and can be installed as a child device. Each one independently decides, via its own per-child **Treat As Light** configuration item, whether it is published as:
+
+- A plain **Outlet** (default) — a Crestron extension device exposing simple on/off control, plus current-power and today's-energy-usage telemetry when the connected device reports it, or
+- A **Light** — a standard Entity V2 light load, for a plug or power-strip outlet actually wiring a lamp or other light fixture, alongside the bulbs, light strips, and wall switches this driver already publishes as lights.
+
+Known dimmable plug models (for example, `P135`) are always treated as lights and do not expose this choice, since a dim level can only ever control a light; a wall switch is likewise always treated as a light, since this driver only supports wall switches as light loads.
+
+### Known Issue: Configure Pro and Outlet ↔ Light Conversion
+
+Converting a child device between **Outlet** and **Light** (in either direction) is fully supported and works correctly for actual device operation — the Room UI tile, on/off control, and (for lights) brightness/color controls all update correctly and immediately, and the change is fully persisted. However, Crestron Home's **Configure Pro** tool has two related display bugs around this conversion that are outside this driver's control:
+
+- Configure Pro will not show the Installer Settings/configuration section for a device currently configured as a **Light** — including a plug/outlet that has been converted to a Light — even though the device itself is fully configured and working.
+- After an **Outlet → Light → Outlet** conversion round-trip (i.e. converting back), Configure Pro's device list can show stale/incorrect entries for the affected device until the driver is reloaded. A driver reload immediately restores a correct, fully configurable device list.
+
+Neither issue is present in the Crestron Home **Setup** program, which correctly reflects the device's current kind and configuration state throughout the conversion in both directions; only Configure Pro is affected. If Configure Pro appears to misbehave after converting a device between Outlet and Light, reload the driver to resolve it.
 
 ---
 
