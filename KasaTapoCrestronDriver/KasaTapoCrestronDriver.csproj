@@ -12,7 +12,7 @@
 	 <Copyright>Copyright © 2026 Neil Colvin</Copyright>
 	 <AssemblyVersion>1.0.0.0</AssemblyVersion>
 	 <FileVersion>1.0.0.0</FileVersion>
-	 <Version>1.3.0</Version>
+	 <Version>1.3.1</Version>
 	 <IsPackable>true</IsPackable>
 	 <IncludeBuildOutput>false</IncludeBuildOutput>
 	 <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
@@ -30,6 +30,7 @@
 	 <PackageTags>crestron;crestron-home;driver;pkg;platform;kasa;tapo;tplink;smarthome</PackageTags>
 	 <PackageDriverPkgPath Condition="'$(PackageDriverPkgPath)' == ''"></PackageDriverPkgPath>
 	 <PackageDriverManifestPath Condition="'$(PackageDriverManifestPath)' == ''"></PackageDriverManifestPath>
+	 <PackageReleaseNotesFile Condition="'$(PackageReleaseNotesFile)' == ''"></PackageReleaseNotesFile>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
@@ -158,6 +159,20 @@
 	 <Error Condition="!Exists('$(PackageDriverPkgPath)')" Text="PackageDriverPkgPath '$(PackageDriverPkgPath)' does not exist." />
 	 <Error Condition="'$(PackageDriverManifestPath)' == ''" Text="PackageDriverManifestPath must be set when packing the NuGet package." />
 	 <Error Condition="!Exists('$(PackageDriverManifestPath)')" Text="PackageDriverManifestPath '$(PackageDriverManifestPath)' does not exist." />
+  </Target>
+
+  <!-- Reads the release-notes text file produced by the release workflow (the published GitHub Release's
+		body) into the PackageReleaseNotes property, so the NuGet package actually carries release notes.
+		Passing -p:PackageReleaseNotesFile alone has no effect on its own: NuGet only reads the
+		PackageReleaseNotes MSBuild property when generating the nuspec, and nothing populates it from a
+		file path automatically. Runs before GenerateNuspec, same as ValidateNuGetPkgInput above. -->
+  <Target Name="SetPackageReleaseNotesFromFile" BeforeTargets="GenerateNuspec" Condition="'$(IsPacking)' == 'true' AND '$(PackageReleaseNotesFile)' != '' AND Exists('$(PackageReleaseNotesFile)')">
+	 <ReadLinesFromFile File="$(PackageReleaseNotesFile)">
+		<Output TaskParameter="Lines" ItemName="_PackageReleaseNotesLines" />
+	 </ReadLinesFromFile>
+	 <PropertyGroup>
+		<PackageReleaseNotes>@(_PackageReleaseNotesLines, '%0a')</PackageReleaseNotes>
+	 </PropertyGroup>
   </Target>
 
   <Import Project="KasaTapoCrestronDriver.Local.targets" Condition="Exists('KasaTapoCrestronDriver.Local.targets')" />

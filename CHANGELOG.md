@@ -10,6 +10,10 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.3.1]
+
+- Fixed the NuGet package not carrying any release notes. The release workflow passed the published GitHub Release's body to MSBuild via `-p:PackageReleaseNotesFile`, but nothing in the project file ever read that file's contents into the `PackageReleaseNotes` property NuGet actually packs, so every release notes field was silently blank. Added a `SetPackageReleaseNotesFromFile` build target that reads the file and populates `PackageReleaseNotes` before the nuspec is generated.
+
 ## [1.3.0]
 
 - Added support for plugs and power-strip outlets as a new managed device kind, alongside the lights this driver already supported. Every discovered plug and power-strip outlet is always selectable for installation and, per child device, individually configured as either a plain **Outlet** (on/off control, plus current-power and today's-energy-usage telemetry when the connected device reports it) or a **Light**, via that child's own **Treat As Light** configuration item.
