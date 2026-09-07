@@ -144,7 +144,18 @@ internal sealed class ManagedParentDevicePoller
 				return;
 				}
 
-			await PollOnceAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
+			// The initial poll on registration always runs (regardless of subscribers) so newly
+			// configured/published children get a correct starting value read directly from the
+			// device. After that, all continued property updates happen only as a side effect of
+			// the delta checks that raise a child's events (see IKasaHubChildEntity.ApplyPushedState
+			// implementations), so once none of a hub's children have any event subscriber there is
+			// nothing for a further poll to usefully drive - skip actually hitting the device this
+			// tick, but keep the loop alive so polling resumes automatically the moment a subscriber
+			// appears.
+			if (immediateFirstPoll || AnyChildHasEventSubscribers ())
+				{
+				await PollOnceAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
+				}
 
 			if (_disposed || generation != Volatile.Read (ref _pollingGeneration))
 				{
@@ -159,6 +170,22 @@ internal sealed class ManagedParentDevicePoller
 		catch (Exception ex)
 			{
 			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Hub poller '{_hostKey}' polling loop failed: {ex}");
+			}
+		}
+
+	private bool AnyChildHasEventSubscribers ()
+		{
+		lock (_gate)
+			{
+			foreach (IKasaHubChildEntity child in _children.Values)
+				{
+				if (child.HasEventSubscribers)
+					{
+					return true;
+					}
+				}
+
+			return false;
 			}
 		}
 

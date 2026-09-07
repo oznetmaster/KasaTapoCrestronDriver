@@ -244,6 +244,23 @@ internal interface IKasaHubChildEntity : IKasaManagedChildEntity
 		}
 
 	/// <summary>
+	/// Whether at least one of this entity's <c>[EntityEvent]</c>-attributed events (e.g.
+	/// <c>MotionDetectedEvent</c>, <c>BatteryLowEvent</c>, <c>ButtonTriggered</c>) currently has a
+	/// subscriber. All continuous property updates now happen only as a side effect of the delta
+	/// checks that raise these events (see <see cref="ManagedParentDevicePoller"/>'s poll loop), so
+	/// once nothing is subscribed to any of them there is nothing for a poll to usefully drive -
+	/// the owning <see cref="ManagedParentDevicePoller"/> uses this to skip actually polling the
+	/// hub on a given tick (while still checking again next tick) rather than needlessly hitting
+	/// the device over the network. This does not affect the one-time initial read performed when
+	/// the child first registers/gets configured, which always happens regardless of subscribers so
+	/// properties have a correct starting value.
+	/// </summary>
+	bool HasEventSubscribers
+		{
+		get;
+		}
+
+	/// <summary>
 	/// Called by the owning <see cref="ManagedParentDevicePoller"/> once per successful poll tick
 	/// (and once immediately upon registration) with this entity's current <see cref="ChildDevice"/>
 	/// (or <c>null</c> if the child was not found in the hub's most recent child list) and the

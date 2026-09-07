@@ -332,6 +332,31 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler HumidityWarningCleared = null!;
 
+	/// <summary>
+	/// See <see cref="IKasaHubChildEntity.HasEventSubscribers"/>. Checked via each event field's
+	/// own multicast delegate rather than a separate tracked flag, since C# field-like events
+	/// already accumulate/remove subscribers for us - this just asks each one whether it currently
+	/// has any.
+	/// </summary>
+	public bool HasEventSubscribers
+		{
+		get
+			{
+			return ContactOpened is not null
+				|| ContactClosed is not null
+				|| MotionDetectedEvent is not null
+				|| MotionCleared is not null
+				|| LeakDetectedEvent is not null
+				|| LeakCleared is not null
+				|| BatteryLowEvent is not null
+				|| BatteryNormal is not null
+				|| TemperatureWarningDetected is not null
+				|| TemperatureWarningCleared is not null
+				|| HumidityWarningDetected is not null
+				|| HumidityWarningCleared is not null;
+			}
+		}
+
 	public KasaSensorEntity (
 		string controllerId,
 		ManagedLightDescriptor descriptor,

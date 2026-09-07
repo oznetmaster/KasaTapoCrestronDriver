@@ -128,6 +128,14 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler ButtonTriggered = null!;
 
+	/// <summary>
+	/// See <see cref="IKasaHubChildEntity.HasEventSubscribers"/>.
+	/// </summary>
+	public bool HasEventSubscribers
+		{
+		get { return ButtonTriggered is not null; }
+		}
+
 	public KasaButtonEntity (
 		string controllerId,
 		ManagedLightDescriptor descriptor,
