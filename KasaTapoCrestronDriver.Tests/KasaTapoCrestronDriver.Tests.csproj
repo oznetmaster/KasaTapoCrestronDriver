@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MSTest" Version="4.3.3" />
+    <PackageReference Include="MSTest" Version="4.4.0" />
     <!-- KasaTapoClient.dll is referenced directly via HintPath (below) rather than as a PackageReference,
           so its transitive System.Memory 4.6.3 dependency isn't pulled into this project's dependency graph.
           Without this explicit reference, NuGet resolves an older System.Memory (4.5.5 / asm version 4.0.1.2)
@@ -44,7 +44,7 @@
         package), not a local sibling build, otherwise KasaDevice/DeviceType/etc. resolve as distinct
         types (CS1503) between this project and the driverassembly-aliased ProjectReference above. -->
   <ItemGroup>
-    <PackageReference Include="KasaTapoClient" Version="1.3.1" />
+    <PackageReference Include="KasaTapoClient" Version="1.4.0" />
   </ItemGroup>
 
 </Project>

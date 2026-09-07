@@ -29,6 +29,27 @@ internal enum ManagedChildKind
 	Thermostat
 	}
 
+/// <summary>
+/// Identifies the specific telemetry category a hub child sensor/button descriptor represents.
+/// Populated only when <see cref="ManagedLightDescriptor.ChildKind"/> is <see cref="ManagedChildKind.Sensor"/>
+/// or <see cref="ManagedChildKind.Button"/>; every other child kind leaves this at
+/// <see cref="None"/>. Every new value added here must be handled explicitly by
+/// <see cref="KasaSensorEntity"/>/<see cref="KasaButtonEntity"/> - silently ignoring an unknown
+/// hub child category would hide classification bugs the same way an unhandled
+/// <see cref="ManagedChildKind"/> would.
+/// </summary>
+internal enum HubChildCategory
+	{
+	None,
+	Temperature,
+	Humidity,
+	TemperatureHumidity,
+	Contact,
+	Motion,
+	WaterLeak,
+	Button
+	}
+
 internal sealed class ManagedLightDescriptor
 	{
 	public ManagedLightDescriptor (
@@ -42,7 +63,8 @@ internal sealed class ManagedLightDescriptor
 		bool awaitingConnectedIdentity = false,
 		string? discoveryDeviceId = null,
 		string? childId = null,
-		ManagedChildKind childKind = ManagedChildKind.Light)
+		ManagedChildKind childKind = ManagedChildKind.Light,
+		HubChildCategory hubChildCategory = HubChildCategory.None)
 		{
 		ControllerId = controllerId;
 		Host = host;
@@ -58,6 +80,7 @@ internal sealed class ManagedLightDescriptor
 		DiscoveryDeviceId = discoveryDeviceId;
 		ChildId = childId;
 		ChildKind = childKind;
+		HubChildCategory = hubChildCategory;
 		}
 
 	public string ControllerId
@@ -136,6 +159,17 @@ internal sealed class ManagedLightDescriptor
 	/// Whether this controllerId is currently materialized as a Light entity or an Outlet entity.
 	/// </summary>
 	public ManagedChildKind ChildKind
+		{
+		get;
+		internal set;
+		}
+
+	/// <summary>
+	/// Identifies the hub child telemetry category (temperature/humidity/contact/motion/button)
+	/// when <see cref="ChildKind"/> is <see cref="ManagedChildKind.Sensor"/> or
+	/// <see cref="ManagedChildKind.Button"/>. Unused for every other child kind.
+	/// </summary>
+	public HubChildCategory HubChildCategory
 		{
 		get;
 		internal set;

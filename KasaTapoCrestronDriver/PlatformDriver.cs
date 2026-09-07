@@ -620,6 +620,8 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 	private readonly ConcurrentDictionary<string, byte> _aliasResolutionInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, List<ManagedLightDescriptor>> _resolvedStripChildDescriptors = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, byte> _stripChildResolutionInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, List<ManagedLightDescriptor>> _resolvedHubChildDescriptors = new (StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, byte> _hubChildResolutionInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _materializationInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _previousDiscoveredControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private ConcurrentDictionary<string, PlatformManagedDevice> _managedDevices = new (StringComparer.OrdinalIgnoreCase);

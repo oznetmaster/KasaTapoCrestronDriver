@@ -442,7 +442,18 @@ public sealed partial class PlatformDriver
 						// cache entry). Recomputing here from the restored TreatAsLight preference
 						// ensures an unassigned device reappears with its correct current kind
 						// instead of the last-published one.
+						//
+						// ResolveManagedChildKind only understands the Plug/Strip "Treat As Light"
+						// toggle - for every other discovered device type (including Hub children:
+						// Sensor/Button telemetry with no such toggle) it unconditionally returns
+						// ManagedChildKind.Light. Calling it unconditionally here previously forced
+						// every unconfigured hub child (T310/T315/T100/S200B, etc.) back to
+						// DeviceUxCategory.Light on every driver reload, even though the cached
+						// UxCategory correctly recorded Sensor/Switch. Only recompute for the
+						// device types ResolveManagedChildKind actually knows how to classify;
+						// trust the cached UxCategory for everything else.
 						DeviceUxCategory resolvedUxCategory = entry.IsConfigured
+							|| (entry.DiscoveredDeviceType != KasaDeviceType.Plug && entry.DiscoveredDeviceType != KasaDeviceType.Strip)
 							? entry.UxCategory
 							: ResolveManagedChildKind (entry.ControllerId, entry.DiscoveredDeviceType, entry.Model) switch
 								{

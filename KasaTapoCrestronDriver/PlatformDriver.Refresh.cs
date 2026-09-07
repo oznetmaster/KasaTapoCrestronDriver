@@ -81,6 +81,14 @@ public sealed partial class PlatformDriver
 				PurgeStaleStripRootManagedDevice (controllerId);
 				}
 
+			if (discoveryResult.DeviceType == KasaDeviceType.Hub)
+				{
+				// Hub roots (e.g. Tapo H100) are itemized the same way as strips - each hub child
+				// (T310/T315/T100/S200B, etc.) is its own managed device (ResolveHubChildDescriptorsAsync)
+				// and the hub's own root controllerId is never itself a valid managed device.
+				PurgeStaleStripRootManagedDevice (controllerId);
+				}
+
 			try
 				{
 				if (IsTapoDiscoveryResult (discoveryResult) && string.IsNullOrWhiteSpace (discoveryResult.Alias))
@@ -349,7 +357,8 @@ public sealed partial class PlatformDriver
 				// corrected the on-disk cache's IsConfigured/UxCategory so a driver reload shows
 				// Outlet correctly.
 				_childTreatAsLight.Remove (existingControllerId);
-				if (_knownDescriptors.TryGetValue (existingControllerId, out ManagedLightDescriptor? removedDescriptor))
+				if (_knownDescriptors.TryGetValue (existingControllerId, out ManagedLightDescriptor? removedDescriptor)
+					&& (removedDescriptor.DiscoveredDeviceType == KasaDeviceType.Plug || removedDescriptor.DiscoveredDeviceType == KasaDeviceType.Strip))
 					{
 					removedDescriptor.ChildKind = ResolveManagedChildKind (existingControllerId, removedDescriptor.DiscoveredDeviceType, removedDescriptor.ModelName);
 					}

@@ -56,7 +56,10 @@ public sealed partial class PlatformDriver
 		// - each one individually decides (via its per-child "Treat As Light" configuration item)
 		// whether it is materialized as a Light child or an Outlet child. See
 		// ResolveManagedChildKind for how that per-child decision is resolved.
-		return deviceType == KasaDeviceType.Plug || deviceType == KasaDeviceType.Strip;
+		// Hub roots (e.g. Tapo H100) are also always discoverable/itemizable, the same way Strip
+		// roots are - see ResolveHubChildDescriptorsAsync, which itemizes each hub child
+		// (T310/T315/T100/S200B, etc.) into its own Sensor/Button managed child descriptor.
+		return deviceType == KasaDeviceType.Plug || deviceType == KasaDeviceType.Strip || deviceType == KasaDeviceType.Hub;
 		}
 
 	/// <summary>
@@ -88,6 +91,34 @@ public sealed partial class PlatformDriver
 		if (descriptor.ChildKind == ManagedChildKind.Outlet)
 			{
 			return new KasaOutletEntity (
+				descriptor.ControllerId,
+				descriptor,
+				configuration,
+				HandleManagedLightDescriptorNameChanged,
+				_sharedConfiguration,
+				_resources,
+				_logger,
+				_driverLogId,
+				_args.DriverDataDirectoryPath);
+			}
+
+		if (descriptor.ChildKind == ManagedChildKind.Sensor)
+			{
+			return new KasaSensorEntity (
+				descriptor.ControllerId,
+				descriptor,
+				configuration,
+				HandleManagedLightDescriptorNameChanged,
+				_sharedConfiguration,
+				_resources,
+				_logger,
+				_driverLogId,
+				_args.DriverDataDirectoryPath);
+			}
+
+		if (descriptor.ChildKind == ManagedChildKind.Button)
+			{
+			return new KasaButtonEntity (
 				descriptor.ControllerId,
 				descriptor,
 				configuration,
@@ -780,8 +811,15 @@ public sealed partial class PlatformDriver
 
 		if (descriptor is not null)
 			{
-			ManagedChildKind resolvedKind = ResolveManagedChildKind (controllerId, descriptor.DiscoveredDeviceType, descriptor.ModelName);
-			descriptor.ChildKind = resolvedKind;
+			// ResolveManagedChildKind only understands the Plug/Strip "Treat As Light" toggle;
+			// for every other device type (including Hub children, which are always Sensor/Button
+			// telemetry with no such toggle) it unconditionally returns ManagedChildKind.Light.
+			// Only re-resolve for Plug/Strip descriptors so a hub child's Sensor/Button kind is
+			// never clobbered back to Light here.
+			if (descriptor.DiscoveredDeviceType == KasaDeviceType.Plug || descriptor.DiscoveredDeviceType == KasaDeviceType.Strip)
+				{
+				descriptor.ChildKind = ResolveManagedChildKind (controllerId, descriptor.DiscoveredDeviceType, descriptor.ModelName);
+				}
 			}
 
 		// The device is still physically discoverable and its identity is still known, so
@@ -958,6 +996,13 @@ public sealed partial class PlatformDriver
 			return await ResolveStripChildDescriptorsAsync (discoveryResult, configuration, cancellationToken).ConfigureAwait (false);
 			}
 
+		if (discoveryResult.DeviceType == KasaDeviceType.Hub)
+			{
+			// Hub children (Tapo H100 and similar) are likewise only known once connected; see
+			// ResolveHubChildDescriptorsAsync.
+			return await ResolveHubChildDescriptorsAsync (discoveryResult, configuration, cancellationToken).ConfigureAwait (false);
+			}
+
 		return CreateManagedLightDescriptors (discoveryResult).ToArray ();
 		}
 
@@ -1095,6 +1140,13 @@ public sealed partial class PlatformDriver
 			bool deviceAdopted = false;
 			try
 				{
+				// KasaTapoClient 1.4.0+ has GetOrConnectSharedAsync refresh a cached shared instance's
+				// state (Children/LightState/etc.) via UpdateAsync whenever updateState: true is passed,
+				// even on a cache hit - previously it silently ignored updateState on cache hits and could
+				// return a long-lived instance whose Children the strip's very first connect happened to
+				// observe as empty, forever, until a full driver reload cleared the cache. That refresh
+				// now happens inside GetOrConnectSharedAsync itself, so no extra re-fetch/dispose workaround
+				// is needed here.
 				device = await Discover.GetOrConnectSharedAsync (configuration, updateState: true, cancellationToken: expansionTimeoutSource.Token).ConfigureAwait (false);
 
 				if (device.Children.Count == 0)
@@ -1175,6 +1227,205 @@ public sealed partial class PlatformDriver
 		finally
 			{
 			_stripChildResolutionInFlightControllerIds.TryRemove (stripControllerId, out _);
+			}
+		}
+
+	// Classifies a hub child (Tapo H100 and similar) into a HubChildCategory/ManagedChildKind
+	// pair from its reported Category/Model/Features, since DiscoveryResult alone never exposes
+	// per-child capability. Every recognized hub accessory today (T310/T315 temperature+humidity,
+	// T100 contact/motion, S200B button) reports enough via ChildDeviceInfo.Category or Features
+	// to distinguish it; anything unrecognized falls back to a generic Sensor classification
+	// rather than being silently dropped, so new/unknown hub accessories are still materialized
+	// (with whatever telemetry KasaSensorEntity can read) instead of disappearing.
+	private static (ManagedChildKind ChildKind, HubChildCategory Category) ResolveHubChildKind (ChildDeviceInfo child)
+		{
+		string category = child.Category ?? string.Empty;
+		string model = child.Model ?? string.Empty;
+
+		bool hasFeature (string featureId) =>
+			child.Features.Any (feature => string.Equals (feature.Id, featureId, StringComparison.OrdinalIgnoreCase));
+
+		bool isButtonModel = category.Contains ("switch", StringComparison.OrdinalIgnoreCase)
+			|| category.Contains ("button", StringComparison.OrdinalIgnoreCase)
+			|| model.StartsWith ("S200", StringComparison.OrdinalIgnoreCase)
+			|| hasFeature ("double_click") || hasFeature ("trigger_log");
+
+		if (isButtonModel)
+			{
+			return (ManagedChildKind.Button, HubChildCategory.Button);
+			}
+
+		bool hasTemperature = hasFeature ("temperature") || model.StartsWith ("T31", StringComparison.OrdinalIgnoreCase);
+		bool hasHumidity = hasFeature ("humidity") || model.StartsWith ("T31", StringComparison.OrdinalIgnoreCase);
+		bool hasContact = hasFeature ("open") || model.StartsWith ("T100", StringComparison.OrdinalIgnoreCase);
+		bool hasMotion = hasFeature ("detected") || category.Contains ("motion", StringComparison.OrdinalIgnoreCase);
+		bool hasWaterLeak = hasFeature ("water_leak") || category.Contains ("leak", StringComparison.OrdinalIgnoreCase);
+
+		if (hasContact)
+			{
+			return (ManagedChildKind.Sensor, HubChildCategory.Contact);
+			}
+
+		if (hasMotion)
+			{
+			return (ManagedChildKind.Sensor, HubChildCategory.Motion);
+			}
+
+		if (hasWaterLeak)
+			{
+			return (ManagedChildKind.Sensor, HubChildCategory.WaterLeak);
+			}
+
+		if (hasTemperature && hasHumidity)
+			{
+			return (ManagedChildKind.Sensor, HubChildCategory.TemperatureHumidity);
+			}
+
+		if (hasTemperature)
+			{
+			return (ManagedChildKind.Sensor, HubChildCategory.Temperature);
+			}
+
+		if (hasHumidity)
+			{
+			return (ManagedChildKind.Sensor, HubChildCategory.Humidity);
+			}
+
+		return (ManagedChildKind.Sensor, HubChildCategory.None);
+		}
+
+	// Hub children (KasaDeviceType.Hub) are, like strip children, only known once connected -
+	// DiscoveryResult alone does not expose them. Unlike strip children, hub children (Tapo H100
+	// contact/motion/temperature/humidity sensors and S200B buttons) are read-only telemetry with
+	// no relay control, so they are always itemized as Sensor/Button descriptors and never as
+	// Light/Outlet.
+	private async Task<IReadOnlyList<ManagedLightDescriptor>> ResolveHubChildDescriptorsAsync (
+		DiscoveryResult discoveryResult,
+		DeviceConfiguration configuration,
+		CancellationToken cancellationToken)
+		{
+		string hubControllerId = CreateControllerId (discoveryResult);
+
+		if (_resolvedHubChildDescriptors.TryGetValue (hubControllerId, out List<ManagedLightDescriptor>? cachedChildDescriptors))
+			{
+			// _deviceConfigurations/_discoveryResults are cleared and rebuilt every refresh pass
+			// (see RefreshPlatformAsync), so cached child descriptors must be re-registered here
+			// on every call, not just when they are first resolved, otherwise later materialization
+			// lookups fail with "no device configuration is available" and the child is marked missing.
+			foreach (ManagedLightDescriptor cachedChildDescriptor in cachedChildDescriptors)
+				{
+				_deviceConfigurations[cachedChildDescriptor.ControllerId] = configuration;
+				_discoveryResults[cachedChildDescriptor.ControllerId] = discoveryResult;
+				}
+
+			return cachedChildDescriptors;
+			}
+
+		if (!_hubChildResolutionInFlightControllerIds.TryAdd (hubControllerId, 0))
+			{
+			LogInfo ($"ResolveHubChildDescriptorsAsync: skipped duplicate in-flight hub child resolution for controllerId='{hubControllerId}', host='{discoveryResult.Host}'.");
+			return Array.Empty<ManagedLightDescriptor> ();
+			}
+
+		try
+			{
+			string rootName = ResolveManagedDeviceName (hubControllerId, ResolveDiscoveryName (discoveryResult), discoveryResult.DeviceId, discoveryResult.Host);
+			string rootModel = discoveryResult.Model ?? "Kasa/Tapo Hub";
+
+			LogInfo ($"ResolveHubChildDescriptorsAsync: attempting one-shot child expansion connect for host='{discoveryResult.Host}', deviceId='{discoveryResult.DeviceId ?? "<null>"}', model='{rootModel}'.");
+
+			using var expansionTimeoutSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken);
+			TimeSpan expansionTimeout = configuration.Timeout > TimeSpan.Zero
+				? configuration.Timeout + TimeSpan.FromSeconds (2)
+				: DefaultDiscoveryTimeout + TimeSpan.FromSeconds (2);
+			expansionTimeoutSource.CancelAfter (expansionTimeout);
+
+			KasaDevice? device = null;
+			bool deviceAdopted = false;
+			try
+				{
+				device = await Discover.GetOrConnectSharedAsync (configuration, updateState: true, cancellationToken: expansionTimeoutSource.Token).ConfigureAwait (false);
+
+				if (device.Children.Count == 0)
+					{
+					LogInfo ($"ResolveHubChildDescriptorsAsync: host='{discoveryResult.Host}' reported 0 hub children after connecting; skipping itemization for this pass.");
+					return Array.Empty<ManagedLightDescriptor> ();
+					}
+
+				var childDescriptors = new List<ManagedLightDescriptor> (device.Children.Count);
+				int childIndex = 0;
+				foreach (ChildDeviceInfo child in device.Children)
+					{
+					childIndex++;
+					string childName = string.IsNullOrWhiteSpace (child.Alias)
+						? $"{rootName} Sensor {childIndex}"
+						: child.Alias!;
+					string childModel = child.Model ?? rootModel;
+					string childSerial = child.Id;
+					string childControllerId = CreateControllerId (discoveryResult, child.Id);
+
+					(ManagedChildKind childKind, HubChildCategory hubChildCategory) = ResolveHubChildKind (child);
+
+					// Each hub child gets its own controllerId (distinct from the hub's root
+					// controllerId), but shares the same physical device/connection configuration.
+					// Materialization (CreateManagedDeviceCacheEntry) looks up _deviceConfigurations
+					// and _discoveryResults by controllerId, so both must be registered here or
+					// materialization fails with "no device configuration is available" and the
+					// child gets marked missing.
+					_deviceConfigurations[childControllerId] = configuration;
+					_discoveryResults[childControllerId] = discoveryResult;
+
+					childDescriptors.Add (new ManagedLightDescriptor (
+						childControllerId,
+						discoveryResult.Host,
+						discoveryResult.DeviceType,
+						childName,
+						childModel,
+						childSerial,
+						ManagedLightKind.OnOff,
+						awaitingConnectedIdentity: false,
+						discoveryResult.DeviceId,
+						child.Id,
+						childKind: childKind,
+						hubChildCategory: hubChildCategory));
+					}
+
+				_resolvedHubChildDescriptors[hubControllerId] = childDescriptors;
+				LogInfo ($"ResolveHubChildDescriptorsAsync: resolved {childDescriptors.Count} hub child(ren) for host='{discoveryResult.Host}'.");
+
+				// The shared connection is intentionally left for the child sensor/button
+				// entities' own startup connects (Discover.GetOrConnectSharedAsync shares one
+				// instance per Host:Port); it is not adopted directly by any single entity here
+				// because there may be multiple child entities for one physical hub.
+				deviceAdopted = true;
+				return childDescriptors;
+				}
+			finally
+				{
+				if (!deviceAdopted)
+					{
+					device?.Dispose ();
+					}
+				}
+			}
+		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+			{
+			LogInfo ($"ResolveHubChildDescriptorsAsync: timed out for controllerId='{hubControllerId}', host='{discoveryResult.Host}'.");
+			return Array.Empty<ManagedLightDescriptor> ();
+			}
+		catch (OperationCanceledException)
+			{
+			LogInfo ($"ResolveHubChildDescriptorsAsync: canceled for host='{discoveryResult.Host}'.");
+			return Array.Empty<ManagedLightDescriptor> ();
+			}
+		catch (Exception ex) when (!(ex is OperationCanceledException))
+			{
+			LogInfo ($"ResolveHubChildDescriptorsAsync: child expansion failed for host='{discoveryResult.Host}': {ex.Message}");
+			return Array.Empty<ManagedLightDescriptor> ();
+			}
+		finally
+			{
+			_hubChildResolutionInFlightControllerIds.TryRemove (hubControllerId, out _);
 			}
 		}
 

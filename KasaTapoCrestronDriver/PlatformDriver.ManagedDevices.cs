@@ -316,7 +316,78 @@ public sealed partial class PlatformDriver
 				{
 				ActivatePublishedChildIfRunning (controller, "cached-publication-status-reconciliation");
 				}
+
+			foreach (var (_, childConfigurationController, entry, descriptor) in controllersNeedingReplay!)
+				{
+				ScheduleStuckCachedChildWatchdog (entry.ControllerId, childConfigurationController, descriptor);
+				}
 			}
+		}
+
+	// Guards against a cached child (entry.IsConfigured=true, replayed above) whose recreated
+	// configuration controller never reaches Running - observed in the field for a hub child
+	// (T310) whose StatusChanged event never fired after PublishCachedChildControllers replayed
+	// its configuration. When that happens, the host apparently still believes the child is
+	// already installed in a room (because our own persisted IsConfigured=true told it so via
+	// IncludePersistentValueData), so it never drives the NotConfigured->Running handshake to
+	// completion - but Crestron Home's own room database has no such association, so Setup/
+	// Configure Pro refuse to let the user re-add it (\"only devices in rooms can be removed\",
+	// yet it never actually shows up in a room). This creates a permanent deadlock that neither
+	// a driver reload nor a processor reboot can break, because the stale IsConfigured=true is
+	// what gets persisted/replayed again every time.
+	//
+	// The watchdog below waits a bounded interval for the real StatusChanged->Running transition
+	// (HandleChildConfigurationControllerStatusChanged/ActivateChildController) to occur. If it
+	// never does, the cached "configured" state is treated as stale: IsConfigured is cleared,
+	// TreatAsLight/ChildKind are recomputed as if the child had never been configured, and the
+	// managed-device entry is republished so the child becomes selectable again in Setup/
+	// Configure Pro instead of being stuck in limbo.
+	private static readonly TimeSpan StuckCachedChildWatchdogDelay = TimeSpan.FromSeconds (30);
+
+	private void ScheduleStuckCachedChildWatchdog (string controllerId, LoggingDriverConfigurationController childConfigurationController, ManagedLightDescriptor descriptor)
+		{
+		_ = Task.Run (async () =>
+			{
+			try
+				{
+				await Task.Delay (StuckCachedChildWatchdogDelay).ConfigureAwait (false);
+
+				if (!_managedDeviceCacheMetadata.TryGetValue (controllerId, out ManagedDeviceCacheEntry? cacheEntry)
+					|| !cacheEntry.IsConfigured)
+					{
+					// Already cleared/removed/reconciled through some other path (e.g. a real
+					// ClearValues/RemoveChildFromConfiguration) since the watchdog was scheduled.
+					return;
+					}
+
+				if (_inUseChildControllerIds.Contains (controllerId))
+					{
+					// A live host-driven ApplyConfiguration/activation raced with the watchdog and
+					// already marked this child in-use; nothing stuck to reconcile.
+					return;
+					}
+
+				DriverControllerStatus currentStatus = childConfigurationController.PeekStatus ();
+				if (currentStatus == DriverControllerStatus.Running)
+					{
+					return;
+					}
+
+				LogInfo ($"ScheduleStuckCachedChildWatchdog: controllerId='{controllerId}' cached configuration controller failed to reach Running within {StuckCachedChildWatchdogDelay.TotalSeconds:0}s of replay (currentStatus={currentStatus}); treating persisted IsConfigured=true as stale. An in-place cache-flag flip is not sufficient here: the host's own DataDrivenConfigurationController instance (registered with IncludePersistentValueData=true) is what actually drives Configure Pro's \"already installed\" determination, not our platform:managedDevices publish. That stale host-side controller/entity must be torn down and a genuinely new one published, exactly like a real ClearValues-driven removal, or Configure Pro keeps treating the child as already configured forever.");
+
+				// Route through the same full teardown used for a real host-initiated removal
+				// (ClearValues) instead of only clearing our own bookkeeping in place. This
+				// disposes/removes the stale entity and DataDrivenConfigurationController (whose
+				// persisted configuration values are what the host is actually keying off of) and
+				// republishes a fresh, unconfigured managed-device entry so the child becomes
+				// genuinely selectable again in Setup/Configure Pro.
+				RemoveChildFromConfiguration (controllerId, "stuck-cached-child-watchdog");
+				}
+			catch (Exception ex)
+				{
+				LogError ($"ScheduleStuckCachedChildWatchdog: controllerId='{controllerId}' failed while reconciling a potentially stuck cached child: {ex}");
+				}
+			});
 		}
 
 	private bool TryCreateCachedDescriptorAndConfiguration (

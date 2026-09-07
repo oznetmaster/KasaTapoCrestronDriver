@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uidefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://prd-use-rad-assets.azurewebsites.net/ExtensionsSchemaDefinition.xsd">
+	<version ver="2.0" />
+	<tile icon="{sensorIcon}" status="{sensorStatus}" navigation="show:MainPage" showinhomepage="#false" showinroompage="#true" />
+	<layouts>
+
+		<!-- Sensor children are read-only telemetry: detail page shows whichever
+			  temperature/humidity/battery values this child actually reports. -->
+		<layout id="MainPage" title="{deviceLabel}" isdefaultlayout="#true">
+			<controls>
+				<textdisplay id="LeakLabelID"
+						title="^LeakLabel"
+						line1label="{leakStatusLabel}"
+						visible="{hasLeak}" />
+				<textdisplay id="MotionLabelID"
+						title="^MotionLabel"
+						line1label="{motionStatusLabel}"
+						visible="{hasMotion}" />
+				<textdisplay id="ContactLabelID"
+						title="^ContactLabel"
+						line1label="{contactStatusLabel}"
+						visible="{hasContact}" />
+				<textdisplay id="TemperatureLabelID"
+						title="^TemperatureLabel"
+						line1label="{temperatureDisplay}"
+						visible="{hasTemperature}" />
+				<textdisplay id="HumidityLabelID"
+						title="^HumidityLabel"
+						line1label="{humidityDisplay}"
+						visible="{hasHumidity}" />
+				<textdisplay id="BatteryLabelID"
+						title="^BatteryLabel"
+						line1label="{batteryStatusLabel}"
+						visible="{hasBattery}" />
+			</controls>
+		</layout>
+
+	</layouts>
+	<alerts/>
+</uidefinition>
