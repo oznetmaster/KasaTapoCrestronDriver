@@ -481,13 +481,27 @@ public sealed partial class PlatformDriver
 
 						foreach (ConfigurableDriverEntity controller in controllersToPublish)
 							{
-							if (_lightEntities.TryGetValue (controller.ControllerId, out IKasaManagedChildEntity? lightEntity))
-								{
-								lightEntity.NotifyChildPublished ();
+								if (_lightEntities.TryGetValue (controller.ControllerId, out IKasaManagedChildEntity? lightEntity))
+									{
+									lightEntity.NotifyChildPublished ();
+									}
+
+								// A freshly materialized child (e.g. re-added after a prior removal) can
+								// reuse the same deterministic controllerId as before. Because
+								// CreateChildConfigurationController sets IncludePersistentValueData=true,
+								// the host's own DataDrivenConfigurationController instance may already
+								// consider that controllerId configured/Running from stale host-side
+								// persisted data, without ever calling back into
+								// ApplyChildConfigurationItems - so HandleChildConfigurationControllerStatusChanged
+								// never fires and ActivateChildController is never reached. Without this
+								// reconciliation call (present in the two sibling code paths that also
+								// create a child configuration controller -
+								// ReconcileChildKindAfterTreatAsLightChange and
+								// PublishCachedChildControllers), the child stays permanently
+								// unconfigured/invisible in the UI after being removed and re-added.
+								ActivatePublishedChildIfRunning (controller, "async-publication-status-reconciliation");
 								}
-				ActivatePublishedChildIfRunning (controller, "async-publication-status-reconciliation");
 							}
-						}
 
 					if (managedDevicesChanged || pendingMaterializations.Count > 0)
 						{

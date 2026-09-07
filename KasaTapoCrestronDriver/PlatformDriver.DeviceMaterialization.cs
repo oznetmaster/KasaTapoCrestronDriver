@@ -1352,12 +1352,11 @@ public sealed partial class PlatformDriver
 			return Array.Empty<ManagedLightDescriptor> ();
 			}
 
+		var expansionConnectStopwatch = System.Diagnostics.Stopwatch.StartNew ();
 		try
 			{
 			string rootName = ResolveManagedDeviceName (hubControllerId, ResolveDiscoveryName (discoveryResult), discoveryResult.DeviceId, discoveryResult.Host);
 			string rootModel = discoveryResult.Model ?? "Kasa/Tapo Hub";
-
-			LogInfo ($"ResolveHubChildDescriptorsAsync: attempting one-shot child expansion connect for host='{discoveryResult.Host}', deviceId='{discoveryResult.DeviceId ?? "<null>"}', model='{rootModel}'.");
 
 			using var expansionTimeoutSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken);
 			TimeSpan expansionTimeout = configuration.Timeout > TimeSpan.Zero
@@ -1365,77 +1364,77 @@ public sealed partial class PlatformDriver
 				: DefaultDiscoveryTimeout + TimeSpan.FromSeconds (2);
 			expansionTimeoutSource.CancelAfter (expansionTimeout);
 
-			KasaDevice? device = null;
-			bool deviceAdopted = false;
-			try
+			LogInfo ($"ResolveHubChildDescriptorsAsync: attempting one-shot child expansion connect for host='{discoveryResult.Host}', deviceId='{discoveryResult.DeviceId ?? "<null>"}', model='{rootModel}', timeout={expansionTimeout.TotalSeconds:0}s.");
+
+			// Routed through the hub's shared ManagedParentDevicePoller (rather than calling
+			// Discover.GetOrConnectSharedAsync directly) so this driver never opens two
+			// independent KasaDevice sessions against the same physical hub. GetOrConnectSharedAsync
+			// only reuses/serializes an existing shared instance on a cache hit; on a cache miss
+			// (e.g. first connect, or right after a previous shared instance was disposed/replaced)
+			// it falls through to a brand-new independent connection, and KasaDevice's internal
+			// operation semaphore only serializes calls within one such instance - it does nothing
+			// to prevent a second, separate instance/session from being created concurrently. Some
+			// hubs only tolerate one active session at a time, so two independent connect attempts
+			// against the same host was observed to wedge the hub entirely.
+			ManagedParentDevicePoller hubPoller = GetOrCreateHubPoller (configuration);
+			KasaDevice device = await hubPoller.ConnectSharedAsync (expansionTimeoutSource.Token).ConfigureAwait (false);
+			LogInfo ($"ResolveHubChildDescriptorsAsync: host='{discoveryResult.Host}' child expansion connect completed after {expansionConnectStopwatch.ElapsedMilliseconds}ms; reported {device.Children.Count} child(ren).");
+
+			if (device.Children.Count == 0)
 				{
-				device = await Discover.GetOrConnectSharedAsync (configuration, updateState: true, cancellationToken: expansionTimeoutSource.Token).ConfigureAwait (false);
-
-				if (device.Children.Count == 0)
-					{
-					LogInfo ($"ResolveHubChildDescriptorsAsync: host='{discoveryResult.Host}' reported 0 hub children after connecting; skipping itemization for this pass.");
-					return Array.Empty<ManagedLightDescriptor> ();
-					}
-
-				var childDescriptors = new List<ManagedLightDescriptor> (device.Children.Count);
-				int childIndex = 0;
-				foreach (ChildDeviceInfo child in device.Children)
-					{
-					childIndex++;
-					string childName = string.IsNullOrWhiteSpace (child.Alias)
-						? $"{rootName} Sensor {childIndex}"
-						: child.Alias!;
-					string childModel = child.Model ?? rootModel;
-					string childSerial = child.Id;
-					string childControllerId = CreateControllerId (discoveryResult, child.Id);
-
-					(ManagedChildKind childKind, HubChildCategory hubChildCategory) = ResolveHubChildKind (child);
-
-					// Each hub child gets its own controllerId (distinct from the hub's root
-					// controllerId), but shares the same physical device/connection configuration.
-					// Materialization (CreateManagedDeviceCacheEntry) looks up _deviceConfigurations
-					// and _discoveryResults by controllerId, so both must be registered here or
-					// materialization fails with "no device configuration is available" and the
-					// child gets marked missing.
-					_deviceConfigurations[childControllerId] = configuration;
-					_discoveryResults[childControllerId] = discoveryResult;
-
-					childDescriptors.Add (new ManagedLightDescriptor (
-						childControllerId,
-						discoveryResult.Host,
-						discoveryResult.DeviceType,
-						childName,
-						childModel,
-						childSerial,
-						ManagedLightKind.OnOff,
-						awaitingConnectedIdentity: false,
-						discoveryResult.DeviceId,
-						child.Id,
-						childKind: childKind,
-						hubChildCategory: hubChildCategory));
-					}
-
-				_resolvedHubChildDescriptors[hubControllerId] = childDescriptors;
-				LogInfo ($"ResolveHubChildDescriptorsAsync: resolved {childDescriptors.Count} hub child(ren) for host='{discoveryResult.Host}'.");
-
-				// The shared connection is intentionally left for the child sensor/button
-				// entities' own startup connects (Discover.GetOrConnectSharedAsync shares one
-				// instance per Host:Port); it is not adopted directly by any single entity here
-				// because there may be multiple child entities for one physical hub.
-				deviceAdopted = true;
-				return childDescriptors;
+				LogInfo ($"ResolveHubChildDescriptorsAsync: host='{discoveryResult.Host}' reported 0 hub children after connecting; skipping itemization for this pass.");
+				return Array.Empty<ManagedLightDescriptor> ();
 				}
-			finally
+
+			var childDescriptors = new List<ManagedLightDescriptor> (device.Children.Count);
+			int childIndex = 0;
+			foreach (ChildDeviceInfo child in device.Children)
 				{
-				if (!deviceAdopted)
-					{
-					device?.Dispose ();
-					}
+				childIndex++;
+				string childName = string.IsNullOrWhiteSpace (child.Alias)
+					? $"{rootName} Sensor {childIndex}"
+					: child.Alias!;
+				string childModel = child.Model ?? rootModel;
+				string childSerial = child.Id;
+				string childControllerId = CreateControllerId (discoveryResult, child.Id);
+
+				(ManagedChildKind childKind, HubChildCategory hubChildCategory) = ResolveHubChildKind (child);
+
+				// Each hub child gets its own controllerId (distinct from the hub's root
+				// controllerId), but shares the same physical device/connection configuration.
+				// Materialization (CreateManagedDeviceCacheEntry) looks up _deviceConfigurations
+				// and _discoveryResults by controllerId, so both must be registered here or
+				// materialization fails with "no device configuration is available" and the
+				// child gets marked missing.
+				_deviceConfigurations[childControllerId] = configuration;
+				_discoveryResults[childControllerId] = discoveryResult;
+
+				childDescriptors.Add (new ManagedLightDescriptor (
+					childControllerId,
+					discoveryResult.Host,
+					discoveryResult.DeviceType,
+					childName,
+					childModel,
+					childSerial,
+					ManagedLightKind.OnOff,
+					awaitingConnectedIdentity: false,
+					discoveryResult.DeviceId,
+					child.Id,
+					childKind: childKind,
+					hubChildCategory: hubChildCategory));
 				}
+
+			_resolvedHubChildDescriptors[hubControllerId] = childDescriptors;
+			LogInfo ($"ResolveHubChildDescriptorsAsync: resolved {childDescriptors.Count} hub child(ren) for host='{discoveryResult.Host}'.");
+
+			// The shared connection is owned by the hub's ManagedParentDevicePoller (see
+			// GetOrCreateHubPoller) and is never disposed here; it is not adopted directly by any
+			// single entity here because there may be multiple child entities for one physical hub.
+			return childDescriptors;
 			}
 		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
 			{
-			LogInfo ($"ResolveHubChildDescriptorsAsync: timed out for controllerId='{hubControllerId}', host='{discoveryResult.Host}'.");
+			LogInfo ($"ResolveHubChildDescriptorsAsync: timed out for controllerId='{hubControllerId}', host='{discoveryResult.Host}' after {expansionConnectStopwatch.ElapsedMilliseconds}ms.");
 			return Array.Empty<ManagedLightDescriptor> ();
 			}
 		catch (OperationCanceledException)

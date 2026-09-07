@@ -26,6 +26,15 @@ internal sealed class ManagedParentDevicePoller
 	{
 	private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds (20);
 
+	// A hub that is unreachable/unresponsive fails every poll at the full ConnectTimeout cost, so
+	// retrying at the normal SensorPollInterval cadence (as low as a few seconds) turns into a
+	// near-continuous stream of full reconnect/handshake attempts against a hub that may only
+	// tolerate one active session - this was observed to make the hub (and even unrelated clients
+	// like the test console) unable to reach it at all. Back off exponentially on consecutive
+	// failures, capped at MaxBackoff, and reset back to the configured SensorPollInterval as soon
+	// as a poll succeeds again.
+	private static readonly TimeSpan MaxBackoff = TimeSpan.FromMinutes (2);
+
 	private readonly object _gate = new ();
 	private readonly Dictionary<string, IKasaHubChildEntity> _children = new (StringComparer.OrdinalIgnoreCase);
 	private readonly IPlatformSharedConfiguration _sharedConfiguration;
@@ -39,6 +48,7 @@ internal sealed class ManagedParentDevicePoller
 	private int _pollingGeneration;
 	private Task? _pollingTask;
 	private bool _disposed;
+	private int _consecutiveFailureCount;
 
 	public ManagedParentDevicePoller (
 		string hostKey,
@@ -136,7 +146,8 @@ internal sealed class ManagedParentDevicePoller
 			{
 			if (!immediateFirstPoll)
 				{
-				await Task.Delay (_sharedConfiguration.SensorPollInterval, _lifetimeCancellationSource.Token).ConfigureAwait (false);
+				TimeSpan delay = ComputeNextDelay ();
+				await Task.Delay (delay, _lifetimeCancellationSource.Token).ConfigureAwait (false);
 				}
 
 			if (_disposed || generation != Volatile.Read (ref _pollingGeneration))
@@ -173,6 +184,24 @@ internal sealed class ManagedParentDevicePoller
 			}
 		}
 
+	private TimeSpan ComputeNextDelay ()
+		{
+		TimeSpan baseInterval = _sharedConfiguration.SensorPollInterval;
+		int failureCount = Volatile.Read (ref _consecutiveFailureCount);
+		if (failureCount <= 0)
+			{
+			return baseInterval;
+			}
+
+		// Exponential backoff: 2x, 4x, 8x, ... the configured interval per additional consecutive
+		// failure, capped at MaxBackoff so a persistently unreachable hub is retried only rarely
+		// rather than being reconnected to on every tick.
+		double multiplier = Math.Pow (2, Math.Min (failureCount, 10));
+		double backoffMs = baseInterval.TotalMilliseconds * multiplier;
+		TimeSpan backoff = TimeSpan.FromMilliseconds (Math.Min (backoffMs, MaxBackoff.TotalMilliseconds));
+		return backoff > baseInterval ? backoff : baseInterval;
+		}
+
 	private bool AnyChildHasEventSubscribers ()
 		{
 		lock (_gate)
@@ -202,10 +231,20 @@ internal sealed class ManagedParentDevicePoller
 			return;
 			}
 
+		var pollStopwatch = System.Diagnostics.Stopwatch.StartNew ();
 		try
 			{
 			KasaDevice device = await EnsureConnectedAsync (cancellationToken).ConfigureAwait (false);
+			LogInfo ($"PollOnceAsync: '{_hostKey}' connected after {pollStopwatch.ElapsedMilliseconds}ms; calling UpdateAsync for {childrenSnapshot.Count} child(ren).");
+
+			var updateStopwatch = System.Diagnostics.Stopwatch.StartNew ();
 			await device.UpdateAsync (cancellationToken).ConfigureAwait (false);
+			LogInfo ($"PollOnceAsync: '{_hostKey}' UpdateAsync completed after {updateStopwatch.ElapsedMilliseconds}ms.");
+
+			if (Interlocked.Exchange (ref _consecutiveFailureCount, 0) > 0)
+				{
+				LogInfo ($"PollOnceAsync: '{_hostKey}' poll succeeded; resetting consecutive-failure backoff.");
+				}
 
 			foreach (IKasaHubChildEntity child in childrenSnapshot)
 				{
@@ -222,11 +261,14 @@ internal sealed class ManagedParentDevicePoller
 			}
 		catch (OperationCanceledException)
 			{
+			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Hub poller '{_hostKey}' poll canceled after {pollStopwatch.ElapsedMilliseconds}ms (cancellationRequested={cancellationToken.IsCancellationRequested}).");
 			throw;
 			}
 		catch (Exception ex)
 			{
-			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Hub poller '{_hostKey}' poll failed: {ex}");
+			int failureCount = Interlocked.Increment (ref _consecutiveFailureCount);
+			TimeSpan nextDelay = ComputeNextDelay ();
+			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Hub poller '{_hostKey}' poll failed after {pollStopwatch.ElapsedMilliseconds}ms ({ex.GetType().Name}), consecutiveFailureCount={failureCount}; next attempt backed off to {nextDelay.TotalSeconds:0}s: {ex}");
 
 			foreach (IKasaHubChildEntity child in childrenSnapshot)
 				{
@@ -242,6 +284,22 @@ internal sealed class ManagedParentDevicePoller
 			}
 		}
 
+	/// <summary>
+	/// Connects to (or reuses) this hub's shared device, for callers outside the normal polling
+	/// loop that need a one-shot connection to the same physical hub - e.g. hub child expansion
+	/// during materialization (see ResolveHubChildDescriptorsAsync). Routing through the poller
+	/// instead of calling Discover.GetOrConnectSharedAsync directly ensures there is only ever one
+	/// call site that can initiate a *new* connection for this hub: GetOrConnectSharedAsync only
+	/// reuses/serializes an existing shared instance on a cache hit, but on a cache miss (e.g. the
+	/// very first connect, or right after the previous shared instance was disposed/replaced) it
+	/// falls through to an independent connect, and KasaDevice's internal operation semaphore only
+	/// serializes calls within one such instance - it does not stop a second, separate instance
+	/// from being created concurrently by another caller. Some hubs only tolerate one active
+	/// session at a time, so two independent sessions racing each other can wedge the hub.
+	/// </summary>
+	public Task<KasaDevice> ConnectSharedAsync (CancellationToken cancellationToken) =>
+		EnsureConnectedAsync (cancellationToken);
+
 	private async Task<KasaDevice> EnsureConnectedAsync (CancellationToken cancellationToken)
 		{
 		KasaDevice? existingDevice = Volatile.Read (ref _connectedDevice);
@@ -256,9 +314,12 @@ internal sealed class ManagedParentDevicePoller
 			configuration = _configuration;
 			}
 
+		LogInfo ($"EnsureConnectedAsync: '{_hostKey}' no usable cached shared device (existingDevice={(existingDevice is null ? "null" : $"disposed={existingDevice.IsDisposed}")}); connecting via Discover.GetOrConnectSharedAsync with timeout={ConnectTimeout.TotalSeconds:0}s.");
+
 		using CancellationTokenSource connectCancellationSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken, _lifetimeCancellationSource.Token);
 		connectCancellationSource.CancelAfter (ConnectTimeout);
 
+		var connectStopwatch = System.Diagnostics.Stopwatch.StartNew ();
 		KasaDevice connectedDevice;
 		try
 			{
@@ -266,9 +327,11 @@ internal sealed class ManagedParentDevicePoller
 			}
 		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && connectCancellationSource.IsCancellationRequested)
 			{
+			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"EnsureConnectedAsync: '{_hostKey}' connect timed out after {connectStopwatch.ElapsedMilliseconds}ms (limit={ConnectTimeout.TotalSeconds:0}s).");
 			throw new TimeoutException ($"Hub poller '{_hostKey}' connect timed out after {ConnectTimeout.TotalSeconds:0} seconds.");
 			}
 
+		LogInfo ($"EnsureConnectedAsync: '{_hostKey}' connected after {connectStopwatch.ElapsedMilliseconds}ms.");
 		_connectedDevice = connectedDevice;
 		return connectedDevice;
 		}
