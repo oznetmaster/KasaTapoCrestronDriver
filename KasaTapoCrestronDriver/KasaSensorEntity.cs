@@ -23,7 +23,7 @@ namespace KasaTapoCrestronDriver;
 /// or share implementation with <see cref="KasaLightEntity"/>/<see cref="KasaOutletEntity"/>: each
 /// child kind has its own, simpler UI definition and lifecycle needs.
 /// </summary>
-internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity, IKasaManagedChildEntity
+internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity, IKasaHubChildEntity
 	{
 	private static readonly TimeSpan StartupConnectTimeout = TimeSpan.FromSeconds (20);
 	private static readonly TimeSpan DeviceConnectTimeout = StartupConnectTimeout;
@@ -34,6 +34,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	private readonly string _driverLogId;
 	private readonly Action<ManagedLightDescriptor>? _descriptorUpdated;
 	private readonly IPlatformSharedConfiguration _sharedConfiguration;
+	private readonly ManagedParentDevicePoller? _hubPoller;
 	private readonly CancellationTokenSource _lifetimeCancellationSource = new ();
 	private readonly IComponentLogger? _uiDefinitionLogger;
 	private readonly string? _uiDefinitionFilePath;
@@ -45,10 +46,19 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	private bool _isConfigured;
 	private bool _childPublished;
 	private int _stopState;
-	private int _pollingGeneration;
-	private Task? _pollingTask;
 	private bool _disposed;
 	private bool _capabilitiesResolved;
+	private bool _registeredWithHubPoller;
+
+	/// <summary>
+	/// This hub child's own <c>ChildId</c>, used by the owning <see cref="ManagedParentDevicePoller"/>
+	/// to look up this entity's own slice of the hub's child list on each poll tick. See
+	/// <see cref="IKasaHubChildEntity"/>.
+	/// </summary>
+	public string ChildId
+		{
+		get { return _descriptor.ChildId ?? string.Empty; }
+		}
 
 	public string DeviceName { get; private set; } = string.Empty;
 
@@ -331,11 +341,13 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		DriverImplementationResources resources,
 		DriverControllerLogger logger,
 		string driverLogId,
-		string? driverDataDirectoryPath = null)
+		string? driverDataDirectoryPath = null,
+		ManagedParentDevicePoller? hubPoller = null)
 		: base (controllerId)
 		{
 		_descriptorUpdated = descriptorUpdated;
 		_sharedConfiguration = sharedConfiguration;
+		_hubPoller = hubPoller;
 		_logger = logger;
 		_driverLogId = driverLogId;
 
@@ -469,13 +481,11 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 
 		if (!configured)
 			{
-			Interlocked.Increment (ref _pollingGeneration);
-			_pollingTask = null;
+			UnregisterFromHubPoller ();
 			return;
 			}
 
-		RestartPolling ();
-		StartBackgroundOperation (InitializeStartupAsync, $"child-configured:{context}");
+		RegisterWithHubPollerIfConfigured ();
 		}
 
 	public async Task SetConfiguredAsync (bool configured, string context, CancellationToken cancellationToken)
@@ -495,28 +505,19 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 
 		if (!configured)
 			{
-			Interlocked.Increment (ref _pollingGeneration);
-			_pollingTask = null;
+			UnregisterFromHubPoller ();
 			return;
 			}
 
-		RestartPolling ();
-		await InitializeConnectedStateAsync (cancellationToken).ConfigureAwait (false);
+		RegisterWithHubPollerIfConfigured ();
+		await Task.CompletedTask.ConfigureAwait (false);
 		}
 
 	public void ApplyRuntimeConfiguration (PlatformSharedConfigurationSnapshot previousConfiguration, PlatformSharedConfigurationSnapshot currentConfiguration)
 		{
-		if (_disposed)
-			{
-			return;
-			}
-
-		bool pollingChanged = previousConfiguration.SensorPollInterval != currentConfiguration.SensorPollInterval;
-
-		if (pollingChanged)
-			{
-			RestartPolling ();
-			}
+		// Polling cadence is now owned entirely by the shared ManagedParentDevicePoller for this
+		// hub (see PlatformDriver's per-host poller registry); ManagedParentDevicePoller.ApplyRuntimeConfiguration
+		// is what reacts to a SensorPollInterval change, not this entity.
 		}
 
 	public void Stop ()
@@ -526,9 +527,8 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 			return;
 			}
 
+		UnregisterFromHubPoller ();
 		_lifetimeCancellationSource.Cancel ();
-		Interlocked.Increment (ref _pollingGeneration);
-		_pollingTask = null;
 		}
 
 	public override void Dispose ()
@@ -541,6 +541,72 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		Stop ();
 		_lifetimeCancellationSource.Dispose ();
 		_disposed = true;
+		}
+
+	private void RegisterWithHubPollerIfConfigured ()
+		{
+		if (_hubPoller is null || _registeredWithHubPoller)
+			{
+			return;
+			}
+
+		_registeredWithHubPoller = true;
+		_hubPoller.RegisterChild (this);
+		}
+
+	private void UnregisterFromHubPoller ()
+		{
+		if (_hubPoller is null || !_registeredWithHubPoller)
+			{
+			return;
+			}
+
+		_registeredWithHubPoller = false;
+		_hubPoller.UnregisterChild (ChildId);
+		}
+
+	/// <summary>
+	/// Invoked by the owning <see cref="ManagedParentDevicePoller"/> once per successful poll tick
+	/// with this entity's current child slice (or <c>null</c> if the child was not found on the
+	/// hub's most recent child list). See <see cref="IKasaHubChildEntity"/>.
+	/// </summary>
+	public void ApplyPushedState (ChildDevice? child, KasaDevice parentDevice)
+		{
+		if (_disposed)
+			{
+			return;
+			}
+
+		UpdateDescriptorFromConnectedDevice (parentDevice);
+		ApplyState (child);
+		OnlineIndicatorIsOnline = true;
+		ReadyIndicatorIsReady = true;
+
+		if (_childPublished)
+			{
+			PublishStateSnapshot ();
+			}
+		}
+
+	/// <summary>
+	/// Invoked by the owning <see cref="ManagedParentDevicePoller"/> when a poll tick's connect or
+	/// <c>UpdateAsync</c> call fails, so this entity can reflect the hub being unreachable without
+	/// receiving stale pushed state. See <see cref="IKasaHubChildEntity"/>.
+	/// </summary>
+	public void ApplyConnectionState (bool online)
+		{
+		if (_disposed)
+			{
+			return;
+			}
+
+		OnlineIndicatorIsOnline = online;
+		ReadyIndicatorIsReady = online;
+
+		if (_childPublished)
+			{
+			PublishStateSnapshot ();
+			}
 		}
 
 	public void NotifyChildPublished ()
@@ -662,34 +728,15 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		PublishProperty (propertyId, new DriverEntityValue (value), "SetAndNotify<string>");
 		}
 
-	public async Task RefreshAsync (CancellationToken cancellationToken)
+	// Hub children never poll on their own - state arrives via ApplyPushedState from the shared
+	// ManagedParentDevicePoller - so this legacy IKasaManagedChildEntity member is a no-op here.
+	public Task RefreshAsync (CancellationToken cancellationToken)
 		{
-		try
-			{
-			KasaDevice device = await EnsureConnectedAsync (cancellationToken).ConfigureAwait (false);
-			await device.UpdateAsync (cancellationToken).ConfigureAwait (false);
-			ApplyState (device);
-			OnlineIndicatorIsOnline = true;
-			ReadyIndicatorIsReady = true;
-			}
-		catch (OperationCanceledException)
-			{
-			throw;
-			}
-		catch (Exception ex)
-			{
-			OnlineIndicatorIsOnline = false;
-			ReadyIndicatorIsReady = false;
-			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Sensor entity '{ControllerId}' refresh failed: {ex}");
-			}
+		return Task.CompletedTask;
 		}
 
-	private void ApplyState (KasaDevice device)
+	private void ApplyState (ChildDevice? child)
 		{
-		ChildDevice? child = !string.IsNullOrWhiteSpace (_descriptor.ChildId)
-			? device.GetChildDevice (_descriptor.ChildId!)
-			: null;
-
 		bool anyState = false;
 
 		if (child is not null)
@@ -1070,69 +1117,6 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		return string.Join ("\n", lines);
 		}
 
-	private async Task InitializeStartupAsync ()
-		{
-		try
-			{
-			await InitializeConnectedStateAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
-			}
-		catch (OperationCanceledException)
-			{
-			}
-		catch (Exception ex)
-			{
-			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Sensor entity '{ControllerId}' startup initialization failed: {ex}");
-			}
-		}
-
-	private async Task InitializeConnectedStateAsync (CancellationToken cancellationToken)
-		{
-		KasaDevice device = await EnsureConnectedAsync (cancellationToken).ConfigureAwait (false);
-		ApplyState (device);
-		OnlineIndicatorIsOnline = true;
-		ReadyIndicatorIsReady = true;
-		if (_childPublished)
-			{
-			PublishStateSnapshot ();
-			}
-		}
-
-	private async Task<KasaDevice> EnsureConnectedAsync (CancellationToken cancellationToken)
-		{
-		KasaDevice? existingDevice = Volatile.Read (ref _connectedDevice);
-		if (existingDevice is not null)
-			{
-			return existingDevice;
-			}
-
-		DeviceConfiguration? configuration = _configuration;
-		if (configuration is null)
-			{
-			throw new InvalidOperationException ($"Sensor entity '{ControllerId}' cannot connect because no device configuration was supplied by the platform.");
-			}
-
-		using CancellationTokenSource connectCancellationSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken, _lifetimeCancellationSource.Token);
-		connectCancellationSource.CancelAfter (DeviceConnectTimeout);
-
-		DeviceConfiguration startupConfiguration = configuration.Timeout < StartupConnectTimeout
-			? new DeviceConfiguration (configuration.Host, configuration.Port, configuration.Credentials, configuration.ConnectionOptions, StartupConnectTimeout)
-			: configuration;
-
-		KasaDevice connectedDevice;
-		try
-			{
-			connectedDevice = await Discover.GetOrConnectSharedAsync (startupConfiguration, updateState: true, cancellationToken: connectCancellationSource.Token).ConfigureAwait (false);
-			}
-		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && connectCancellationSource.IsCancellationRequested)
-			{
-			throw new TimeoutException ($"Sensor entity '{ControllerId}' connect timed out after {DeviceConnectTimeout.TotalSeconds:0} seconds.");
-			}
-
-		_connectedDevice = connectedDevice;
-		UpdateDescriptorFromConnectedDevice (connectedDevice);
-		return connectedDevice;
-		}
-
 	private void UpdateDescriptorFromConnectedDevice (KasaDevice device)
 		{
 		string? childAlias = !string.IsNullOrWhiteSpace (_descriptor.ChildId)
@@ -1150,59 +1134,6 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		ModelName = _descriptor.ModelName;
 		SerialNumber = _descriptor.SerialNumber;
 		DeviceLabel = _descriptor.Name;
-		}
-
-	private void StartBackgroundOperation (Func<Task> operation, string operationName)
-		{
-		Task task = Task.Run (() => operation ());
-		task.ContinueWith (
-			continuationTask =>
-				{
-				if (continuationTask.IsFaulted)
-					{
-					Exception exception = continuationTask.Exception?.GetBaseException () ?? continuationTask.Exception!;
-					_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Sensor entity '{ControllerId}' background operation '{operationName}' failed: {exception}");
-					}
-				},
-			CancellationToken.None,
-			TaskContinuationOptions.None,
-			TaskScheduler.Default);
-		}
-
-	private void RestartPolling ()
-		{
-		int generation = Interlocked.Increment (ref _pollingGeneration);
-		_pollingTask = RunPollingCycleAsync (generation);
-		}
-
-	private async Task RunPollingCycleAsync (int generation)
-		{
-		try
-			{
-			await Task.Delay (_sharedConfiguration.SensorPollInterval, _lifetimeCancellationSource.Token).ConfigureAwait (false);
-
-			if (_disposed || Volatile.Read (ref _stopState) != 0 || generation != Volatile.Read (ref _pollingGeneration))
-				{
-				return;
-				}
-
-			await RefreshAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
-			PublishStateSnapshot ();
-
-			if (_disposed || Volatile.Read (ref _stopState) != 0 || generation != Volatile.Read (ref _pollingGeneration))
-				{
-				return;
-				}
-
-			_pollingTask = RunPollingCycleAsync (generation);
-			}
-		catch (OperationCanceledException)
-			{
-			}
-		catch (Exception ex)
-			{
-			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Sensor entity '{ControllerId}' polling loop failed: {ex}");
-			}
 		}
 
 	[Conditional ("DEBUG")]

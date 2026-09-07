@@ -622,6 +622,8 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 	private readonly ConcurrentDictionary<string, byte> _stripChildResolutionInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, List<ManagedLightDescriptor>> _resolvedHubChildDescriptors = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, byte> _hubChildResolutionInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, ManagedParentDevicePoller> _hubPollers = new (StringComparer.OrdinalIgnoreCase);
+	private readonly object _hubPollersGate = new ();
 	private readonly HashSet<string> _materializationInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _previousDiscoveredControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private ConcurrentDictionary<string, PlatformManagedDevice> _managedDevices = new (StringComparer.OrdinalIgnoreCase);
@@ -940,6 +942,14 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 				foreach (IKasaManagedChildEntity lightEntity in _lightEntities.Values)
 					{
 					lightEntity.ApplyRuntimeConfiguration (previousConfiguration, currentConfiguration);
+					}
+
+				lock (_hubPollersGate)
+					{
+					foreach (ManagedParentDevicePoller hubPoller in _hubPollers.Values)
+						{
+						hubPoller.ApplyRuntimeConfiguration (previousConfiguration, currentConfiguration);
+						}
 					}
 
 				if (discoveryInputsChanged)

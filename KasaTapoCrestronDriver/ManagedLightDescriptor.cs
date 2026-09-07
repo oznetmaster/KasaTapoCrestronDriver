@@ -222,3 +222,39 @@ internal interface IKasaManagedChildEntity : IDisposable
 internal interface IKasaManagedLightEntity : IKasaManagedChildEntity
 	{
 	}
+
+/// <summary>
+/// Contract for hub child entities (<see cref="KasaSensorEntity"/>, <see cref="KasaButtonEntity"/>)
+/// that never poll on their own. Instead, a single <see cref="ManagedParentDevicePoller"/> per
+/// physical hub owns the connection and the polling loop, and pushes each registered child its
+/// own current state once per poll tick via <see cref="ApplyPushedState"/> - or reports a failed
+/// poll via <see cref="ApplyConnectionState"/> - rather than every child independently calling
+/// <c>device.UpdateAsync</c> and redundantly re-fetching the whole hub's child list.
+/// </summary>
+internal interface IKasaHubChildEntity : IKasaManagedChildEntity
+	{
+	/// <summary>
+	/// The hub child's own <c>ChildId</c> (see <see cref="ManagedLightDescriptor.ChildId"/>),
+	/// used by the owning <see cref="ManagedParentDevicePoller"/> to look up this entity's own
+	/// slice of the hub's child list on each poll tick.
+	/// </summary>
+	string ChildId
+		{
+		get;
+		}
+
+	/// <summary>
+	/// Called by the owning <see cref="ManagedParentDevicePoller"/> once per successful poll tick
+	/// (and once immediately upon registration) with this entity's current <see cref="ChildDevice"/>
+	/// (or <c>null</c> if the child was not found in the hub's most recent child list) and the
+	/// shared, already-updated <see cref="KasaDevice"/> the child came from.
+	/// </summary>
+	void ApplyPushedState (ChildDevice? child, KasaDevice parentDevice);
+
+	/// <summary>
+	/// Called by the owning <see cref="ManagedParentDevicePoller"/> when a poll tick's connect or
+	/// <c>UpdateAsync</c> call fails, so the entity can reflect the hub being unreachable (e.g.
+	/// clear its online/ready indicators) without receiving stale pushed state.
+	/// </summary>
+	void ApplyConnectionState (bool online);
+	}

@@ -86,6 +86,30 @@ public sealed partial class PlatformDriver
 			: ManagedChildKind.Outlet;
 		}
 
+	/// <summary>
+	/// Returns the shared <see cref="ManagedParentDevicePoller"/> for the physical hub at
+	/// <paramref name="configuration"/>'s host/port, creating it on first use. All hub children
+	/// (Sensor/Button) materialized for the same physical hub share one poller instance, keyed by
+	/// host+port since that is how the hub is physically identified - <see cref="ManagedLightDescriptor"/>
+	/// itself carries no separate "parent hub" controllerId.
+	/// </summary>
+	private ManagedParentDevicePoller GetOrCreateHubPoller (DeviceConfiguration configuration)
+		{
+		string hostKey = $"{configuration.Host}:{configuration.Port}";
+		lock (_hubPollersGate)
+			{
+			if (_hubPollers.TryGetValue (hostKey, out ManagedParentDevicePoller? existingPoller))
+				{
+				existingPoller.UpdateConfiguration (configuration);
+				return existingPoller;
+				}
+
+			var poller = new ManagedParentDevicePoller (hostKey, configuration, _sharedConfiguration, _logger, _driverLogId);
+			_hubPollers[hostKey] = poller;
+			return poller;
+			}
+		}
+
 	private IKasaManagedChildEntity CreateManagedLightEntity (ManagedLightDescriptor descriptor, DeviceConfiguration configuration)
 		{
 		if (descriptor.ChildKind == ManagedChildKind.Outlet)
@@ -113,7 +137,8 @@ public sealed partial class PlatformDriver
 				_resources,
 				_logger,
 				_driverLogId,
-				_args.DriverDataDirectoryPath);
+				_args.DriverDataDirectoryPath,
+				GetOrCreateHubPoller (configuration));
 			}
 
 		if (descriptor.ChildKind == ManagedChildKind.Button)
