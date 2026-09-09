@@ -7,6 +7,15 @@ if (-not (Test-Path $ManifestPath)) {
 	exit 0
 }
 
+# Release version bumps (which advance the release digit and reset build) are reserved for CI,
+# so local Release builds used for validation/deployment don't churn the manifest version.
+# Debug builds always bump the build digit, since those are used for iterative local deployment.
+$isCiBuild = $env:CI -or $env:TF_BUILD -or $env:GITHUB_ACTIONS
+if ($Configuration -eq 'Release' -and -not $isCiBuild) {
+	Write-Host 'BumpDriverVersion: skipping Release version bump outside CI.'
+	exit 0
+}
+
 $content = Get-Content $ManifestPath -Raw
 $match = [regex]::Match($content, '(?<="DriverVersion":\s*")(?<major>\d+)\.(?<minor>\d+)\.(?<release>\d+)\.(?<build>\d+)(?=")')
 if (-not $match.Success) {

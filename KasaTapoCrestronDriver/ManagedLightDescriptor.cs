@@ -246,19 +246,26 @@ internal interface IKasaHubChildEntity : IKasaManagedChildEntity
 	/// <summary>
 	/// Whether at least one of this entity's <c>[EntityEvent]</c>-attributed events (e.g.
 	/// <c>MotionDetectedEvent</c>, <c>BatteryLowEvent</c>, <c>ButtonTriggered</c>) currently has a
-	/// subscriber. All continuous property updates now happen only as a side effect of the delta
-	/// checks that raise these events (see <see cref="ManagedParentDevicePoller"/>'s poll loop), so
-	/// once nothing is subscribed to any of them there is nothing for a poll to usefully drive -
-	/// the owning <see cref="ManagedParentDevicePoller"/> uses this to skip actually polling the
-	/// hub on a given tick (while still checking again next tick) rather than needlessly hitting
-	/// the device over the network. This does not affect the one-time initial read performed when
-	/// the child first registers/gets configured, which always happens regardless of subscribers so
-	/// properties have a correct starting value.
+	/// subscriber. The owning <see cref="ManagedParentDevicePoller"/> polls the hub only while at
+	/// least one of its children reports <c>true</c> here - a hub whose children have nothing
+	/// subscribed has nothing for a poll to drive, so the poller stops entirely rather than
+	/// needlessly hitting the device over the network.
 	/// </summary>
 	bool HasEventSubscribers
 		{
 		get;
 		}
+
+	/// <summary>
+	/// Raised by this entity whenever a subscriber is added to or removed from any of its
+	/// <c>[EntityEvent]</c>-attributed events, i.e. whenever <see cref="HasEventSubscribers"/> may
+	/// have changed. This is what makes the hub polling lifecycle genuinely event driven: the
+	/// owning <see cref="ManagedParentDevicePoller"/> subscribes to this while the child is
+	/// registered and uses it to start polling the moment the first subscriber appears on any of
+	/// its children, and to stop polling as soon as the last one goes away - instead of only
+	/// noticing subscription changes on the next timer tick.
+	/// </summary>
+	event Action? EventSubscribersChanged;
 
 	/// <summary>
 	/// Called by the owning <see cref="ManagedParentDevicePoller"/> once per successful poll tick

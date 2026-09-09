@@ -152,7 +152,8 @@ public sealed partial class PlatformDriver
 				_resources,
 				_logger,
 				_driverLogId,
-				_args.DriverDataDirectoryPath);
+				_args.DriverDataDirectoryPath,
+				GetOrCreateHubPoller (configuration));
 			}
 
 		return new KasaLightEntity (
@@ -330,7 +331,7 @@ public sealed partial class PlatformDriver
 			existingEntity.Dispose ();
 			}
 
-		bool wasConfigured = _configuredChildControllerIds.Contains (controllerId);
+		bool wasConfigured = _configuredChildControllerIds.ContainsKey (controllerId);
 		ClearChildRuntimeState (controllerId, context);
 
 		descriptor.ChildKind = resolvedKind;
@@ -341,6 +342,9 @@ public sealed partial class PlatformDriver
 				{
 				ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
 				ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
+				// Switch is used only as a distinct, round-trippable marker for Button kind - it
+				// must stay different from Sensor so cached reads resolve ManagedChildKind.Button
+				// correctly instead of collapsing S200B into KasaSensorEntity.
 				ManagedChildKind.Button => DeviceUxCategory.Switch,
 				ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
 				ManagedChildKind.Light => DeviceUxCategory.Light,
@@ -383,7 +387,7 @@ public sealed partial class PlatformDriver
 
 		if (wasConfigured)
 			{
-			_configuredChildControllerIds.Add (controllerId);
+			_ = _configuredChildControllerIds.TryAdd (controllerId, 0);
 
 			// The freshly-constructed configuration controller has no CurrentValue for
 			// ActivationMarker (or TreatAsLight) yet, so it starts life as NotConfigured -
@@ -723,9 +727,9 @@ public sealed partial class PlatformDriver
 
 	private void ActivateChildControllerFromConfiguration (string controllerId, string context)
 		{
-		bool addedConfigured = _configuredChildControllerIds.Add (controllerId);
-		bool addedInUse = _inUseChildControllerIds.Add (controllerId);
-		_pendingRemovalMissCounts.Remove (controllerId);
+		bool addedConfigured = _configuredChildControllerIds.TryAdd (controllerId, 0);
+		bool addedInUse = _inUseChildControllerIds.TryAdd (controllerId, 0);
+		_ = _pendingRemovalMissCounts.TryRemove (controllerId, out _);
 		MarkChildConfiguredInCache (controllerId);
 		PublishManagedDeviceEntryUpdate (controllerId, context);
 
@@ -743,9 +747,9 @@ public sealed partial class PlatformDriver
 
 	private async Task ActivateChildControllerAsync (string controllerId, string context, CancellationToken cancellationToken)
 		{
-		bool addedConfigured = _configuredChildControllerIds.Add (controllerId);
-		bool addedInUse = _inUseChildControllerIds.Add (controllerId);
-		_pendingRemovalMissCounts.Remove (controllerId);
+		bool addedConfigured = _configuredChildControllerIds.TryAdd (controllerId, 0);
+		bool addedInUse = _inUseChildControllerIds.TryAdd (controllerId, 0);
+		_ = _pendingRemovalMissCounts.TryRemove (controllerId, out _);
 		MarkChildConfiguredInCache (controllerId);
 		PublishManagedDeviceEntryUpdate (controllerId, context);
 
@@ -763,9 +767,9 @@ public sealed partial class PlatformDriver
 
 	private void ActivateChildController (string controllerId, string context)
 		{
-		bool addedConfigured = _configuredChildControllerIds.Add (controllerId);
-		bool addedInUse = _inUseChildControllerIds.Add (controllerId);
-		_pendingRemovalMissCounts.Remove (controllerId);
+		bool addedConfigured = _configuredChildControllerIds.TryAdd (controllerId, 0);
+		bool addedInUse = _inUseChildControllerIds.TryAdd (controllerId, 0);
+		_ = _pendingRemovalMissCounts.TryRemove (controllerId, out _);
 		MarkChildConfiguredInCache (controllerId);
 		PublishManagedDeviceEntryUpdate (controllerId, context);
 
@@ -809,7 +813,7 @@ public sealed partial class PlatformDriver
 		// available (unconfigured) entry instead of waiting for the next discovery pass.
 		_knownDescriptors.TryGetValue (controllerId, out ManagedLightDescriptor? descriptor);
 
-		_inUseChildControllerIds.Remove (controllerId);
+		_ = _inUseChildControllerIds.TryRemove (controllerId, out _);
 
 		bool removedManagedDevice = PublishManagedDeviceRemoval (controllerId);
 
@@ -832,7 +836,7 @@ public sealed partial class PlatformDriver
 		// cause the device to be republished still classified as whatever kind it was before
 		// deletion (e.g. Light for a plug the user had switched to Light), instead of
 		// re-resolving to its correct default kind.
-		_childTreatAsLight.Remove (controllerId);
+		_ = _childTreatAsLight.TryRemove (controllerId, out _);
 
 		if (descriptor is not null)
 			{
@@ -862,13 +866,13 @@ public sealed partial class PlatformDriver
 
 	private void ClearChildRuntimeState (string controllerId, string context)
 		{
-		bool removedConfigured = _configuredChildControllerIds.Remove (controllerId);
-		bool removedInUse = _inUseChildControllerIds.Remove (controllerId);
-		bool removedPendingMiss = _pendingRemovalMissCounts.Remove (controllerId);
-		bool removedController = _childControllers.Remove (controllerId);
-		bool removedConfigurationController = _childConfigurationControllers.Remove (controllerId);
-		bool removedLightEntity = _lightEntities.Remove (controllerId);
-		bool removedMaterialization = _materializationInFlightControllerIds.Remove (controllerId);
+		bool removedConfigured = _configuredChildControllerIds.TryRemove (controllerId, out _);
+		bool removedInUse = _inUseChildControllerIds.TryRemove (controllerId, out _);
+		bool removedPendingMiss = _pendingRemovalMissCounts.TryRemove (controllerId, out _);
+		bool removedController = _childControllers.TryRemove (controllerId, out _);
+		bool removedConfigurationController = _childConfigurationControllers.TryRemove (controllerId, out _);
+		bool removedLightEntity = _lightEntities.TryRemove (controllerId, out _);
+		bool removedMaterialization = _materializationInFlightControllerIds.TryRemove (controllerId, out _);
 
 		if (_managedDeviceCacheMetadata.TryGetValue (controllerId, out ManagedDeviceCacheEntry? entry) && entry.IsConfigured)
 			{
@@ -923,6 +927,8 @@ public sealed partial class PlatformDriver
 			{
 			ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
 			ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
+			// Switch is used only as a distinct, round-trippable marker for Button kind - see
+			// matching comment above.
 			ManagedChildKind.Button => DeviceUxCategory.Switch,
 			ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
 			ManagedChildKind.Light => DeviceUxCategory.Light,
@@ -1282,8 +1288,10 @@ public sealed partial class PlatformDriver
 
 		bool hasTemperature = hasFeature ("temperature") || model.StartsWith ("T31", StringComparison.OrdinalIgnoreCase);
 		bool hasHumidity = hasFeature ("humidity") || model.StartsWith ("T31", StringComparison.OrdinalIgnoreCase);
-		bool hasContact = hasFeature ("open") || model.StartsWith ("T100", StringComparison.OrdinalIgnoreCase);
-		bool hasMotion = hasFeature ("detected") || category.Contains ("motion", StringComparison.OrdinalIgnoreCase);
+		HubChildCategory modelCategory = HubChildCategoryResolver.FromModel (model);
+		bool hasContact = hasFeature ("is_open") || hasFeature ("open") || modelCategory == HubChildCategory.Contact;
+		bool hasMotion = hasFeature ("motion_detected") || hasFeature ("detected")
+			|| category.Contains ("motion", StringComparison.OrdinalIgnoreCase) || modelCategory == HubChildCategory.Motion;
 		bool hasWaterLeak = hasFeature ("water_leak") || category.Contains ("leak", StringComparison.OrdinalIgnoreCase);
 
 		if (hasContact)

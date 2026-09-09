@@ -269,6 +269,22 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			get;
 			set;
 			}
+
+		// Hub children (Tapo H100 and similar) must remember their telemetry category, or a managed
+		// device cache reload recreates the descriptor with HubChildCategory=None. A Sensor child
+		// that does not know its category cannot trim its declared property/event superset until
+		// the shared poller delivers ChildDeviceInfo.Features, which on the cached-publish path
+		// happens only AFTER the child is published - so RemoveUnsupportedCapabilities fires
+		// RaiseDefinitionChangedEvent while the host is registering, and the host drops the child.
+		// Outlet/Button children are unaffected because their entity surface is static. Persisting
+		// the category lets the surface be trimmed before publication, matching the initial-add
+		// ordering that is already known to work.
+		[DataMember (Name = "hubChildCategory", EmitDefaultValue = false)]
+		public HubChildCategory HubChildCategory
+			{
+			get;
+			set;
+			}
 		}
 
 	[DataContract]
@@ -479,6 +495,12 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			set => Immutable.ChildId = value;
 			}
 
+		public HubChildCategory HubChildCategory
+			{
+			get => Immutable.HubChildCategory;
+			set => Immutable.HubChildCategory = value;
+			}
+
 		public string Host
 			{
 			get => Mutable.Host;
@@ -604,18 +626,28 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 	private readonly DriverImplementationResources _resources;
 	private readonly DriverControllerLogger _logger;
 	private readonly string _driverLogId;
-	private readonly Dictionary<string, ConfigurableDriverEntity> _childControllers = new (StringComparer.OrdinalIgnoreCase);
-	private readonly Dictionary<string, LoggingDriverConfigurationController> _childConfigurationControllers = new (StringComparer.OrdinalIgnoreCase);
+	// The collections below are mutated from detached Task.Run continuations
+	// (CompletePendingMaterializationsAsync, the
+	// materialization/alias helpers in PlatformDriver.DeviceMaterialization.cs and the
+	// resolver in PlatformDriver.Discovery.cs) while a scheduled RefreshLoop pass can be
+	// reading/writing the same keys, so they must be concurrent. A plain Dictionary here
+	// produced "System.IndexOutOfRangeException: Index was outside the bounds of the array"
+	// from inside CompletePendingMaterializationsAsync (measured 12:58:15) - the classic
+	// symptom of a torn internal bucket array after unsynchronized concurrent mutation.
+	// Collections that are only ever touched inside the _refreshGate-serialized refresh body
+	// are deliberately left as plain Dictionary/HashSet.
+	private readonly ConcurrentDictionary<string, ConfigurableDriverEntity> _childControllers = new (StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, LoggingDriverConfigurationController> _childConfigurationControllers = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, DeviceConfiguration> _deviceConfigurations = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, DiscoveryResult> _discoveryResults = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, ManagedLightDescriptor> _knownDescriptors = new (StringComparer.OrdinalIgnoreCase);
-	private readonly Dictionary<string, ManagedDeviceCacheEntry> _managedDeviceCacheMetadata = new (StringComparer.OrdinalIgnoreCase);
-	private readonly Dictionary<string, string> _resolvedDeviceNames = new (StringComparer.OrdinalIgnoreCase);
-	private readonly Dictionary<string, IKasaManagedChildEntity> _lightEntities = new (StringComparer.OrdinalIgnoreCase);
-	private readonly Dictionary<string, bool> _childTreatAsLight = new (StringComparer.OrdinalIgnoreCase);
-	private readonly Dictionary<string, int> _pendingRemovalMissCounts = new (StringComparer.OrdinalIgnoreCase);
-	private readonly HashSet<string> _configuredChildControllerIds = new (StringComparer.OrdinalIgnoreCase);
-	private readonly HashSet<string> _inUseChildControllerIds = new (StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, ManagedDeviceCacheEntry> _managedDeviceCacheMetadata = new (StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, string> _resolvedDeviceNames = new (StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, IKasaManagedChildEntity> _lightEntities = new (StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, bool> _childTreatAsLight = new (StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, int> _pendingRemovalMissCounts = new (StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, byte> _configuredChildControllerIds = new (StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, byte> _inUseChildControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _connectedIdentityResolvedControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, byte> _aliasResolutionInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, List<ManagedLightDescriptor>> _resolvedStripChildDescriptors = new (StringComparer.OrdinalIgnoreCase);
@@ -624,7 +656,7 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 	private readonly ConcurrentDictionary<string, byte> _hubChildResolutionInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, ManagedParentDevicePoller> _hubPollers = new (StringComparer.OrdinalIgnoreCase);
 	private readonly object _hubPollersGate = new ();
-	private readonly HashSet<string> _materializationInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, byte> _materializationInFlightControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _previousDiscoveredControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private ConcurrentDictionary<string, PlatformManagedDevice> _managedDevices = new (StringComparer.OrdinalIgnoreCase);
 	private readonly PlatformSharedConfiguration _sharedConfiguration = new ();
@@ -903,23 +935,24 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			case ConfigurationApplyMode.SavedConfiguration:
 				_managedDevices = new ConcurrentDictionary<string, PlatformManagedDevice> (StringComparer.OrdinalIgnoreCase);
 					_managedDeviceCacheMetadata.Clear ();
-					_resolvedDeviceNames.Clear ();
-					LoadManagedDeviceCacheIntoMemory ();
-				PublishCachedChildControllers (currentConfiguration);
+						_resolvedDeviceNames.Clear ();
+						LoadManagedDeviceCacheIntoMemory ();
+						// Ordered startup experiment: keep cache/assignments; discovery publishes children.
+						LogInfo ("ORDERED-PUBLICATION-EXPERIMENT: eager publication bypassed; readiness waits for child publication.");
 
-				// PublishCachedChildControllers only materializes/configures controllers that are
-				// not already registered in _childControllers - it silently skips (via `continue`)
-				// any controller already published from an earlier apply in this same driver
-				// session. If that earlier publish happened before credentials were entered/saved
-				// (e.g. the device was discovered and materialized while the Tapo UserName/Password
-				// fields were still blank), those already-published entities' DeviceConfiguration
-				// would otherwise never be refreshed with the credentials just applied here, leaving
-				// them retrying the TPAP handshake forever with no credentials. Explicitly refresh
-				// every already-materialized entity's configuration here too, exactly like the
-				// RealtimeChange branch below does, so credentials are always retrieved fresh on
-				// every apply rather than staying cached in a stale configuration.
-				RefreshExistingDeviceConfigurations (currentConfiguration);
-					NotifyManagedDevicesSnapshotChanged ("initial-or-saved-configuration-apply");
+						// PublishCachedChildControllers only materializes/configures controllers that are
+					// not already registered in _childControllers - it silently skips (via `continue`)
+					// any controller already published from an earlier apply in this same driver
+					// session. If that earlier publish happened before credentials were entered/saved
+					// (e.g. the device was discovered and materialized while the Tapo UserName/Password
+					// fields were still blank), those already-published entities' DeviceConfiguration
+					// would otherwise never be refreshed with the credentials just applied here, leaving
+					// them retrying the TPAP handshake forever with no credentials. Explicitly refresh
+					// every already-materialized entity's configuration here too, exactly like the
+					// RealtimeChange branch below does, so credentials are always retrieved fresh on
+					// every apply rather than staying cached in a stale configuration.
+					RefreshExistingDeviceConfigurations (currentConfiguration);
+						NotifyManagedDevicesSnapshotChanged ("initial-or-saved-configuration-apply");
 					SetOnline (false);
 					SetReady (false);
 					_ = StartCachedIdentityResolutionsAsync (currentConfiguration);

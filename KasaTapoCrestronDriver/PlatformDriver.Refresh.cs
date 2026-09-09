@@ -121,7 +121,7 @@ public sealed partial class PlatformDriver
 					_knownDescriptors[descriptor.ControllerId] = descriptor;
 					discoveredControllerIds.Add (descriptor.ControllerId);
 					activeControllerIds.Add (descriptor.ControllerId);
-					_pendingRemovalMissCounts.Remove (descriptor.ControllerId);
+					_ = _pendingRemovalMissCounts.TryRemove (descriptor.ControllerId, out _);
 
 					descriptorsByControllerId[descriptor.ControllerId] = descriptor;
 
@@ -137,14 +137,14 @@ public sealed partial class PlatformDriver
 						// disconnected until an unrelated status-changed event happened to fire again.
 						// Only newly-discovered/never-configured children need their configured state
 						// derived from the child configuration controller here.
-						if (!_configuredChildControllerIds.Contains (descriptor.ControllerId))
+						if (!_configuredChildControllerIds.ContainsKey (descriptor.ControllerId))
 							{
 							bool childConfigurationRunning = _childControllers.TryGetValue (descriptor.ControllerId, out ConfigurableDriverEntity? existingController)
 								&& IsChildConfigurationControllerRunning (existingController);
 							if (childConfigurationRunning)
 								{
-								_configuredChildControllerIds.Add (descriptor.ControllerId);
-								_inUseChildControllerIds.Add (descriptor.ControllerId);
+								_ = _configuredChildControllerIds.TryAdd (descriptor.ControllerId, 0);
+								_ = _inUseChildControllerIds.TryAdd (descriptor.ControllerId, 0);
 								}
 
 							existingLightEntity.SetConfigured (childConfigurationRunning, "rediscovery-existing-child");
@@ -223,9 +223,6 @@ public sealed partial class PlatformDriver
 			_initialDiscoveryLoadPending = false;
 			}
 
-		SetOnline (true);
-		SetReady (true);
-
 		var previousDiscoveredControllerIds = new HashSet<string> (_previousDiscoveredControllerIds, StringComparer.OrdinalIgnoreCase);
 		int previousDiscoveredCount = previousDiscoveredControllerIds.Count;
 		bool hasAddedDiscoveryChange = discoveredControllerIds.Except (previousDiscoveredControllerIds, StringComparer.OrdinalIgnoreCase).Any ();
@@ -286,19 +283,39 @@ public sealed partial class PlatformDriver
 
 		if (pendingMaterializations.Count > 0)
 			{
-			CompletePendingMaterializationsAsync (
+			await CompletePendingMaterializationsAsync (
 				pendingMaterializations,
 				discoveryErrors,
 				cancellationToken,
-				nextRefreshInterval);
+				nextRefreshInterval).ConfigureAwait (false);
 			}
 		else
 			{
-			if (isInitialLoad)
-					{
-				NotifyManagedDevicesSnapshotChanged ("initial-materialization-complete");
-				LogInfo ($"Managed-device publish after initial materialization skipped/no-op: count={_managedDevices.Count}, controllerIds=[{string.Join (", ", _managedDevices.Keys.OrderBy (key => key, StringComparer.OrdinalIgnoreCase))}].");
-					}
+			// MEASURED FINDING (2026-09-09 reboot capture, /rm/SeawolfDiagnostic/2026-09-09.log):
+			// this publish must NOT be gated on isInitialLoad. On a reboot with an existing
+			// managed-device cache, discovery reports isInitialLoad=False, so the old guard
+			// skipped the only post-discovery publish. The boot sequence was:
+			//   04:41:03  host registers all 6 children -> "Driver Registration failed" for all 6
+			//             (the driver had published NOTHING by this point)
+			//   04:41:10  DiscoverDevicesAsync completes, isInitialLoad=False
+			//   04:41:17  RefreshPlatformAsync reaches here -> publish SKIPPED by the guard
+			// The host's registration pass ran ~7s before the driver had anything to publish,
+			// and the driver then never re-offered its managed devices. Only the two children
+			// the host independently revisited (S200B 04:41:03, KP115 04:41:40) were ever
+			// instantiated; KP303 Plug 1 / T310 / T315 / T100 stayed offline permanently.
+			// Republishing here is safe when nothing changed - NotifyManagedDevicesSnapshotChanged
+			// re-sends the current snapshot, which the host treats as a no-op if it matches.
+			NotifyManagedDevicesSnapshotChanged (isInitialLoad
+				? "initial-materialization-complete"
+				: "post-discovery-materialization-complete");
+			LogInfo ($"Managed-device publish after materialization: isInitialLoad={isInitialLoad}, count={_managedDevices.Count}, controllerIds=[{string.Join (", ", _managedDevices.Keys.OrderBy (key => key, StringComparer.OrdinalIgnoreCase))}].");
+
+			cancellationToken.ThrowIfCancellationRequested ();
+			if (!_disposed)
+				{
+				SetOnline (true);
+				SetReady (true);
+				}
 
 			RestartDiscoveryRefreshLoop (nextRefreshInterval);
 			}
@@ -307,9 +324,9 @@ public sealed partial class PlatformDriver
 			{
 			foreach (string existingControllerId in _childControllers.Keys.Except (activeControllerIds, StringComparer.OrdinalIgnoreCase).ToArray ())
 				{
-				if (_inUseChildControllerIds.Contains (existingControllerId))
+				if (_inUseChildControllerIds.ContainsKey (existingControllerId))
 					{
-					_pendingRemovalMissCounts.Remove (existingControllerId);
+					_ = _pendingRemovalMissCounts.TryRemove (existingControllerId, out _);
 					LogInfo ($"Managed-device removal suppressed for in-use controllerId='{existingControllerId}' because the child configuration callback marked it active for this driver instance.");
 					continue;
 					}
@@ -356,7 +373,7 @@ public sealed partial class PlatformDriver
 				// "Add a device" entry as Light, even though ClearChildRuntimeState already
 				// corrected the on-disk cache's IsConfigured/UxCategory so a driver reload shows
 				// Outlet correctly.
-				_childTreatAsLight.Remove (existingControllerId);
+				_ = _childTreatAsLight.TryRemove (existingControllerId, out _);
 				if (_knownDescriptors.TryGetValue (existingControllerId, out ManagedLightDescriptor? removedDescriptor)
 					&& (removedDescriptor.DiscoveredDeviceType == KasaDeviceType.Plug || removedDescriptor.DiscoveredDeviceType == KasaDeviceType.Strip))
 					{
@@ -391,13 +408,13 @@ public sealed partial class PlatformDriver
 			}
 		}
 
-	private void CompletePendingMaterializationsAsync (
+	private Task CompletePendingMaterializationsAsync (
 		List<PendingMaterialization> pendingMaterializations,
 		List<string> discoveryErrors,
 		CancellationToken cancellationToken,
 		TimeSpan nextRefreshInterval)
 		{
-		_ = Task.Run (async () =>
+		return Task.Run (async () =>
 			{
 				List<ConfigurableDriverEntity>? controllersToAdd = null;
 				bool managedDevicesChanged = false;
@@ -446,7 +463,7 @@ public sealed partial class PlatformDriver
 								managedDevicesChanged = true;
 								}
 
-							lightEntity.SetConfigured (_configuredChildControllerIds.Contains (controllerId), "materialization-complete");
+							lightEntity.SetConfigured (_configuredChildControllerIds.ContainsKey (controllerId), "materialization-complete");
 							LoggingDriverConfigurationController childConfigurationController = CreateChildConfigurationController (pendingMaterialization.Descriptor);
 							var controller = new ConfigurableDriverEntity (controllerId, (ReflectedAttributeDriverEntity)lightEntity, childConfigurationController);
 							_lightEntities[controllerId] = lightEntity;
@@ -472,6 +489,12 @@ public sealed partial class PlatformDriver
 							{
 							ClearMaterializationInFlight (controllerId);
 							}
+						}
+
+					cancellationToken.ThrowIfCancellationRequested ();
+					if (_disposed)
+						{
+						return;
 						}
 
 					if ((controllersToAdd?.Count ?? 0) > 0)
@@ -515,14 +538,26 @@ public sealed partial class PlatformDriver
 						}
 
 					LogInfo ($"Managed-device publish: count={_managedDevices.Count}, controllerIds=[{string.Join (", ", _managedDevices.Keys.OrderBy (key => key, StringComparer.OrdinalIgnoreCase))}].");
+
+					// Ready may cause the host to configure children immediately. The SDK
+					// registry and managed-device publication above must be complete first.
+					cancellationToken.ThrowIfCancellationRequested ();
+					if (!_disposed)
+						{
+						LogInfo ("ORDERED-PUBLICATION-EXPERIMENT: child publication completed; announcing readiness.");
+						SetOnline (true);
+						SetReady (true);
+						}
 					}
 				catch (OperationCanceledException)
 					{
 					LogInfo ("CompletePendingMaterializationsAsync: canceled.");
+					throw;
 					}
 				catch (Exception ex)
 					{
 					LogError ($"CompletePendingMaterializationsAsync failed: {ex}");
+					throw;
 					}
 				finally
 					{

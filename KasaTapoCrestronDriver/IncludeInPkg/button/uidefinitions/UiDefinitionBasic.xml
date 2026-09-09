@@ -1,12 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <uidefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://prd-use-rad-assets.azurewebsites.net/ExtensionsSchemaDefinition.xsd">
-	<version ver="2.0" />
-	<tile icon="{buttonIcon}" status="{buttonStatus}" showinhomepage="#false" showinroompage="#true" />
+	<version ver="3.0" />
+	<tile icon="{buttonIcon}" status="{lastTriggerDisplay}" navigation="show:MainPage" showinhomepage="#false" showinroompage="#true" />
 	<layouts>
 
-		<!-- Button children are read-only trigger/battery telemetry: tile-only control, no navigation target. -->
+		<!-- Button children are read-only trigger/battery telemetry: tile shows the most recent
+			  press and when it happened, detail page shows the full breakdown. -->
 		<layout id="MainPage" title="{deviceLabel}" isdefaultlayout="#true">
 			<controls>
+				<textdisplay id="LastPressLabelID"
+						title="^LastPressLabel"
+						line1label="{lastGestureLabel}" />
+				<textdisplay id="LastPressTimeLabelID"
+						title="^LastPressTimeLabel"
+						line1label="{lastTriggerTimeDisplay}" />
+				<textdisplay id="BatteryLabelID"
+						title="^BatteryLabel"
+						line1label="{batteryStatusLabel}"
+						visible="{hasBattery}" />
 			</controls>
 		</layout>
 

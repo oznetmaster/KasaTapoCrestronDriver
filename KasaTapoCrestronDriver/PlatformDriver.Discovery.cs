@@ -459,6 +459,8 @@ public sealed partial class PlatformDriver
 								{
 								ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
 								ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
+								// Switch is used only as a distinct, round-trippable marker for Button
+								// kind - see matching comment in PlatformDriver.ManagedDevices.cs.
 								ManagedChildKind.Button => DeviceUxCategory.Switch,
 								ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
 								ManagedChildKind.Light => DeviceUxCategory.Light,
@@ -491,7 +493,7 @@ public sealed partial class PlatformDriver
 							// recreated configuration controller, leaving it stuck NotConfigured (and the
 							// device permanently Offline in Configure Pro) no matter how many times
 							// discovery re-runs.
-							_configuredChildControllerIds.Add (entry.ControllerId);
+							_ = _configuredChildControllerIds.TryAdd (entry.ControllerId, 0);
 							}
 
 					RememberResolvedDeviceName (entry.ControllerId, entry.Name, cacheSerialNumber, entry.Host);
@@ -697,7 +699,7 @@ public sealed partial class PlatformDriver
 			_managedDevices = removalCopy;
 			}
 
-		_managedDeviceCacheMetadata.Remove (stripRootControllerId);
+		_ = _managedDeviceCacheMetadata.TryRemove (stripRootControllerId, out _);
 
 		if (_lightEntities.TryGetValue (stripRootControllerId, out IKasaManagedChildEntity? staleRootEntity))
 			{
@@ -768,14 +770,20 @@ public sealed partial class PlatformDriver
 							// cache rewrite, so a subsequent reload recreates the descriptor with
 							// ChildId=null and UpdateDescriptorFromConnectedDevice falls back to
 							// the strip root's own alias/identity instead of this specific child's.
-							ChildId = metadata.ChildId
+							ChildId = metadata.ChildId,
+							// Same rewrite hazard as ChildId above: omitting HubChildCategory here
+							// would drop it from every persisted rewrite, so a reload recreates the
+							// descriptor with HubChildCategory=None and the sensor cannot trim its
+							// declared surface before publication (see KasaSensorEntity's
+							// ResolveCapabilitiesFromHubChildCategory).
+							HubChildCategory = metadata.HubChildCategory
 							},
 						Mutable = new ManagedDeviceMutableCacheFields
 							{
 							Name = entry.Value.Name,
 							Host = metadata.Host,
 							AwaitingConnectedIdentity = metadata.AwaitingConnectedIdentity,
-							IsConfigured = _configuredChildControllerIds.Contains (entry.Key) || metadata.IsConfigured,
+							IsConfigured = _configuredChildControllerIds.ContainsKey (entry.Key) || metadata.IsConfigured,
 							// TreatAsLight was previously omitted here, so every cache rewrite
 							// silently reset it to false regardless of the actual in-memory
 							// preference - discarding the user's "Treat As Light" choice even

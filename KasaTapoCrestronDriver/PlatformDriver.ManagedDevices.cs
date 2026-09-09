@@ -81,6 +81,10 @@ public sealed partial class PlatformDriver
 					{
 					ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
 					ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
+					// Switch is used only as a distinct, round-trippable marker for Button kind in
+					// the persisted cache/host UxCategory - it must stay different from Sensor so
+					// TryCreateCachedDescriptorAndConfiguration can resolve ManagedChildKind.Button
+					// back correctly on reload instead of collapsing S200B into KasaSensorEntity.
 					ManagedChildKind.Button => DeviceUxCategory.Switch,
 					ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
 					ManagedChildKind.Light => DeviceUxCategory.Light,
@@ -91,14 +95,15 @@ public sealed partial class PlatformDriver
 				DiscoveredDeviceType = descriptor.DiscoveredDeviceType,
 				ManagedLightKind = descriptor.Kind,
 				SerialNumber = descriptor.SerialNumber,
-				ChildId = descriptor.ChildId
+				ChildId = descriptor.ChildId,
+				HubChildCategory = descriptor.HubChildCategory
 				},
 			Mutable = new ManagedDeviceMutableCacheFields
 				{
 				Name = name,
 				Host = configuration.Host,
 				AwaitingConnectedIdentity = descriptor.AwaitingConnectedIdentity,
-				IsConfigured = _configuredChildControllerIds.Contains (descriptor.ControllerId),
+				IsConfigured = _configuredChildControllerIds.ContainsKey (descriptor.ControllerId),
 				TreatAsLight = _childTreatAsLight.TryGetValue (descriptor.ControllerId, out bool treatAsLight) && treatAsLight,
 				Port = configuration.Port,
 				TransportKind = options.TransportKind,
@@ -141,7 +146,11 @@ public sealed partial class PlatformDriver
 		// does apply uxCategory from this delta once it is actually included - both transition
 		// directions rely on that - so no full-snapshot follow-up is needed here.
 		DriverEntityValueUpdate nameChange = DriverEntityValueUpdate.Create ("name", new DriverEntityValue (updatedEntry.Name));
-		DriverEntityValueUpdate uxCategoryChange = DriverEntityValueUpdate.Create ("uxCategory", new DriverEntityValue (updatedEntry.UxCategory.ToString ()));
+		// Use the SDK's serialized enum identifier, matching what full snapshots send (for example, "sensor")
+		// instead of the C# enum name (for example, "Sensor"); ToString () was silently sending the wrong
+		// casing on incremental updates, hiding a real host-facing wire mismatch behind identical-looking logs.
+		DriverEntityValueUpdate uxCategoryChange = DriverEntityValueUpdate.Create ("uxCategory",
+			CreateValueForObject (updatedEntry).GetValue<DriverEntityValueDictionary> ()["uxCategory"]);
 		DriverEntityValueUpdate manufacturerChange = DriverEntityValueUpdate.Create ("manufacturer", new DriverEntityValue (updatedEntry.Manufacturer));
 		DriverEntityValueUpdate modelChange = DriverEntityValueUpdate.Create ("model", new DriverEntityValue (updatedEntry.Model));
 		DriverEntityValueUpdate serialNumberChange = DriverEntityValueUpdate.Create ("serialNumber", new DriverEntityValue (updatedEntry.SerialNumber));
@@ -149,7 +158,7 @@ public sealed partial class PlatformDriver
 			DriverEntityValueUpdate.Create (controllerId, nameChange, uxCategoryChange, manufacturerChange, modelChange, serialNumberChange));
 
 		NotifyPropertyChanged ("platform:managedDevices", managedDevicesChange);
-		LogInfo ($"PublishManagedDeviceEntryUpdate: controllerId='{controllerId}', context='{context}', publishedUxCategory={updatedEntry.UxCategory}, name='{updatedEntry.Name}'.");
+		LogInfo ($"PublishManagedDeviceEntryUpdate: controllerId='{controllerId}', context='{context}', publishedUxCategory={updatedEntry.UxCategory} (wire='{uxCategoryChange.Value}'), name='{updatedEntry.Name}'.");
 		}
 
 	private void NotifyManagedDevicesSnapshotChanged ()
@@ -162,6 +171,35 @@ public sealed partial class PlatformDriver
 		var snapshot = ManagedDevices;
 		LogInfo ($"NotifyManagedDevicesSnapshotChanged: context='{context}', entryCount={snapshot.Count}, categories=[{string.Join (", ", snapshot.Select (pair => $"{pair.Key}={pair.Value.UxCategory}"))}].");
 		NotifyPropertyChanged ("platform:managedDevices", CreateValueForEntries (snapshot));
+		LogManagedDeviceSnapshotPayloadDiagnostics (context, snapshot);
+		}
+
+	// DIAGNOSTIC (temporary): the reboot capture (2026-09-08, 15:13-15:14) shows every child hits
+	// "Driver Registration failed" at 15:14:00, after which the host RE-INITIALIZES only the
+	// Outlet/Switch children (S200B/KP115/KP303 get "Initialize driver" -> "Create driver
+	// instance" -> GetStatus/ApplyConfiguration -> online by 15:14:03). The three Sensor children
+	// get the identical registration failure and then NOTHING - no retry, no GetStatus, no
+	// ApplyAll - even though the driver keeps polling them successfully every ~16s for the rest
+	// of the log. So the divergence is in what the HOST re-reads per entry during its post-failure
+	// retry pass, not in publication (identical), teardown (symmetric), category (Sensor works on
+	// initial add), cache/manifest (both verified correct), or package version.
+	//
+	// Existing logging only prints Key=UxCategory, which is identical in shape for adopted and
+	// skipped children and therefore cannot discriminate. This dumps the FULL per-entry payload
+	// actually handed to the host in the managedDevices property, so the adopted and skipped
+	// cohorts can be diffed field-by-field at the exact moment the host makes its retry decision.
+	private void LogManagedDeviceSnapshotPayloadDiagnostics (
+		string context,
+		IDictionary<string, PlatformManagedDevice> snapshot)
+		{
+		foreach (var pair in snapshot)
+			{
+			PlatformManagedDevice published = pair.Value;
+			bool hasDescriptor = _knownDescriptors.TryGetValue (pair.Key, out ManagedLightDescriptor? descriptor);
+			bool hasCacheEntry = _managedDeviceCacheMetadata.TryGetValue (pair.Key, out ManagedDeviceCacheEntry? entry);
+
+			LogInfo ($"SNAPSHOT-PAYLOAD-DIAG: context='{context}', controllerId='{pair.Key}', publishedUxCategory={published.UxCategory}, publishedName='{published.Name}', publishedManufacturer='{published.Manufacturer}', publishedModel='{published.Model}', publishedSerial='{published.SerialNumber}', hasCacheEntry={hasCacheEntry}, cachedUxCategory={(hasCacheEntry ? entry!.UxCategory.ToString () : "<none>")}, cachedIsConfigured={(hasCacheEntry ? entry!.IsConfigured.ToString () : "<none>")}, hasKnownDescriptor={hasDescriptor}, descriptorChildKind={(hasDescriptor ? descriptor!.ChildKind.ToString () : "<none>")}, hasLightEntity={_lightEntities.ContainsKey (pair.Key)}, hasChildController={_childControllers.ContainsKey (pair.Key)}, isConfiguredChild={_configuredChildControllerIds.ContainsKey (pair.Key)}, isInUseChild={_inUseChildControllerIds.ContainsKey (pair.Key)}.");
+			}
 		}
 
 	private bool HasManagedDeviceEntry (string controllerId)
@@ -187,7 +225,7 @@ public sealed partial class PlatformDriver
 
 			_knownDescriptors[descriptor.ControllerId] = descriptor;
 			_deviceConfigurations[descriptor.ControllerId] = deviceConfiguration;
-			bool wasConfigured = _configuredChildControllerIds.Contains (descriptor.ControllerId);
+			bool wasConfigured = _configuredChildControllerIds.ContainsKey (descriptor.ControllerId);
 			IKasaManagedChildEntity lightEntity = CreateManagedLightEntity (descriptor, deviceConfiguration);
 			lightEntity.SetConfigured (wasConfigured, "cached-child-controller-publication");
 
@@ -243,72 +281,12 @@ public sealed partial class PlatformDriver
 
 			if (controllersNeedingReplay is not null)
 				{
-				bool isFirstReplay = true;
+				// Replay each cached child once. Do NOT add pacing, waiting or retrying here -
+				// see the MEASURED FINDING note on ReplayCachedChildConfiguration before changing
+				// anything in this loop.
 				foreach (var (_, childConfigurationController, entry, descriptor) in controllersNeedingReplay)
 					{
-					// Firing every cached child's configuration-controller status transition and
-					// platform:managedDevices publish back-to-back in the same tick could race with
-					// the host's own asynchronous notification processing (observed on a different
-					// CSTP worker thread than the one driving this loop), causing the host to lose
-					// track of one child per reload when several were replayed together - a different
-					// child each time, ruling out a defect tied to any specific device. Staggering the
-					// replay gives the host time to fully process each child's transition before the
-					// next one arrives; verified stable across multiple consecutive reloads with all
-					// children remaining online after this change.
-					if (!isFirstReplay)
-						{
-						System.Threading.Thread.Sleep (500);
-						}
-					isFirstReplay = false;
-
-					bool replayTreatAsLight = entry.TreatAsLight;
-					var replayValues = new Dictionary<string, string> { ["ActivationMarker"] = "true" };
-					if (IsTreatAsLightChoiceEligible (descriptor))
-						{
-						replayValues["TreatAsLight"] = replayTreatAsLight ? "true" : "false";
-						}
-
-					// NOTE: ApplyConfigurationStep below always comes back with
-					// errorKeys=DriverDataStore, because DriverDataStore is a host-owned
-					// configuration item (it is not declared in
-					// CreateChildConfigurationController's item list) that only Crestron Home can
-					// populate - the host logs it as "Remaining configuration item to be set was
-					// not known yet: DriverDataStore; Device configuration required." The driver
-					// has no legitimate value to supply for it, so this error is expected here and
-					// must NOT be papered over by injecting a placeholder into replayValues. Every
-					// cached child reports it, including ones that go on to reach Running normally.
-
-					try
-						{
-						// Replay via the same step-based GetFirstConfigurationStep/ApplyConfigurationStep
-						// sequence that Configure Pro itself drives, instead of only calling
-						// ApplyConfiguration(dict) directly, so the host observes the same
-						// NotConfigured->Configured transition it would see from a real Configure Pro
-						// submission.
-						//
-						// NOTE: the calls below go through the same LoggingDriverConfigurationController
-						// wrapper used for host-initiated calls, so "GetFirstConfigurationStep called"/
-						// "ApplyConfigurationStep called" log lines cannot be distinguished from an actual
-						// Configure Pro/Setup Program call by message text alone - the explicit
-						// "PublishCachedChildControllers: about to replay..." line immediately below marks
-						// which calls originate from this internal replay rather than from the host.
-						LogInfo ($"PublishCachedChildControllers: about to replay configuration for controllerId='{descriptor.ControllerId}' via internal GetFirstConfigurationStep/ApplyConfigurationStep call (not a host/Configure Pro request).");
-						Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationStep firstStep = childConfigurationController.GetFirstConfigurationStep ();
-						if (firstStep is not null && !string.IsNullOrWhiteSpace (firstStep.Id))
-							{
-							childConfigurationController.ApplyConfigurationStep (firstStep.Id, replayValues);
-							LogInfo ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' replayed prior configuration values via step-based ApplyConfigurationStep(stepId='{firstStep.Id}') into the recreated configuration controller (after host registration).");
-							}
-						else
-							{
-							childConfigurationController.ApplyConfiguration (replayValues);
-							LogInfo ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' had no first configuration step available; fell back to replaying prior configuration values via ApplyConfiguration into the recreated configuration controller (after host registration).");
-							}
-						}
-					catch (Exception ex)
-						{
-						LogError ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' failed to replay configuration values into the recreated configuration controller: {ex}");
-						}
+					ReplayCachedChildConfiguration (childConfigurationController, entry, descriptor, "initial");
 					}
 				}
 
@@ -317,78 +295,241 @@ public sealed partial class PlatformDriver
 				ActivatePublishedChildIfRunning (controller, "cached-publication-status-reconciliation");
 				}
 
-			foreach (var (_, childConfigurationController, entry, descriptor) in controllersNeedingReplay!)
-				{
-				ScheduleStuckCachedChildWatchdog (entry.ControllerId, childConfigurationController, descriptor);
-				}
+			LogCachedChildCohortDiagnostics (controllersNeedingReplay);
 			}
 		}
 
-	// Guards against a cached child (entry.IsConfigured=true, replayed above) whose recreated
-	// configuration controller never reaches Running - observed in the field for a hub child
-	// (T310) whose StatusChanged event never fired after PublishCachedChildControllers replayed
-	// its configuration. When that happens, the host apparently still believes the child is
-	// already installed in a room (because our own persisted IsConfigured=true told it so via
-	// IncludePersistentValueData), so it never drives the NotConfigured->Running handshake to
-	// completion - but Crestron Home's own room database has no such association, so Setup/
-	// Configure Pro refuse to let the user re-add it (\"only devices in rooms can be removed\",
-	// yet it never actually shows up in a room). This creates a permanent deadlock that neither
-	// a driver reload nor a processor reboot can break, because the stale IsConfigured=true is
-	// what gets persisted/replayed again every time.
+	// DIAGNOSTIC (temporary): emit one CACHED-CHILD-DIAG line per replayed cached child at the
+	// end of the cached-publish pass, so the cohort the host is about to run ApplyAll over can be
+	// compared field-by-field between the children it adopts and the ones it silently skips.
 	//
-	// The watchdog below waits a bounded interval for the real StatusChanged->Running transition
-	// (HandleChildConfigurationControllerStatusChanged/ActivateChildController) to occur. If it
-	// never does, the cached "configured" state is treated as stale: IsConfigured is cleared,
-	// TreatAsLight/ChildKind are recomputed as if the child had never been configured, and the
-	// managed-device entry is republished so the child becomes selectable again in Setup/
-	// Configure Pro instead of being stuck in limbo.
-	private static readonly TimeSpan StuckCachedChildWatchdogDelay = TimeSpan.FromSeconds (30);
-
-	private void ScheduleStuckCachedChildWatchdog (string controllerId, LoggingDriverConfigurationController childConfigurationController, ManagedLightDescriptor descriptor)
+	// Why this and not poller/replay-step instrumentation: the replay call sequence is already
+	// fully logged by LoggingDriverConfigurationController, and captures show every child replays
+	// IDENTICALLY (stepId='Activation', itemCount=2, keys=[ActivationMarker], errorKeys=
+	// DriverDataStore) whether or not it is later adopted. Re-logging the replay steps therefore
+	// cannot discriminate. What has never been dumped is the per-child IDENTITY/state tuple at the
+	// moment the cohort is handed to the host - and identity is the only surviving correlation
+	// (T310/T315 skipped, T100/S200B/KP303 adopted). One line per child, one place, greppable.
+	private void LogCachedChildCohortDiagnostics (
+		List<(ConfigurableDriverEntity Controller, LoggingDriverConfigurationController ConfigurationController, ManagedDeviceCacheEntry Entry, ManagedLightDescriptor Descriptor)>? replayedChildren)
 		{
-		_ = Task.Run (async () =>
+		if (replayedChildren is null)
 			{
+			return;
+			}
+
+		foreach (var (_, childConfigurationController, entry, descriptor) in replayedChildren)
+			{
+			string status;
 			try
 				{
-				await Task.Delay (StuckCachedChildWatchdogDelay).ConfigureAwait (false);
-
-				if (!_managedDeviceCacheMetadata.TryGetValue (controllerId, out ManagedDeviceCacheEntry? cacheEntry)
-					|| !cacheEntry.IsConfigured)
-					{
-					// Already cleared/removed/reconciled through some other path (e.g. a real
-					// ClearValues/RemoveChildFromConfiguration) since the watchdog was scheduled.
-					return;
-					}
-
-				if (_inUseChildControllerIds.Contains (controllerId))
-					{
-					// A live host-driven ApplyConfiguration/activation raced with the watchdog and
-					// already marked this child in-use; nothing stuck to reconcile.
-					return;
-					}
-
-				DriverControllerStatus currentStatus = childConfigurationController.PeekStatus ();
-				if (currentStatus == DriverControllerStatus.Running)
-					{
-					return;
-					}
-
-				LogInfo ($"ScheduleStuckCachedChildWatchdog: controllerId='{controllerId}' cached configuration controller failed to reach Running within {StuckCachedChildWatchdogDelay.TotalSeconds:0}s of replay (currentStatus={currentStatus}); treating persisted IsConfigured=true as stale. An in-place cache-flag flip is not sufficient here: the host's own DataDrivenConfigurationController instance (registered with IncludePersistentValueData=true) is what actually drives Configure Pro's \"already installed\" determination, not our platform:managedDevices publish. That stale host-side controller/entity must be torn down and a genuinely new one published, exactly like a real ClearValues-driven removal, or Configure Pro keeps treating the child as already configured forever.");
-
-				// Route through the same full teardown used for a real host-initiated removal
-				// (ClearValues) instead of only clearing our own bookkeeping in place. This
-				// disposes/removes the stale entity and DataDrivenConfigurationController (whose
-				// persisted configuration values are what the host is actually keying off of) and
-				// republishes a fresh, unconfigured managed-device entry so the child becomes
-				// genuinely selectable again in Setup/Configure Pro.
-				RemoveChildFromConfiguration (controllerId, "stuck-cached-child-watchdog");
+				status = childConfigurationController.PeekStatus ().ToString ();
 				}
 			catch (Exception ex)
 				{
-				LogError ($"ScheduleStuckCachedChildWatchdog: controllerId='{controllerId}' failed while reconciling a potentially stuck cached child: {ex}");
+				status = $"peek-failed:{ex.GetType ().Name}";
 				}
-			});
+
+			LogInfo ($"CACHED-CHILD-DIAG: controllerId='{descriptor.ControllerId}', name='{descriptor.Name}', model='{descriptor.ModelName}', serial='{descriptor.SerialNumber}', uxCategory={entry.UxCategory}, childKind={descriptor.ChildKind}, hubChildCategory={descriptor.HubChildCategory}, kind={descriptor.Kind}, childId='{descriptor.ChildId ?? "<null>"}', host='{descriptor.Host}', discoveryDeviceId='{descriptor.DiscoveryDeviceId ?? "<null>"}', awaitingConnectedIdentity={descriptor.AwaitingConnectedIdentity}, cachedIsConfigured={entry.IsConfigured}, treatAsLight={entry.TreatAsLight}, statusAfterReplay='{status}', hasLightEntity={_lightEntities.ContainsKey (descriptor.ControllerId)}, hasManagedDeviceEntry={HasManagedDeviceEntry (descriptor.ControllerId)}.");
+			}
 		}
+
+	// MEASURED FINDING (live console capture of a reload, 3 cached children) - read this before
+	// adding any pacing, waiting, or retrying to the cached-child replay path.
+	//
+	// A cached child does NOT reach Running as a result of our replay. Verified directly:
+	// after replaying all 3 children, PeekStatus() reported "not Running" for ALL 3 on three
+	// successive checks at +5s, +10s and +15s. Then, at +26s, the host ran its own ApplyAll
+	// pass and only THEN did children transition Running -> online. That includes children
+	// that come up perfectly (the KP303 outlet was flagged "not Running" all three times and
+	// still came online normally moments later).
+	//
+	// Consequences, all confirmed against the capture:
+	//  * "child is not Running shortly after replay" is the NORMAL state for every child. It is
+	//    not a straggler signal, so retrying on it re-replays healthy children pointlessly. A
+	//    reconciliation loop built on that check was tried and removed - it retried all 3
+	//    children 3 times, changed nothing, and added 15s to every reload.
+	//  * The per-child 10s "confirmation" wait that used to live here could never have worked
+	//    either: the StatusChanged it waited for is not emitted during replay at all, so every
+	//    child always burned the full timeout (N * 10s, minutes on a 20-30 child system).
+	//  * Earlier reload logs that appeared to show "the last-replayed child fails" were
+	//    misread. Every child times out in replay; the children that came up Running did so
+	//    from the host's later ApplyAll, not from replay succeeding.
+	//
+	// So replay pacing is NOT the variable that decides whether a child comes online.
+	//
+	// WHERE THE REMAINING T310/T315 SENSOR BUG ACTUALLY LIVES (live capture, control run):
+	//
+	// NOT the Sensor UxCategory. Two brand-new T3xx sensors added by hand in the same session
+	// were adopted by the host immediately (action='ApplyStep') and came online normally, so
+	// the host has no problem with UxCategory=Sensor. Do not go looking there.
+	//
+	// What actually happens on reload:
+	//  1. PublishCachedChildControllers creates the child entity and registers it in
+	//     _lightEntities, then replays its configuration.
+	//  2. The refresh pass that follows sees _lightEntities already contains the controllerId
+	//     and takes the "existing child" early-continue branch in PlatformDriver.Refresh.cs -
+	//     so the cached child is NEVER queued for materialization on that pass.
+	//  3. At the host's ApplyAll pass, the Outlet and Button children are adopted, but the
+	//     Sensor child is not, and it stays NotConfigured/offline.
+	//  4. Minutes later a subsequent refresh reaches the HasManagedDeviceEntry branch, logs
+	//     "Discovered existing managed-device entry ... without successful materialization;
+	//     requeueing materialization attempt", materializes properly, and the host then adopts
+	//     the sensor immediately. The device SELF-HEALS - it is delayed adoption, not a
+	//     permanent failure. (Observed: reload 12:17:01, recovery 12:23:06.)
+	//
+	// IMPORTANT UNRESOLVED DETAIL: the Button child follows the byte-for-byte identical path
+	// (same cached publish, same replayed keys=[ActivationMarker], same PeekStatus
+	// 'NotConfigured' at ApplyAll time, also never materialized) and the host DOES adopt it.
+	// So the driver-side state of Button vs Sensor at ApplyAll time looks the same in the logs;
+	// what differs is only whether the host includes the child in its ApplyAll pass. Whatever
+	// the trigger is, it is not something this replay code is doing differently per child kind.
+	//
+	// SHARPENED BY THE 12:38 RELOAD CAPTURE (five hub children, three of them sensors):
+	// The host adopted S200B (Button), KP303 (Outlet) and T100 (SENSOR) at ApplyAll, but not
+	// T310/T315. Two things follow:
+	//  a) Child KIND is definitively not the discriminator - a Sensor was adopted on the very
+	//     same reload that skipped two other Sensors.
+	//  b) After replay the host called GetStatus ONLY for the three children it adopted. It
+	//     never polled T310/T315 again, so it is selecting its adopted set BEFORE re-reading any
+	//     driver-side status - nothing the driver returns at replay time is being consulted.
+	// All five children replayed identically (stepId='Activation', itemCount=2,
+	// keys=[ActivationMarker]). The 'errorKeys=DriverDataStore' on the replay result is benign
+	// noise: it appears on the adopted KP303/S200B too, so it is not the rejection reason.
+	//
+	// CONFIRMED ACROSS FOUR CONSECUTIVE RELOADS (14:14, 14:33, 14:39, 14:45 capture), by
+	// grepping ApplyChildConfigurationItems for action='ApplyAll' - i.e. exactly which children
+	// the host chose to reconcile on each reload:
+	//     14:14  KP115, KP303, T100
+	//     14:33  S200B, KP115, KP303
+	//     14:39  S200B, KP115, KP303
+	//     14:45  S200B, KP115, KP303, T100
+	// Read that table before forming any theory here, because it falsifies the obvious ones:
+	//  * Child KIND is not the discriminator (point (a) above is CORRECT and was re-verified).
+	//    T100 is a Sensor and appears in the host's ApplyAll set on 2 of 4 reloads. A
+	//    "sensors are declined, outlets/buttons are adopted" reading of a single reload is
+	//    wrong - it was tried during this investigation and falsified by the table above.
+	//  * The set is not even stable per child: S200B (Button) is ABSENT at 14:14 and present
+	//    on the other three. So membership varies run to run for a child that always works.
+	//  * T310/T315 appear in NO reload's ApplyAll set. They are never selected, rather than
+	//    being selected and rejected.
+	// Since the host never asks the driver about T310/T315 at all on a reload, no driver-side
+	// value the replay produces can be the cause. The decision is made from the host's own
+	// persisted record before the driver is consulted.
+	//
+	// Consistent with that: the driver author reports that REMOVING and RE-ADDING T310/T315
+	// makes them work permanently. A re-add is a host-initiated ApplyStep that runs
+	// ActivateChildControllerFromConfiguration and rewrites the host-side record; the cached
+	// reload path calls the same MarkChildConfiguredInCache/SetConfigured with the same values
+	// and does not. That asymmetry - host record rewritten vs not - is the open question, and
+	// it lives on the host side of the boundary, not in this file.
+	//
+	// Driver-side fields RULED OUT by direct measurement (CACHED-CHILD-DIAG / SENSOR-CAP-DIAG,
+	// one line per cached child at publish time; both diagnostics are still in this codebase):
+	// uxCategory, childKind, hubChildCategory (nothing reads it), kind, childId, serial,
+	// discoveryDeviceId, host, awaitingConnectedIdentity, cachedIsConfigured, treatAsLight,
+	// statusAfterReplay, hasLightEntity, hasManagedDeviceEntry, UiDefinition load result
+	// (loaded=True for every child), capability-resolution timing, and hasConnectedDevice
+	// (False for ALL hub children including the always-adopted S200B - it is by design for the
+	// push architecture, not a sensor defect). Every one of these is identical between adopted
+	// and skipped children.
+	//
+	// Regression context from the driver author: all of these children worked before the
+	// push-based ManagedParentDevicePoller rearchitecture (commit c95c7e1), which is when hub
+	// children began acquiring a shared poller during entity construction on the cached-publish
+	// path. That commit is the most likely place the ordering above was introduced.
+	//
+	// A timed "stuck cached child" watchdog used to tear down children that had not reached
+	// Running some interval after this replay. It has been removed - see the DELIBERATELY NO
+	// STUCK-CACHED-CHILD WATCHDOG note below for the measurements showing it was what actually
+	// took T310/T315 offline and permanently cleared their cached IsConfigured flag.
+	private void ReplayCachedChildConfiguration (
+		LoggingDriverConfigurationController childConfigurationController,
+		ManagedDeviceCacheEntry entry,
+		ManagedLightDescriptor descriptor,
+		string context)
+		{
+		var replayValues = new Dictionary<string, string> { ["ActivationMarker"] = "true" };
+		if (IsTreatAsLightChoiceEligible (descriptor))
+			{
+			replayValues["TreatAsLight"] = entry.TreatAsLight ? "true" : "false";
+			}
+
+		// NOTE: ApplyConfigurationStep below always comes back with errorKeys=DriverDataStore,
+		// because DriverDataStore is a host-owned configuration item (it is not declared in
+		// CreateChildConfigurationController's item list) that only Crestron Home can populate -
+		// the host logs it as "Remaining configuration item to be set was not known yet:
+		// DriverDataStore; Device configuration required." The driver has no legitimate value to
+		// supply for it, so this error is expected here and must NOT be papered over by injecting
+		// a placeholder into replayValues. Every cached child reports it, including ones that go
+		// on to reach Running normally.
+		try
+			{
+			// Replay via the same step-based GetFirstConfigurationStep/ApplyConfigurationStep
+			// sequence that Configure Pro itself drives, instead of only calling
+			// ApplyConfiguration(dict) directly, so the host observes the same
+			// NotConfigured->Configured transition it would see from a real Configure Pro
+			// submission.
+			//
+			// NOTE: the calls below go through the same LoggingDriverConfigurationController
+			// wrapper used for host-initiated calls, so "GetFirstConfigurationStep called"/
+			// "ApplyConfigurationStep called" log lines cannot be distinguished from an actual
+			// Configure Pro/Setup Program call by message text alone - the explicit "about to
+			// replay..." line immediately below marks which calls originate from this internal
+			// replay rather than from the host.
+			LogInfo ($"PublishCachedChildControllers: about to replay configuration for controllerId='{descriptor.ControllerId}' (context='{context}') via internal GetFirstConfigurationStep/ApplyConfigurationStep call (not a host/Configure Pro request).");
+			Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationStep firstStep = childConfigurationController.GetFirstConfigurationStep ();
+			if (firstStep is not null && !string.IsNullOrWhiteSpace (firstStep.Id))
+				{
+				childConfigurationController.ApplyConfigurationStep (firstStep.Id, replayValues);
+				LogInfo ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' (context='{context}') replayed prior configuration values via step-based ApplyConfigurationStep(stepId='{firstStep.Id}') into the recreated configuration controller (after host registration).");
+				}
+			else
+				{
+				childConfigurationController.ApplyConfiguration (replayValues);
+				LogInfo ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' (context='{context}') had no first configuration step available; fell back to replaying prior configuration values via ApplyConfiguration into the recreated configuration controller (after host registration).");
+				}
+			}
+		catch (Exception ex)
+			{
+			LogError ($"PublishCachedChildControllers: controllerId='{descriptor.ControllerId}' (context='{context}') failed to replay configuration values into the recreated configuration controller: {ex}");
+			}
+		}
+
+	// DELIBERATELY NO STUCK-CACHED-CHILD WATCHDOG.
+	//
+	// A destructive watchdog used to live here: if a replayed cached child had not reached
+	// Running within a bounded interval, it called RemoveChildFromConfiguration to tear the
+	// child down and republish it as available. Successive measurements proved that this was
+	// not a backstop but the actual cause of the "sensor offline after reload" reports, and
+	// that its damage was permanent rather than transient:
+	//
+	//   12:52:11  five cached children published and replayed identically
+	//   12:52:23  host ApplyAll adopted only S200B (Button) and KP303 (Outlet)
+	//   12:55:11  the watchdog fired at its deadline for T315/T100 and tore them down
+	//   12:58:15  Refresh.cs requeued them - reachable ONLY because the teardown had removed
+	//             their _lightEntities entries - and they came back
+	//
+	// The teardown path runs ClearChildRuntimeState, which sets entry.IsConfigured=false and
+	// flushes the managed-device cache to disk. That is the permanent part: on the NEXT
+	// reload LoadManagedDeviceCacheIntoMemory seeds _configuredChildControllerIds only from
+	// entries whose cached IsConfigured is still true, so a child the watchdog had previously
+	// torn down is no longer replay-eligible in PublishCachedChildControllers at all. Measured
+	// on the 13:39:42 reload: "Managed-device cache seeded 12 device entries ...
+	// cachedConfiguredChildCount=2" - only S200B and KP303 replayed, and only those two came
+	// online. T310/T315/T100 were published but never replayed, so the host was never asked to
+	// adopt them and they sat at NotConfigured forever.
+	//
+	// In other words the watchdog converted a child that the host had merely been slow to
+	// adopt into one that could never be adopted again without a manual re-add in Configure
+	// Pro. Nothing here should destroy a child to provoke recovery: an unadopted cached child
+	// is not evidence of a stuck child, because replay is indistinguishable between children
+	// the host goes on to adopt and children it ignores (every one of them, including the two
+	// that succeed, returns errorKeys=DriverDataStore).
+	//
+	// If a genuinely stuck cached child is ever observed again, diagnose why the host is not
+	// completing the NotConfigured->Running handshake; do not reintroduce a timer that erases
+	// persisted configuration state.
 
 	private bool TryCreateCachedDescriptorAndConfiguration (
 		ManagedDeviceCacheEntry entry,
@@ -414,6 +555,8 @@ public sealed partial class PlatformDriver
 			{
 			DeviceUxCategory.Outlet => ManagedChildKind.Outlet,
 			DeviceUxCategory.Sensor => ManagedChildKind.Sensor,
+			// Legacy cache entries persisted Switch for button children before this was fixed to
+			// use Sensor; keep accepting it on read so old caches still resolve correctly.
 			DeviceUxCategory.Switch => ManagedChildKind.Button,
 			DeviceUxCategory.Thermostat => ManagedChildKind.Thermostat,
 			DeviceUxCategory.Light => ManagedChildKind.Light,
@@ -453,7 +596,8 @@ public sealed partial class PlatformDriver
 			entry.AwaitingConnectedIdentity,
 			serialNumber,
 			childId: recoveredChildId,
-			childKind: childKind);
+			childKind: childKind,
+			hubChildCategory: entry.HubChildCategory);
 
 		DeviceCredentials? credentials = string.IsNullOrWhiteSpace (configuration.UserName) || string.IsNullOrWhiteSpace (configuration.Password)
 			? null
@@ -597,17 +741,17 @@ public sealed partial class PlatformDriver
 
 	private bool IsMaterializationInFlight (string controllerId)
 		{
-		return _materializationInFlightControllerIds.Contains (controllerId);
+		return _materializationInFlightControllerIds.ContainsKey (controllerId);
 		}
 
 	private bool TryMarkMaterializationInFlight (string controllerId)
 		{
-		return _materializationInFlightControllerIds.Add (controllerId);
+		return _materializationInFlightControllerIds.TryAdd (controllerId, 0);
 		}
 
 	private void ClearMaterializationInFlight (string controllerId)
 		{
-		_materializationInFlightControllerIds.Remove (controllerId);
+		_ = _materializationInFlightControllerIds.TryRemove (controllerId, out _);
 		}
 
 	private void LogManagedDeviceSnapshot (string context, IDictionary<string, PlatformManagedDevice> entries)

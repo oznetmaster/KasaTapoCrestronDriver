@@ -13,8 +13,13 @@ namespace KasaTapoCrestronDriver;
 /// each redundantly re-fetching the *entire* hub child list even though all children of one hub
 /// already share a single connected <see cref="KasaDevice"/> (via
 /// <see cref="Discover.GetOrConnectSharedAsync"/>). This class instead connects once, polls once
-/// per <see cref="IPlatformSharedConfiguration.SensorPollInterval"/> tick, and pushes each child
-/// its own slice of the resulting child list.
+/// per tick, and pushes each child its own slice of the resulting child list.
+///
+/// The poll cadence is taken from the devices themselves - the shortest
+/// <c>ChildDevice.ReportMode.ReportInterval</c> across this hub's children - since polling faster
+/// than the children actually refresh their state cannot surface anything new. The configured
+/// <see cref="IPlatformSharedConfiguration.SensorPollInterval"/> is used only as a fallback until
+/// a child has reported its interval.
 ///
 /// Lifetime is reference-counted by registration: the poller connects and starts polling when its
 /// first child registers, and stops/releases its connection reference when its last child
@@ -73,11 +78,12 @@ internal sealed class ManagedParentDevicePoller
 		}
 
 	/// <summary>
-	/// Registers a hub child entity with this poller. An immediate poll is always kicked off
-	/// (rather than waiting a full <see cref="IPlatformSharedConfiguration.SensorPollInterval"/>)
-	/// so the newly-configured child gets fresh state right away, matching the previous
-	/// per-entity "connect gives fresh initial state" behavior - even if other children of the
-	/// same hub are already registered and polling.
+	/// Registers a hub child entity with this poller. Polling is driven entirely by event
+	/// subscription state (see <see cref="IKasaHubChildEntity.HasEventSubscribers"/>), so
+	/// registering a child does not by itself start polling: this poller subscribes to the child's
+	/// <see cref="IKasaHubChildEntity.EventSubscribersChanged"/> and begins polling as soon as that
+	/// child (or any sibling) actually has a subscriber, and stops again when the last one goes
+	/// away.
 	/// </summary>
 	public void RegisterChild (IKasaHubChildEntity child)
 		{
@@ -88,29 +94,77 @@ internal sealed class ManagedParentDevicePoller
 				return;
 				}
 
+			if (_children.TryGetValue (child.ChildId, out IKasaHubChildEntity? existingChild))
+				{
+				existingChild.EventSubscribersChanged -= HandleChildEventSubscribersChanged;
+				}
+
 			_children[child.ChildId] = child;
+			child.EventSubscribersChanged += HandleChildEventSubscribersChanged;
 			}
 
 		LogInfo ($"RegisterChild: childId='{child.ChildId}', totalChildren={_children.Count}.");
 
-		RestartPolling ();
+		EvaluatePollingState ("RegisterChild");
 		}
 
 	public void UnregisterChild (string childId)
 		{
-		bool shouldStop;
 		lock (_gate)
 			{
+			if (_children.TryGetValue (childId, out IKasaHubChildEntity? existingChild))
+				{
+				existingChild.EventSubscribersChanged -= HandleChildEventSubscribersChanged;
+				}
+
 			_children.Remove (childId);
-			shouldStop = _children.Count == 0;
 			}
 
-		LogInfo ($"UnregisterChild: childId='{childId}', remainingChildren={_children.Count}, shouldStop={shouldStop}.");
+		LogInfo ($"UnregisterChild: childId='{childId}', remainingChildren={_children.Count}.");
 
-		if (shouldStop)
+		EvaluatePollingState ("UnregisterChild");
+		}
+
+	private void HandleChildEventSubscribersChanged ()
+		{
+		EvaluatePollingState ("EventSubscribersChanged");
+		}
+
+	/// <summary>
+	/// The single place that decides whether this hub should currently be polled. Polling runs if
+	/// and only if at least one registered child has at least one event subscriber, so the loop
+	/// starts the instant the first subscriber appears and stops the instant the last one goes
+	/// away.
+	/// </summary>
+	private void EvaluatePollingState (string context)
+		{
+		bool shouldPoll;
+		bool isPolling;
+		lock (_gate)
 			{
-			Stop ();
+			if (_disposed)
+				{
+				return;
+				}
+
+			shouldPoll = _children.Values.Any (static child => child.HasEventSubscribers);
+			isPolling = _pollingTask is not null;
 			}
+
+		if (shouldPoll == isPolling)
+			{
+			return;
+			}
+
+		if (shouldPoll)
+			{
+			LogInfo ($"EvaluatePollingState ({context}): a child now has event subscribers; starting polling.");
+			StartPolling ();
+			return;
+			}
+
+		LogInfo ($"EvaluatePollingState ({context}): no child has any event subscriber; stopping polling.");
+		Stop ();
 		}
 
 	public void ApplyRuntimeConfiguration (PlatformSharedConfigurationSnapshot previousConfiguration, PlatformSharedConfigurationSnapshot currentConfiguration)
@@ -120,24 +174,38 @@ internal sealed class ManagedParentDevicePoller
 			return;
 			}
 
-		if (previousConfiguration.SensorPollInterval != currentConfiguration.SensorPollInterval)
+		if (previousConfiguration.SensorPollInterval == currentConfiguration.SensorPollInterval)
 			{
-			lock (_gate)
+			return;
+			}
+
+		lock (_gate)
+			{
+			// Only an already-running loop needs to be restarted to pick up the new cadence; if
+			// nothing is subscribed the loop is (correctly) stopped and must stay that way.
+			if (_pollingTask is null)
 				{
-				if (_children.Count == 0)
-					{
-					return;
-					}
+				return;
 				}
 
-			RestartPolling ();
+			// The configured interval is only a fallback - once the hub's children have reported
+			// their own cadence that is what paces polling, so a configuration change is moot.
+			if (_deviceReportedInterval is not null)
+				{
+				return;
+				}
 			}
+
+		StartPolling ();
 		}
 
-	private void RestartPolling ()
+	private void StartPolling ()
 		{
 		int generation = Interlocked.Increment (ref _pollingGeneration);
-		_pollingTask = RunPollingCycleAsync (generation, immediateFirstPoll: true);
+		lock (_gate)
+			{
+			_pollingTask = RunPollingCycleAsync (generation, immediateFirstPoll: true);
+			}
 		}
 
 	private async Task RunPollingCycleAsync (int generation, bool immediateFirstPoll)
@@ -155,25 +223,22 @@ internal sealed class ManagedParentDevicePoller
 				return;
 				}
 
-			// The initial poll on registration always runs (regardless of subscribers) so newly
-			// configured/published children get a correct starting value read directly from the
-			// device. After that, all continued property updates happen only as a side effect of
-			// the delta checks that raise a child's events (see IKasaHubChildEntity.ApplyPushedState
-			// implementations), so once none of a hub's children have any event subscriber there is
-			// nothing for a further poll to usefully drive - skip actually hitting the device this
-			// tick, but keep the loop alive so polling resumes automatically the moment a subscriber
-			// appears.
-			if (immediateFirstPoll || AnyChildHasEventSubscribers ())
-				{
-				await PollOnceAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
-				}
+			await PollOnceAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
 
 			if (_disposed || generation != Volatile.Read (ref _pollingGeneration))
 				{
 				return;
 				}
 
-			_pollingTask = RunPollingCycleAsync (generation, immediateFirstPoll: false);
+			lock (_gate)
+				{
+				if (generation != Volatile.Read (ref _pollingGeneration))
+					{
+					return;
+					}
+
+				_pollingTask = RunPollingCycleAsync (generation, immediateFirstPoll: false);
+				}
 			}
 		catch (OperationCanceledException)
 			{
@@ -184,38 +249,89 @@ internal sealed class ManagedParentDevicePoller
 			}
 		}
 
+	/// <summary>
+	/// The base cadence for this hub, derived from the devices themselves: hub children report how
+	/// often they actually push new state (<c>ChildDevice.ReportMode.ReportInterval</c>, in
+	/// seconds), so polling any faster than the shortest such interval across this hub's children
+	/// can only ever re-read values the devices have not refreshed yet - pure wasted network and
+	/// hub load. Updated after each successful poll by <see cref="UpdateDeviceReportedInterval"/>;
+	/// null until at least one child reports an interval, in which case the configured
+	/// <see cref="IPlatformSharedConfiguration.SensorPollInterval"/> is used as the fallback.
+	/// </summary>
+	private TimeSpan? _deviceReportedInterval;
+
+	/// <summary>
+	/// Records the shortest <c>report_interval</c> reported by any of this hub's children on the
+	/// most recent successful poll, so <see cref="ComputeNextDelay"/> can pace polling to match how
+	/// fast the devices actually produce new data.
+	/// </summary>
+	private void UpdateDeviceReportedInterval (KasaDevice device, List<IKasaHubChildEntity> childrenSnapshot)
+		{
+		int? shortestSeconds = null;
+		foreach (IKasaHubChildEntity child in childrenSnapshot)
+			{
+			try
+				{
+				ChildDevice? childDevice = device.GetChildDevice (child.ChildId);
+				int? reportInterval = childDevice?.ReportMode.ReportInterval;
+				if (reportInterval is not int intervalSeconds || intervalSeconds <= 0)
+					{
+					continue;
+					}
+
+				if (shortestSeconds is null || intervalSeconds < shortestSeconds)
+					{
+					shortestSeconds = intervalSeconds;
+					}
+				}
+			catch (Exception ex)
+				{
+				_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Hub poller '{_hostKey}' failed to read report interval for child '{child.ChildId}': {ex}");
+				}
+			}
+
+		TimeSpan? resolvedInterval = shortestSeconds is int seconds ? TimeSpan.FromSeconds (seconds) : null;
+		lock (_gate)
+			{
+			if (resolvedInterval == _deviceReportedInterval)
+				{
+				return;
+				}
+
+			_deviceReportedInterval = resolvedInterval;
+			}
+
+		LogInfo (resolvedInterval is TimeSpan interval
+			? $"UpdateDeviceReportedInterval: '{_hostKey}' shortest device-reported interval is now {interval.TotalSeconds:0.###}s; polling paced to match."
+			: $"UpdateDeviceReportedInterval: '{_hostKey}' no child reported an interval; falling back to configured SensorPollInterval.");
+		}
+
 	private TimeSpan ComputeNextDelay ()
 		{
-		TimeSpan baseInterval = _sharedConfiguration.SensorPollInterval;
+		// Prefer the devices' own reporting cadence over the configured interval: polling faster
+		// than the hub children actually refresh cannot surface anything new. The configured
+		// SensorPollInterval is only the fallback for when no child has reported an interval yet
+		// (e.g. before the first successful poll).
+		TimeSpan? deviceReportedInterval;
+		lock (_gate)
+			{
+			deviceReportedInterval = _deviceReportedInterval;
+			}
+
+		TimeSpan baseInterval = deviceReportedInterval ?? _sharedConfiguration.SensorPollInterval;
 		int failureCount = Volatile.Read (ref _consecutiveFailureCount);
 		if (failureCount <= 0)
 			{
 			return baseInterval;
 			}
 
-		// Exponential backoff: 2x, 4x, 8x, ... the configured interval per additional consecutive
+		// Exponential backoff: 2x, 4x, 8x, ... the base interval per additional consecutive
 		// failure, capped at MaxBackoff so a persistently unreachable hub is retried only rarely
 		// rather than being reconnected to on every tick.
 		double multiplier = Math.Pow (2, Math.Min (failureCount, 10));
 		double backoffMs = baseInterval.TotalMilliseconds * multiplier;
 		TimeSpan backoff = TimeSpan.FromMilliseconds (Math.Min (backoffMs, MaxBackoff.TotalMilliseconds));
 		return backoff > baseInterval ? backoff : baseInterval;
-		}
-
-	private bool AnyChildHasEventSubscribers ()
-		{
-		lock (_gate)
-			{
-			foreach (IKasaHubChildEntity child in _children.Values)
-				{
-				if (child.HasEventSubscribers)
-					{
-					return true;
-					}
-				}
-
-			return false;
-			}
 		}
 
 	private async Task PollOnceAsync (CancellationToken cancellationToken)
@@ -245,6 +361,8 @@ internal sealed class ManagedParentDevicePoller
 				{
 				LogInfo ($"PollOnceAsync: '{_hostKey}' poll succeeded; resetting consecutive-failure backoff.");
 				}
+
+			UpdateDeviceReportedInterval (device, childrenSnapshot);
 
 			foreach (IKasaHubChildEntity child in childrenSnapshot)
 				{
@@ -339,7 +457,10 @@ internal sealed class ManagedParentDevicePoller
 	private void Stop ()
 		{
 		Interlocked.Increment (ref _pollingGeneration);
-		_pollingTask = null;
+		lock (_gate)
+			{
+			_pollingTask = null;
+			}
 		}
 
 	public void Dispose ()
@@ -350,6 +471,17 @@ internal sealed class ManagedParentDevicePoller
 			}
 
 		_disposed = true;
+
+		lock (_gate)
+			{
+			foreach (IKasaHubChildEntity child in _children.Values)
+				{
+				child.EventSubscribersChanged -= HandleChildEventSubscribersChanged;
+				}
+
+			_children.Clear ();
+			}
+
 		Stop ();
 		_lifetimeCancellationSource.Cancel ();
 		_lifetimeCancellationSource.Dispose ();

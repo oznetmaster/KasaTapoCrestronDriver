@@ -49,6 +49,13 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	private bool _disposed;
 	private bool _capabilitiesResolved;
 	private bool _registeredWithHubPoller;
+	private ChildBatterySensorState? _lastBatteryState;
+	private ChildContactSensorState? _lastContactState;
+	private ChildMotionSensorState? _lastMotionState;
+	private ChildWaterLeakSensorState? _lastWaterLeakState;
+	private ChildTemperatureSensorState? _lastTemperatureState;
+	private ChildHumiditySensorState? _lastHumidityState;
+	private bool _lastStateWasNull = true;
 
 	/// <summary>
 	/// This hub child's own <c>ChildId</c>, used by the owning <see cref="ManagedParentDevicePoller"/>
@@ -284,76 +291,158 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 
 	// Discrete transition events give Crestron Home's Actions & Events / sequences a way to
 	// trigger directly off a state change, mirroring OutletTurnedOn/OutletTurnedOff.
+	//
+	// Each event below uses explicit add/remove accessors (backed by an explicit field, since the
+	// C# 13 'field' keyword only applies to property accessors, not event accessors) rather than a
+	// plain field-like event, so subscription changes are directly observable: they are both
+	// logged and, more importantly, reported to the owning ManagedParentDevicePoller via
+	// EventSubscribersChanged so it can start polling this hub the instant the first subscriber
+	// appears and stop the instant the last one goes away.
+	private EventHandler? _contactOpened;
+
 	[EntityEvent (Id = "contactOpened", FriendlyName = "Contact Opened", NameLocalizationKey = "Event_ContactOpened")]
 	[EntityEventMetadata (Programmable = true)]
-	public event EventHandler ContactOpened = null!;
+	public event EventHandler ContactOpened
+		{
+		add { _contactOpened += value; LogInfo ($"Sensor entity '{ControllerId}' ContactOpened subscriber added; totalSubscribers={_contactOpened?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		remove { _contactOpened -= value; LogInfo ($"Sensor entity '{ControllerId}' ContactOpened subscriber removed; totalSubscribers={_contactOpened?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
+
+	private EventHandler? _contactClosed;
 
 	[EntityEvent (Id = "contactClosed", FriendlyName = "Contact Closed", NameLocalizationKey = "Event_ContactClosed")]
 	[EntityEventMetadata (Programmable = true)]
-	public event EventHandler ContactClosed = null!;
+	public event EventHandler ContactClosed
+		{
+		add { _contactClosed += value; LogInfo ($"Sensor entity '{ControllerId}' ContactClosed subscriber added; totalSubscribers={_contactClosed?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		remove { _contactClosed -= value; LogInfo ($"Sensor entity '{ControllerId}' ContactClosed subscriber removed; totalSubscribers={_contactClosed?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
+
+	private EventHandler? _motionDetectedEvent;
 
 	[EntityEvent (Id = "motionDetectedEvent", FriendlyName = "Motion Detected", NameLocalizationKey = "Event_MotionDetected")]
 	[EntityEventMetadata (Programmable = true)]
-	public event EventHandler MotionDetectedEvent = null!;
+	public event EventHandler MotionDetectedEvent
+		{
+		add { _motionDetectedEvent += value; LogInfo ($"Sensor entity '{ControllerId}' MotionDetectedEvent subscriber added; totalSubscribers={_motionDetectedEvent?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		remove { _motionDetectedEvent -= value; LogInfo ($"Sensor entity '{ControllerId}' MotionDetectedEvent subscriber removed; totalSubscribers={_motionDetectedEvent?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
+
+	private EventHandler? _motionCleared;
 
 	[EntityEvent (Id = "motionCleared", FriendlyName = "Motion Cleared", NameLocalizationKey = "Event_MotionCleared")]
 	[EntityEventMetadata (Programmable = true)]
-	public event EventHandler MotionCleared = null!;
+	public event EventHandler MotionCleared
+		{
+		add { _motionCleared += value; LogInfo ($"Sensor entity '{ControllerId}' MotionCleared subscriber added; totalSubscribers={_motionCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		remove { _motionCleared -= value; LogInfo ($"Sensor entity '{ControllerId}' MotionCleared subscriber removed; totalSubscribers={_motionCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
+
+	private EventHandler? _leakDetectedEvent;
 
 	[EntityEvent (Id = "leakDetectedEvent", FriendlyName = "Leak Detected", NameLocalizationKey = "Event_LeakDetected")]
 	[EntityEventMetadata (Programmable = true)]
-	public event EventHandler LeakDetectedEvent = null!;
+	public event EventHandler LeakDetectedEvent
+		{
+		add { _leakDetectedEvent += value; LogInfo ($"Sensor entity '{ControllerId}' LeakDetectedEvent subscriber added; totalSubscribers={_leakDetectedEvent?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		remove { _leakDetectedEvent -= value; LogInfo ($"Sensor entity '{ControllerId}' LeakDetectedEvent subscriber removed; totalSubscribers={_leakDetectedEvent?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
+
+	private EventHandler? _leakCleared;
 
 	[EntityEvent (Id = "leakCleared", FriendlyName = "Leak Cleared", NameLocalizationKey = "Event_LeakCleared")]
 	[EntityEventMetadata (Programmable = true)]
-	public event EventHandler LeakCleared = null!;
+	public event EventHandler LeakCleared
+		{
+		add { _leakCleared += value; LogInfo ($"Sensor entity '{ControllerId}' LeakCleared subscriber added; totalSubscribers={_leakCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		remove { _leakCleared -= value; LogInfo ($"Sensor entity '{ControllerId}' LeakCleared subscriber removed; totalSubscribers={_leakCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
+
+	private EventHandler? _batteryLowEvent;
 
 	[EntityEvent (Id = "batteryLowEvent", FriendlyName = "Battery Low", NameLocalizationKey = "Event_BatteryLow")]
 	[EntityEventMetadata (Programmable = true)]
-	public event EventHandler BatteryLowEvent = null!;
+	public event EventHandler BatteryLowEvent
+		{
+		add { _batteryLowEvent += value; LogInfo ($"Sensor entity '{ControllerId}' BatteryLowEvent subscriber added; totalSubscribers={_batteryLowEvent?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		remove { _batteryLowEvent -= value; LogInfo ($"Sensor entity '{ControllerId}' BatteryLowEvent subscriber removed; totalSubscribers={_batteryLowEvent?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
+
+	private EventHandler? _batteryNormal;
 
 	[EntityEvent (Id = "batteryNormal", FriendlyName = "Battery Normal", NameLocalizationKey = "Event_BatteryNormal")]
 	[EntityEventMetadata (Programmable = true)]
-	public event EventHandler BatteryNormal = null!;
+	public event EventHandler BatteryNormal
+		{
+		add { _batteryNormal += value; LogInfo ($"Sensor entity '{ControllerId}' BatteryNormal subscriber added; totalSubscribers={_batteryNormal?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		remove { _batteryNormal -= value; LogInfo ($"Sensor entity '{ControllerId}' BatteryNormal subscriber removed; totalSubscribers={_batteryNormal?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
+
+	private EventHandler? _temperatureWarningDetected;
 
 	[EntityEvent (Id = "temperatureWarningDetected", FriendlyName = "Temperature Warning Detected", NameLocalizationKey = "Event_TemperatureWarningDetected")]
 	[EntityEventMetadata (Programmable = true)]
-	public event EventHandler TemperatureWarningDetected = null!;
+	public event EventHandler TemperatureWarningDetected
+		{
+		add { _temperatureWarningDetected += value; LogInfo ($"Sensor entity '{ControllerId}' TemperatureWarningDetected subscriber added; totalSubscribers={_temperatureWarningDetected?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		remove { _temperatureWarningDetected -= value; LogInfo ($"Sensor entity '{ControllerId}' TemperatureWarningDetected subscriber removed; totalSubscribers={_temperatureWarningDetected?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
+
+	private EventHandler? _temperatureWarningCleared;
 
 	[EntityEvent (Id = "temperatureWarningCleared", FriendlyName = "Temperature Warning Cleared", NameLocalizationKey = "Event_TemperatureWarningCleared")]
 	[EntityEventMetadata (Programmable = true)]
-	public event EventHandler TemperatureWarningCleared = null!;
+	public event EventHandler TemperatureWarningCleared
+		{
+		add { _temperatureWarningCleared += value; LogInfo ($"Sensor entity '{ControllerId}' TemperatureWarningCleared subscriber added; totalSubscribers={_temperatureWarningCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		remove { _temperatureWarningCleared -= value; LogInfo ($"Sensor entity '{ControllerId}' TemperatureWarningCleared subscriber removed; totalSubscribers={_temperatureWarningCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
+
+	private EventHandler? _humidityWarningDetected;
 
 	[EntityEvent (Id = "humidityWarningDetected", FriendlyName = "Humidity Warning Detected", NameLocalizationKey = "Event_HumidityWarningDetected")]
 	[EntityEventMetadata (Programmable = true)]
-	public event EventHandler HumidityWarningDetected = null!;
+	public event EventHandler HumidityWarningDetected
+		{
+		add { _humidityWarningDetected += value; LogInfo ($"Sensor entity '{ControllerId}' HumidityWarningDetected subscriber added; totalSubscribers={_humidityWarningDetected?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		remove { _humidityWarningDetected -= value; LogInfo ($"Sensor entity '{ControllerId}' HumidityWarningDetected subscriber removed; totalSubscribers={_humidityWarningDetected?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
+
+	private EventHandler? _humidityWarningCleared;
 
 	[EntityEvent (Id = "humidityWarningCleared", FriendlyName = "Humidity Warning Cleared", NameLocalizationKey = "Event_HumidityWarningCleared")]
 	[EntityEventMetadata (Programmable = true)]
-	public event EventHandler HumidityWarningCleared = null!;
+	public event EventHandler HumidityWarningCleared
+		{
+		add { _humidityWarningCleared += value; LogInfo ($"Sensor entity '{ControllerId}' HumidityWarningCleared subscriber added; totalSubscribers={_humidityWarningCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		remove { _humidityWarningCleared -= value; LogInfo ($"Sensor entity '{ControllerId}' HumidityWarningCleared subscriber removed; totalSubscribers={_humidityWarningCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
 
 	/// <summary>
-	/// See <see cref="IKasaHubChildEntity.HasEventSubscribers"/>. Checked via each event field's
-	/// own multicast delegate rather than a separate tracked flag, since C# field-like events
-	/// already accumulate/remove subscribers for us - this just asks each one whether it currently
-	/// has any.
+	/// See <see cref="IKasaHubChildEntity.EventSubscribersChanged"/>.
+	/// </summary>
+	public event Action? EventSubscribersChanged;
+
+	/// <summary>
+	/// See <see cref="IKasaHubChildEntity.HasEventSubscribers"/>. Checked via each event's own
+	/// explicit backing field.
 	/// </summary>
 	public bool HasEventSubscribers
 		{
 		get
 			{
-			return ContactOpened is not null
-				|| ContactClosed is not null
-				|| MotionDetectedEvent is not null
-				|| MotionCleared is not null
-				|| LeakDetectedEvent is not null
-				|| LeakCleared is not null
-				|| BatteryLowEvent is not null
-				|| BatteryNormal is not null
-				|| TemperatureWarningDetected is not null
-				|| TemperatureWarningCleared is not null
-				|| HumidityWarningDetected is not null
-				|| HumidityWarningCleared is not null;
+			return _contactOpened is not null
+				|| _contactClosed is not null
+				|| _motionDetectedEvent is not null
+				|| _motionCleared is not null
+				|| _leakDetectedEvent is not null
+				|| _leakCleared is not null
+				|| _batteryLowEvent is not null
+				|| _batteryNormal is not null
+				|| _temperatureWarningDetected is not null
+				|| _temperatureWarningCleared is not null
+				|| _humidityWarningDetected is not null
+				|| _humidityWarningCleared is not null;
 			}
 		}
 
@@ -421,6 +510,11 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 
 		var setPropertyValue = new ExtensionSetPropertyValueExecutor (GetCommand, extensionExecutorLogger);
 		AddCommand (this, ExtensionSetPropertyValueExecutor.CommandName, setPropertyValue);
+
+		// UpdateSubControllers can synchronously expose GetState to the host. Finalize
+		// the cached surface before this entity can be configured, polled or published.
+		// NotifyChildPublished is called AFTER UpdateSubControllers and is too late.
+		ResolveCapabilitiesFromHubChildCategory ();
 
 		LogInfo ($"Sensor entity '{ControllerId}' created in passive discovered state; awaiting child configuration callback before activation.");
 		}
@@ -603,14 +697,65 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 			}
 
 		UpdateDescriptorFromConnectedDevice (parentDevice);
-		ApplyState (child);
+			bool stateChanged = HasChildStateChanged (child);
+		if (stateChanged)
+			{
+			ApplyState (child);
+			}
+
+		bool wasOnline = OnlineIndicatorIsOnline && ReadyIndicatorIsReady;
 		OnlineIndicatorIsOnline = true;
 		ReadyIndicatorIsReady = true;
 
-		if (_childPublished)
+		if (_childPublished && (stateChanged || !wasOnline))
 			{
 			PublishStateSnapshot ();
 			}
+		}
+
+	// Compares the freshly pushed child's typed state records (now value-comparable per KasaClient
+	// v1.6.0's record types) against the last-seen snapshot, so a poll tick that returns identical
+	// state can skip both ApplyState's property/event work and the subsequent publish entirely,
+	// rather than gating only the final publish after unconditionally re-applying state.
+	private bool HasChildStateChanged (ChildDevice? child)
+		{
+		if (child is null)
+			{
+			bool changed = !_lastStateWasNull;
+			_lastStateWasNull = true;
+			_lastBatteryState = null;
+			_lastContactState = null;
+			_lastMotionState = null;
+			_lastWaterLeakState = null;
+			_lastTemperatureState = null;
+			_lastHumidityState = null;
+			return changed;
+			}
+
+		ChildBatterySensorState? batteryState = child.Battery.State;
+		ChildContactSensorState? contactState = child.Contact.State;
+		ChildMotionSensorState? motionState = child.Motion.State;
+		ChildWaterLeakSensorState? waterLeakState = child.WaterLeak.State;
+		ChildTemperatureSensorState? temperatureState = child.Temperature.State;
+		ChildHumiditySensorState? humidityState = child.Humidity.State;
+
+		bool stateChanged = _lastStateWasNull
+			|| _lastBatteryState != batteryState
+			|| _lastContactState != contactState
+			|| _lastMotionState != motionState
+			|| _lastWaterLeakState != waterLeakState
+			|| _lastTemperatureState != temperatureState
+			|| _lastHumidityState != humidityState;
+
+		_lastStateWasNull = false;
+		_lastBatteryState = batteryState;
+		_lastContactState = contactState;
+		_lastMotionState = motionState;
+		_lastWaterLeakState = waterLeakState;
+		_lastTemperatureState = temperatureState;
+		_lastHumidityState = humidityState;
+
+		return stateChanged;
 		}
 
 	/// <summary>
@@ -625,10 +770,11 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 			return;
 			}
 
+		bool changed = OnlineIndicatorIsOnline != online || ReadyIndicatorIsReady != online;
 		OnlineIndicatorIsOnline = online;
 		ReadyIndicatorIsReady = online;
 
-		if (_childPublished)
+		if (_childPublished && changed)
 			{
 			PublishStateSnapshot ();
 			}
@@ -643,7 +789,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 
 		_childPublished = true;
 
-		LogInfo ($"Sensor entity '{ControllerId}' NotifyChildPublished invoked.");
+		LogInfo ($"Sensor entity '{ControllerId}' NotifyChildPublished invoked, capabilitiesResolved={_capabilitiesResolved}, hasConnectedDevice={_connectedDevice is not null}, isConfigured={_isConfigured}, registeredWithHubPoller={_registeredWithHubPoller}.");
 		PublishStateSnapshot ();
 		}
 
@@ -655,7 +801,22 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 			}
 
 		LogInfo ($"Sensor entity '{ControllerId}' NotifyChildRunning invoked, context='{context}'.");
+		LogCapabilityResolutionDiagnostics ($"NotifyChildRunning:{context}");
 		PublishStateSnapshot ();
+		}
+
+	// DIAGNOSTIC (temporary): capability resolution is the one thing a Sensor child has that the
+	// adopted Outlet/Button children do not. RemoveUnsupportedCapabilities can only run once
+	// ChildDeviceInfo.Features has arrived from the hub, which on the cached-publish path happens
+	// only after the shared poller's first successful UpdateAsync - i.e. potentially AFTER the
+	// host's ApplyAll pass has already decided which children to advance. If a cached sensor is
+	// still carrying the undtrimmed declared SUPERSET (contact + motion + leak + temperature +
+	// humidity simultaneously - a combination no real device has) at the moment the host inspects
+	// it, that is a plausible reason the host declines it while accepting the outlets/buttons,
+	// whose surface is static. This logs exactly when resolution happens relative to publication.
+	private void LogCapabilityResolutionDiagnostics (string phase)
+		{
+		LogInfo ($"SENSOR-CAP-DIAG: controllerId='{ControllerId}', phase='{phase}', capabilitiesResolved={_capabilitiesResolved}, childPublished={_childPublished}, isConfigured={_isConfigured}, hasConnectedDevice={_connectedDevice is not null}, registeredWithHubPoller={_registeredWithHubPoller}.");
 		}
 
 	public void PublishStateSnapshot ()
@@ -797,11 +958,11 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 					{
 					if (batteryLow.Value)
 						{
-						BatteryLowEvent?.Invoke (this, EventArgs.Empty);
+						_batteryLowEvent?.Invoke (this, EventArgs.Empty);
 						}
 					else
 						{
-						BatteryNormal?.Invoke (this, EventArgs.Empty);
+						_batteryNormal?.Invoke (this, EventArgs.Empty);
 						}
 					}
 				}
@@ -825,11 +986,11 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 					{
 					if (temperatureWarning.Value)
 						{
-						TemperatureWarningDetected?.Invoke (this, EventArgs.Empty);
+						_temperatureWarningDetected?.Invoke (this, EventArgs.Empty);
 						}
 					else
 						{
-						TemperatureWarningCleared?.Invoke (this, EventArgs.Empty);
+						_temperatureWarningCleared?.Invoke (this, EventArgs.Empty);
 						}
 					}
 				}
@@ -852,11 +1013,11 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 					{
 					if (humidityWarning.Value)
 						{
-						HumidityWarningDetected?.Invoke (this, EventArgs.Empty);
+						_humidityWarningDetected?.Invoke (this, EventArgs.Empty);
 						}
 					else
 						{
-						HumidityWarningCleared?.Invoke (this, EventArgs.Empty);
+						_humidityWarningCleared?.Invoke (this, EventArgs.Empty);
 						}
 					}
 				}
@@ -872,11 +1033,11 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 					{
 					if (isOpen.Value)
 						{
-						ContactOpened?.Invoke (this, EventArgs.Empty);
+						_contactOpened?.Invoke (this, EventArgs.Empty);
 						}
 					else
 						{
-						ContactClosed?.Invoke (this, EventArgs.Empty);
+						_contactClosed?.Invoke (this, EventArgs.Empty);
 						}
 					}
 
@@ -894,11 +1055,11 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 					{
 					if (motionDetected.Value)
 						{
-						MotionDetectedEvent?.Invoke (this, EventArgs.Empty);
+						_motionDetectedEvent?.Invoke (this, EventArgs.Empty);
 						}
 					else
 						{
-						MotionCleared?.Invoke (this, EventArgs.Empty);
+						_motionCleared?.Invoke (this, EventArgs.Empty);
 						}
 					}
 
@@ -916,11 +1077,11 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 					{
 					if (leakAlert.Value)
 						{
-						LeakDetectedEvent?.Invoke (this, EventArgs.Empty);
+						_leakDetectedEvent?.Invoke (this, EventArgs.Empty);
 						}
 					else
 						{
-						LeakCleared?.Invoke (this, EventArgs.Empty);
+						_leakCleared?.Invoke (this, EventArgs.Empty);
 						}
 					}
 
@@ -1002,8 +1163,6 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 			return;
 			}
 
-		_capabilitiesResolved = true;
-
 		bool hasFeature (string featureId) =>
 			info.Features.Any (feature => string.Equals (feature.Id, featureId, StringComparison.OrdinalIgnoreCase));
 
@@ -1016,6 +1175,85 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		bool hasContact = hasFeature ("is_open") || hasFeature ("open");
 		bool hasMotion = hasFeature ("motion_detected") || hasFeature ("detected");
 		bool hasLeak = hasFeature ("water_leak");
+
+		ApplyResolvedCapabilities (
+			hasBattery,
+			hasBatteryLevel,
+			hasTemperature,
+			hasTemperatureWarning,
+			hasHumidity,
+			hasHumidityWarning,
+			hasContact,
+			hasMotion,
+			hasLeak,
+			"declared-features");
+		}
+
+	// Resolves the same capability set from the descriptor's persisted HubChildCategory instead of
+	// live telemetry. On the cached-reload path ChildDeviceInfo.Features is not available until the
+	// shared poller's first successful UpdateAsync, which happens AFTER the child is published - so
+	// trimming there raises RaiseDefinitionChangedEvent while the host is still registering the
+	// child, and the host drops it (outlets/buttons survive because their surface is static). The
+	// category is known at discovery and is now persisted in the managed-device cache, so the
+	// surface can be finalized before publication, matching the initial-add ordering that works.
+	private void ResolveCapabilitiesFromHubChildCategory ()
+		{
+		HubChildCategory category = _descriptor.HubChildCategory;
+		HubChildCategory modelCategory = HubChildCategoryResolver.FromModel (_descriptor.ModelName);
+		if (category == HubChildCategory.None
+			|| (category == HubChildCategory.Contact && modelCategory == HubChildCategory.Motion))
+			{
+			// Older caches omit the category; earlier discovery also mislabeled T100
+			// as Contact. Repair these known cases without deleting room configuration.
+			category = modelCategory;
+			_descriptor.HubChildCategory = category;
+			}
+
+		if (category == HubChildCategory.None)
+			{
+			// An unknown model still needs the device's declared features.
+			return;
+			}
+
+		bool hasTemperature = category is HubChildCategory.Temperature or HubChildCategory.TemperatureHumidity;
+		bool hasHumidity = category is HubChildCategory.Humidity or HubChildCategory.TemperatureHumidity;
+		bool hasContact = category == HubChildCategory.Contact;
+		bool hasMotion = category == HubChildCategory.Motion;
+		bool hasLeak = category == HubChildCategory.WaterLeak;
+
+		// Every battery-powered hub child reports battery, and the warning properties travel with
+		// their matching telemetry, so these follow directly from the category.
+		ApplyResolvedCapabilities (
+			hasBattery: true,
+			hasBatteryLevel: true,
+			hasTemperature: hasTemperature,
+			hasTemperatureWarning: hasTemperature,
+			hasHumidity: hasHumidity,
+			hasHumidityWarning: hasHumidity,
+			hasContact: hasContact,
+			hasMotion: hasMotion,
+			hasLeak: hasLeak,
+			$"hub-child-category:{category}");
+		}
+
+	private void ApplyResolvedCapabilities (
+		bool hasBattery,
+		bool hasBatteryLevel,
+		bool hasTemperature,
+		bool hasTemperatureWarning,
+		bool hasHumidity,
+		bool hasHumidityWarning,
+		bool hasContact,
+		bool hasMotion,
+		bool hasLeak,
+		string source)
+		{
+		if (_capabilitiesResolved)
+			{
+			return;
+			}
+
+		_capabilitiesResolved = true;
 
 		try
 			{
@@ -1083,8 +1321,17 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 				RemoveEvent ("leakCleared");
 				}
 
-			RaiseDefinitionChangedEvent ();
-			LogInfo ($"Sensor entity '{ControllerId}' capabilities resolved from declared features: hasBattery={hasBattery}, hasTemperature={hasTemperature}, hasHumidity={hasHumidity}, hasContact={hasContact}, hasMotion={hasMotion}, hasLeak={hasLeak}.");
+			// Only signal a definition change if the child has already been published. When the
+			// surface is finalized before publication (the cached-reload path resolving from the
+			// persisted HubChildCategory), the host has not registered anything yet and raising
+			// this during its registration pass is precisely what makes it drop the child.
+			if (_childPublished)
+				{
+				RaiseDefinitionChangedEvent ();
+				}
+
+			LogInfo ($"Sensor entity '{ControllerId}' capabilities resolved from {source}: hasBattery={hasBattery}, hasTemperature={hasTemperature}, hasHumidity={hasHumidity}, hasContact={hasContact}, hasMotion={hasMotion}, hasLeak={hasLeak}, childPublished={_childPublished}.");
+			LogCapabilityResolutionDiagnostics ("RemoveUnsupportedCapabilities-complete");
 			}
 		catch (Exception ex)
 			{

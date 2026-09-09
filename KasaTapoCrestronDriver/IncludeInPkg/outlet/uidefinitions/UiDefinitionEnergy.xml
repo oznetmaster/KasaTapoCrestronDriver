@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <uidefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://prd-use-rad-assets.azurewebsites.net/ExtensionsSchemaDefinition.xsd">
-	<version ver="2.0" />
+	<version ver="3.0" />
 	<tile icon="{outletIcon}" status="{outletStatus}" navigation="show:MainPage" action="command:outletToggle" showinhomepage="#false" showinroompage="#true" />
 	<layouts>
 
