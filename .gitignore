@@ -28,6 +28,9 @@ TestResults/
 **/.copilot/**
 plans/
 plans/**
+
+# Stray/unrelated nested client checkout - must never be committed in this workspace
+/KasaClient/
 **/plans/
 **/plans/**
 **/plan-*.md
