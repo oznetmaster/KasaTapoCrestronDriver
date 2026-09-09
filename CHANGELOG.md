@@ -10,6 +10,21 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.0]
+
+Major release: native hub sensor and button device support, alongside supporting reliability and configuration improvements. Bumped to 2.0.0 due to the significant new functionality and the architectural rearchitecture of hub polling described below.
+
+- Added native support for Kasa/Tapo hub-connected **sensor devices** (contact, motion, leak, temperature/humidity) and **button devices**, published as their own standalone managed child entities (`KasaSensorEntity` / `KasaButtonEntity`), following the same one-entity-per-kind pattern used for lights and outlets.
+- Rearchitected hub child polling from a single fixed-interval poll loop per child to a shared, push-based `ManagedParentDevicePoller` model: one poller per physical hub connection fans out pushed state to all of its registered children on each refresh, and only polls at all while at least one child has active event subscribers, avoiding unnecessary traffic to hubs with no actively-displayed children.
+- The shared hub poller's polling cadence is now automatically derived from the children themselves: it polls at **50% of the shortest report interval currently reported by any connected child**, so pushed state changes are picked up well within a single reporting cycle instead of only matching it. The **Sensor/Button Poll Interval (Seconds)** setting is now only a fallback used until a child has reported its own interval.
+- Added a per-device **Report Interval (Seconds)** configuration item for sensor and button child devices, allowing the device's own internal reporting cadence to be overridden directly (via `KasaTapoClient` 1.8.0's `ChildReportModeModule.SetIntervalAsync`). The default value of `0` leaves the device's own default interval untouched. Changing this value also immediately notifies the owning hub poller to recompute and reset its own polling cadence, rather than waiting out a delay based on the previous interval.
+- Added a per-device **Allow Double Click** configuration item for button child devices (enabled by default), controlling whether the device reports double-click events in addition to single-click.
+- Added support for shared-parent power-strip topologies where multiple managed child devices are backed by the same physical parent connection, reusing the same pooled-connection model introduced for hub sensors/buttons.
+- Fixed sensor/button polling to use the dedicated **Sensor/Button Poll Interval (Seconds)** setting instead of incorrectly reusing the light-polling interval/enablement settings.
+- Fixed hub child readiness so a child that publishes asynchronously and is already `Running` by the time its registration completes is correctly reconciled instead of left in a stale state.
+- Fixed the **Allow Double Click** configuration item not actually applying to already-connected hub button devices in some cases.
+- Fixed several nullable-reference compiler warnings in the light entity's diagnostic state-snapshot formatter.
+
 ## [1.3.1]
 
 - Fixed the NuGet package not carrying any release notes. The release workflow passed the published GitHub Release's body to MSBuild via `-p:PackageReleaseNotesFile`, but nothing in the project file ever read that file's contents into the `PackageReleaseNotes` property NuGet actually packs, so every release notes field was silently blank. Added a `SetPackageReleaseNotesFromFile` build target that reads the file and populates `PackageReleaseNotes` before the nuspec is generated.
