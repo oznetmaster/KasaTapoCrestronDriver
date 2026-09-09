@@ -368,7 +368,7 @@ internal partial class KasaLightEntity
 			}
 		}
 
-	private static string DescribeDiagnosticObject (object value, int depth, IList<object> visited)
+	private static string DescribeDiagnosticObject (object? value, int depth, IList<object> visited)
 		{
 		if (value == null)
 			{
@@ -499,7 +499,7 @@ internal partial class KasaLightEntity
 
 				try
 					{
-					object propertyValue = property.GetValue (value, null);
+					object? propertyValue = property.GetValue (value, null);
 					objectBuilder.Append (DescribeDiagnosticObject (propertyValue, depth + 1, visited));
 					}
 				catch (Exception ex)
