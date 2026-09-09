@@ -19,7 +19,7 @@
     <Compile Include="../KasaTapoCrestronDriver/RegistrationTracingController.cs" Link="Driver/RegistrationTracingController.cs" />
     <PackageReference Include="MSTest" Version="4.4.0" />
     <PackageReference Include="Crestron.DeviceDrivers.DevKit" Version="27.0.24" />
-    <PackageReference Include="KasaTapoClient" Version="1.7.0" />
+    <PackageReference Include="KasaTapoClient" Version="1.8.0" />
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
     <Compile Include="../KasaTapoCrestronDriver/GlobalUsings.cs" Link="Driver/GlobalUsings.cs" />
     <Compile Include="../KasaTapoCrestronDriver/HubChildCategoryResolver.cs" Link="Driver/HubChildCategoryResolver.cs" />

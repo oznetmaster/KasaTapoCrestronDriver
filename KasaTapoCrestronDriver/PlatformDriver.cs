@@ -646,6 +646,9 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 	private readonly ConcurrentDictionary<string, IKasaManagedChildEntity> _lightEntities = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, bool> _childTreatAsLight = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, bool> _childAllowDoubleClick = new (StringComparer.OrdinalIgnoreCase);
+	// 0 (or absent) means "use the device's own default"; a positive value is the user-requested
+	// report interval (seconds) to push to the device via ChildReportModeModule.SetIntervalAsync.
+	private readonly ConcurrentDictionary<string, int> _childReportIntervalSeconds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, int> _pendingRemovalMissCounts = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, byte> _configuredChildControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, byte> _inUseChildControllerIds = new (StringComparer.OrdinalIgnoreCase);

@@ -13,6 +13,7 @@
 	"HumidityLabel":     "Humidity",
 	"BatteryLabel":      "Battery",
 	"MotionLabel":       "Motion",
+	"LastMotionLabel":   "Last Motion",
 	"ContactLabel":      "Contact",
 	"LeakLabel":         "Leak",
 	"LastPressLabel":     "Last Press",

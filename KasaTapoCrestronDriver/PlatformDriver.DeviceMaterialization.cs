@@ -2,6 +2,7 @@
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 using System.Diagnostics;
+using System.Globalization;
 
 using Crestron.DeviceDrivers.EntityModel;
 using Crestron.DeviceDrivers.EntityModel.Data;
@@ -131,6 +132,7 @@ public sealed partial class PlatformDriver
 
 		if (descriptor.ChildKind == ManagedChildKind.Sensor)
 			{
+			int reportIntervalSeconds = _childReportIntervalSeconds.TryGetValue (descriptor.ControllerId, out int storedSensorReportInterval) ? storedSensorReportInterval : 0;
 			return new KasaSensorEntity (
 				descriptor.ControllerId,
 				descriptor,
@@ -141,12 +143,14 @@ public sealed partial class PlatformDriver
 				_logger,
 				_driverLogId,
 				_args.DriverDataDirectoryPath,
-				GetOrCreateHubPoller (configuration));
+				GetOrCreateHubPoller (configuration),
+				reportIntervalSeconds);
 			}
 
 		if (descriptor.ChildKind == ManagedChildKind.Button)
 			{
 			bool allowDoubleClick = !_childAllowDoubleClick.TryGetValue (descriptor.ControllerId, out bool storedAllowDoubleClick) || storedAllowDoubleClick;
+			int reportIntervalSeconds = _childReportIntervalSeconds.TryGetValue (descriptor.ControllerId, out int storedButtonReportInterval) ? storedButtonReportInterval : 0;
 			return new KasaButtonEntity (
 				descriptor.ControllerId,
 				descriptor,
@@ -158,7 +162,8 @@ public sealed partial class PlatformDriver
 				_driverLogId,
 				_args.DriverDataDirectoryPath,
 				GetOrCreateHubPoller (configuration),
-				allowDoubleClick);
+				allowDoubleClick,
+				reportIntervalSeconds);
 			}
 
 		return new KasaLightEntity (
@@ -460,7 +465,13 @@ public sealed partial class PlatformDriver
 		bool currentTreatAsLight = _childTreatAsLight.TryGetValue (descriptor.ControllerId, out bool treatAsLight) && treatAsLight;
 		bool supportsAllowDoubleClickChoice = descriptor.ChildKind == ManagedChildKind.Button;
 		bool currentAllowDoubleClick = !_childAllowDoubleClick.TryGetValue (descriptor.ControllerId, out bool allowDoubleClick) || allowDoubleClick;
-		LogInfo ($"CreateChildConfigurationController: controllerId='{descriptor.ControllerId}', supportsTreatAsLightChoice={supportsTreatAsLightChoice}, currentTreatAsLight={currentTreatAsLight} (used as TreatAsLight DefaultValue), supportsAllowDoubleClickChoice={supportsAllowDoubleClickChoice}, currentAllowDoubleClick={currentAllowDoubleClick} (used as AllowDoubleClick DefaultValue), childKind={descriptor.ChildKind}.");
+		// Sensor and Button hub children are the ones ManagedParentDevicePoller reads
+		// ChildReportModeModule.ReportInterval from to compute hub polling cadence (see
+		// UpdateDeviceReportedInterval). KasaTapoClient 1.8.0 lets the driver also set this
+		// interval on the device itself, so offer it as a configuration item for those kinds.
+		bool supportsReportIntervalChoice = descriptor.ChildKind == ManagedChildKind.Sensor || descriptor.ChildKind == ManagedChildKind.Button;
+		int currentReportIntervalSeconds = _childReportIntervalSeconds.TryGetValue (descriptor.ControllerId, out int storedReportIntervalSeconds) ? storedReportIntervalSeconds : 0;
+		LogInfo ($"CreateChildConfigurationController: controllerId='{descriptor.ControllerId}', supportsTreatAsLightChoice={supportsTreatAsLightChoice}, currentTreatAsLight={currentTreatAsLight} (used as TreatAsLight DefaultValue), supportsAllowDoubleClickChoice={supportsAllowDoubleClickChoice}, currentAllowDoubleClick={currentAllowDoubleClick} (used as AllowDoubleClick DefaultValue), supportsReportIntervalChoice={supportsReportIntervalChoice}, currentReportIntervalSeconds={currentReportIntervalSeconds} (used as ReportIntervalSeconds DefaultValue), childKind={descriptor.ChildKind}.");
 
 		var items = new List<ConfigurationItemDefinition>
 			{
@@ -512,6 +523,23 @@ public sealed partial class PlatformDriver
 				Persistent = true,
 				});
 			stepItems.Add ("AllowDoubleClick");
+			}
+
+		if (supportsReportIntervalChoice)
+			{
+			items.Add (new ()
+				{
+				Id = "ReportIntervalSeconds",
+				Title = "Report Interval (Seconds)",
+				Description = "The device's own internal sensor/button reporting interval, in seconds. Use 0 to leave the device's own default interval unchanged.",
+				Availability = Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationItemAvailability.Always,
+				ValueType = Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationItemValueType.String,
+				UsageContext = ConfigurationItemContext.Generic.Prompt,
+				DefaultValue = currentReportIntervalSeconds.ToString (CultureInfo.InvariantCulture),
+				Required = true,
+				Persistent = true,
+				});
+			stepItems.Add ("ReportIntervalSeconds");
 			}
 
 		var definition = new ConfigurationStepsDefinition
@@ -685,6 +713,30 @@ public sealed partial class PlatformDriver
 			if (_lightEntities.TryGetValue (controllerId, out IKasaManagedChildEntity? childEntity) && childEntity is KasaButtonEntity buttonEntity)
 				{
 				buttonEntity.SetAllowDoubleClick (incomingAllowDoubleClick);
+				}
+			}
+
+		if (values.TryGetValue ("ReportIntervalSeconds", out var reportIntervalValue) && reportIntervalValue.HasValue)
+			{
+			// 0 (or an unparsable value) means "use the device's own default" - never write 0
+			// to the device, just stop overriding its interval.
+			string? rawReportInterval = reportIntervalValue.Value.GetValue<string> ()?.Trim ();
+			int incomingReportIntervalSeconds = int.TryParse (rawReportInterval, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedReportIntervalSeconds) && parsedReportIntervalSeconds > 0
+				? parsedReportIntervalSeconds
+				: 0;
+			_childReportIntervalSeconds[controllerId] = incomingReportIntervalSeconds;
+			LogInfo ($"ApplyChildConfigurationItems: controllerId='{controllerId}' received ReportIntervalSeconds={incomingReportIntervalSeconds} (raw='{rawReportInterval}').");
+
+			if (_lightEntities.TryGetValue (controllerId, out IKasaManagedChildEntity? reportIntervalEntity))
+				{
+				if (reportIntervalEntity is KasaSensorEntity sensorEntity)
+					{
+					sensorEntity.SetReportIntervalSeconds (incomingReportIntervalSeconds);
+					}
+				else if (reportIntervalEntity is KasaButtonEntity reportIntervalButtonEntity)
+					{
+					reportIntervalButtonEntity.SetReportIntervalSeconds (incomingReportIntervalSeconds);
+					}
 				}
 			}
 

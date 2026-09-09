@@ -45,6 +45,11 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 	private bool _registeredWithHubPoller;
 	private bool _doubleClickEnableAttempted;
 	private bool _allowDoubleClick = true;
+	// 0 means "leave the device's own default reporting interval alone". A positive value is
+	// pushed to the device via ChildReportModeModule.SetIntervalAsync when it differs from what
+	// the device currently reports.
+	private int _desiredReportIntervalSeconds;
+	private bool _reportIntervalApplyAttempted;
 	private ChildDevice? _lastChild;
 	private long? _lastSeenTriggerTimestamp;
 	private ChildBatterySensorState? _lastBatteryState;
@@ -313,7 +318,8 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 		string driverLogId,
 		string? driverDataDirectoryPath = null,
 		ManagedParentDevicePoller? hubPoller = null,
-		bool allowDoubleClick = true)
+		bool allowDoubleClick = true,
+		int reportIntervalSeconds = 0)
 		: base (controllerId)
 		{
 		_descriptorUpdated = descriptorUpdated;
@@ -322,6 +328,7 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 		_logger = logger;
 		_driverLogId = driverLogId;
 		_allowDoubleClick = allowDoubleClick;
+		_desiredReportIntervalSeconds = reportIntervalSeconds;
 
 		UpdateDescriptor (descriptor, configuration);
 
@@ -572,6 +579,68 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 		EnsureDoubleClickEnabled (_lastChild);
 		}
 
+	// Mirrors EnsureDoubleClickEnabled: reconciles the device's actual reporting interval against
+	// the desired "Report Interval (Seconds)" configuration preference on every poll tick, so a
+	// live configuration change is applied the next time this hub child is polled even if no
+	// device was connected yet when SetReportIntervalSeconds was called. 0 means "leave the
+	// device's own default alone", so no attempt is made in that case.
+	private void EnsureReportIntervalApplied (ChildDevice? child)
+		{
+		if (child is null || _desiredReportIntervalSeconds <= 0)
+			{
+			return;
+			}
+
+		int? currentReportInterval = child.ReportMode.ReportInterval;
+		if (currentReportInterval == _desiredReportIntervalSeconds)
+			{
+			return;
+			}
+
+		if (_reportIntervalApplyAttempted)
+			{
+			return;
+			}
+
+		_reportIntervalApplyAttempted = true;
+		LogInfo ($"Button entity '{ControllerId}' EnsureReportIntervalApplied: device reports interval={currentReportInterval}; setting it to {_desiredReportIntervalSeconds} seconds on the device.");
+		_ = SetReportIntervalAsync (child, _desiredReportIntervalSeconds);
+		}
+
+	/// <summary>
+	/// Invoked when the "Report Interval (Seconds)" configuration item changes. Applies the new
+	/// preference to the most recently pushed hub child device (if any); if no child has been
+	/// pushed yet, the preference is still recorded and will be applied the next time
+	/// <see cref="ApplyPushedState"/> runs against a connected child. A value of 0 leaves the
+	/// device's own default interval unchanged.
+	/// </summary>
+	public void SetReportIntervalSeconds (int reportIntervalSeconds)
+		{
+		if (_desiredReportIntervalSeconds == reportIntervalSeconds)
+			{
+			return;
+			}
+
+		_desiredReportIntervalSeconds = reportIntervalSeconds;
+		_reportIntervalApplyAttempted = false;
+		LogInfo ($"Button entity '{ControllerId}' SetReportIntervalSeconds: reportIntervalSeconds={reportIntervalSeconds}.");
+
+		EnsureReportIntervalApplied (_lastChild);
+		}
+
+	private async Task SetReportIntervalAsync (ChildDevice child, int reportIntervalSeconds)
+		{
+		try
+			{
+			await child.ReportMode.SetIntervalAsync (reportIntervalSeconds).ConfigureAwait (false);
+			LogInfo ($"Button entity '{ControllerId}' SetReportIntervalAsync: report interval set to {reportIntervalSeconds} seconds successfully.");
+			}
+		catch (Exception ex)
+			{
+			LogError ($"Button entity '{ControllerId}' SetReportIntervalAsync failed: {ex.Message}");
+			}
+		}
+
 	private async Task SetDoubleClickEnabledAsync (ChildDevice child, bool enabled)
 		{
 		try
@@ -611,6 +680,7 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 		UpdateDescriptorFromConnectedDevice (parentDevice);
 		_lastChild = child;
 		EnsureDoubleClickEnabled (child);
+		EnsureReportIntervalApplied (child);
 		bool stateChanged = HasChildStateChanged (child);
 		if (stateChanged)
 			{

@@ -2,6 +2,7 @@
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 
 using Crestron.DeviceDrivers.EntityModel;
@@ -56,6 +57,12 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	private ChildTemperatureSensorState? _lastTemperatureState;
 	private ChildHumiditySensorState? _lastHumidityState;
 	private bool _lastStateWasNull = true;
+	// 0 means "leave the device's own default reporting interval alone". A positive value is
+	// pushed to the device via ChildReportModeModule.SetIntervalAsync when it differs from what
+	// the device currently reports.
+	private int _desiredReportIntervalSeconds;
+	private bool _reportIntervalApplyAttempted;
+	private ChildDevice? _lastChild;
 
 	/// <summary>
 	/// This hub child's own <c>ChildId</c>, used by the owning <see cref="ManagedParentDevicePoller"/>
@@ -273,6 +280,25 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		private set => SetAndNotify ("motionStatusLabel", value, ref field);
 		} = string.Empty;
 
+	// Timestamp of the most recent motion detection. Unlike MotionDetected/MotionStatusLabel,
+	// this is intentionally never cleared when motion goes back to "not triggered" - it always
+	// reflects the last time motion was seen, even while the sensor currently reports no motion.
+	[EntityProperty (Id = "lastMotionTime")]
+	[EntityPropertyMetadata (Programmable = true, ExtensionUiProperty = true)]
+	public double LastMotionTime
+		{
+		get;
+		private set => SetAndNotify ("lastMotionTime", value, ref field);
+		}
+
+	[EntityProperty (Id = "lastMotionTimeDisplay")]
+	[EntityPropertyMetadata (ExtensionUiProperty = true)]
+	public string LastMotionTimeDisplay
+		{
+		get;
+		private set => SetAndNotify ("lastMotionTimeDisplay", value, ref field);
+		} = string.Empty;
+
 	[EntityProperty (Id = "sensorStatus")]
 	[EntityPropertyMetadata (ExtensionUiProperty = true)]
 	public string SensorStatus
@@ -336,6 +362,15 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		{
 		add { _motionCleared += value; LogInfo ($"Sensor entity '{ControllerId}' MotionCleared subscriber added; totalSubscribers={_motionCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
 		remove { _motionCleared -= value; LogInfo ($"Sensor entity '{ControllerId}' MotionCleared subscriber removed; totalSubscribers={_motionCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		}
+
+	// Records when motion was last seen. Deliberately only called while motion is detected, so
+	// LastMotionTime/LastMotionTimeDisplay keep their previous value across a "not triggered"
+	// transition instead of being cleared alongside MotionDetected.
+	private void UpdateLastMotionTimestamp (DateTime timestamp)
+		{
+		LastMotionTime = (double)new DateTimeOffset (timestamp).ToUnixTimeSeconds ();
+		LastMotionTimeDisplay = timestamp.ToString ("g", CultureInfo.InvariantCulture);
 		}
 
 	private EventHandler? _leakDetectedEvent;
@@ -456,7 +491,8 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		DriverControllerLogger logger,
 		string driverLogId,
 		string? driverDataDirectoryPath = null,
-		ManagedParentDevicePoller? hubPoller = null)
+		ManagedParentDevicePoller? hubPoller = null,
+		int reportIntervalSeconds = 0)
 		: base (controllerId)
 		{
 		_descriptorUpdated = descriptorUpdated;
@@ -464,6 +500,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		_hubPoller = hubPoller;
 		_logger = logger;
 		_driverLogId = driverLogId;
+		_desiredReportIntervalSeconds = reportIntervalSeconds;
 
 		UpdateDescriptor (descriptor, configuration);
 
@@ -553,6 +590,69 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	public void UpdateConfiguration (DeviceConfiguration configuration)
 		{
 		_configuration = configuration;
+		}
+
+	// Mirrors KasaButtonEntity's EnsureDoubleClickEnabled: reconciles the device's actual
+	// reporting interval against the desired "Report Interval (Seconds)" configuration
+	// preference on every poll tick, so a live configuration change is applied the next time
+	// this hub child is polled even if no device was connected yet when
+	// SetReportIntervalSeconds was called. 0 means "leave the device's own default alone", so no
+	// attempt is made in that case.
+	private void EnsureReportIntervalApplied (ChildDevice? child)
+		{
+		if (child is null || _desiredReportIntervalSeconds <= 0)
+			{
+			return;
+			}
+
+		int? currentReportInterval = child.ReportMode.ReportInterval;
+		if (currentReportInterval == _desiredReportIntervalSeconds)
+			{
+			return;
+			}
+
+		if (_reportIntervalApplyAttempted)
+			{
+			return;
+			}
+
+		_reportIntervalApplyAttempted = true;
+		LogInfo ($"Sensor entity '{ControllerId}' EnsureReportIntervalApplied: device reports interval={currentReportInterval}; setting it to {_desiredReportIntervalSeconds} seconds on the device.");
+		_ = SetReportIntervalAsync (child, _desiredReportIntervalSeconds);
+		}
+
+	/// <summary>
+	/// Invoked when the "Report Interval (Seconds)" configuration item changes. Applies the new
+	/// preference to the most recently pushed hub child device (if any); if no child has been
+	/// pushed yet, the preference is still recorded and will be applied the next time
+	/// <see cref="ApplyPushedState"/> runs against a connected child. A value of 0 leaves the
+	/// device's own default interval unchanged.
+	/// </summary>
+	public void SetReportIntervalSeconds (int reportIntervalSeconds)
+		{
+		if (_desiredReportIntervalSeconds == reportIntervalSeconds)
+			{
+			return;
+			}
+
+		_desiredReportIntervalSeconds = reportIntervalSeconds;
+		_reportIntervalApplyAttempted = false;
+		LogInfo ($"Sensor entity '{ControllerId}' SetReportIntervalSeconds: reportIntervalSeconds={reportIntervalSeconds}.");
+
+		EnsureReportIntervalApplied (_lastChild);
+		}
+
+	private async Task SetReportIntervalAsync (ChildDevice child, int reportIntervalSeconds)
+		{
+		try
+			{
+			await child.ReportMode.SetIntervalAsync (reportIntervalSeconds).ConfigureAwait (false);
+			LogInfo ($"Sensor entity '{ControllerId}' SetReportIntervalAsync: report interval set to {reportIntervalSeconds} seconds successfully.");
+			}
+		catch (Exception ex)
+			{
+			LogError ($"Sensor entity '{ControllerId}' SetReportIntervalAsync failed: {ex.Message}");
+			}
 		}
 
 	public bool TryAttachConnectedDevice (KasaDevice device, string context)
@@ -697,6 +797,8 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 			}
 
 		UpdateDescriptorFromConnectedDevice (parentDevice);
+		_lastChild = child;
+		EnsureReportIntervalApplied (child);
 			bool stateChanged = HasChildStateChanged (child);
 		if (stateChanged)
 			{
@@ -862,6 +964,9 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		if (HasMotion)
 			{
 			PublishProperty ("motionDetected", new DriverEntityValue (MotionDetected), "PublishStateSnapshot");
+			PublishProperty ("motionStatusLabel", new DriverEntityValue (MotionStatusLabel), "PublishStateSnapshot");
+			PublishProperty ("lastMotionTime", new DriverEntityValue (LastMotionTime), "PublishStateSnapshot");
+			PublishProperty ("lastMotionTimeDisplay", new DriverEntityValue (LastMotionTimeDisplay), "PublishStateSnapshot");
 			}
 
 		PublishProperty ("hasLeak", new DriverEntityValue (HasLeak), "PublishStateSnapshot");
@@ -1051,6 +1156,11 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 				bool wasDetected = MotionDetected;
 				MotionDetected = motionDetected.Value;
 				MotionStatusLabel = motionDetected.Value ? "Motion Detected" : "No Motion";
+				if (motionDetected.Value)
+					{
+					UpdateLastMotionTimestamp (DateTime.Now);
+					}
+
 				if (wasDetected != motionDetected.Value)
 					{
 					if (motionDetected.Value)
@@ -1309,6 +1419,8 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 				{
 				RemoveProperty ("motionDetected");
 				RemoveProperty ("motionStatusLabel");
+				RemoveProperty ("lastMotionTime");
+				RemoveProperty ("lastMotionTimeDisplay");
 				RemoveEvent ("motionDetectedEvent");
 				RemoveEvent ("motionCleared");
 				}
