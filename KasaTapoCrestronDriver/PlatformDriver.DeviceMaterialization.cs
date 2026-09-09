@@ -112,6 +112,14 @@ public sealed partial class PlatformDriver
 			}
 		}
 
+	// Looks up the shared hub ManagedParentDevicePoller that owns a given Sensor/Button
+	// controllerId, so a report-interval configuration change can notify that specific poller to
+	// recompute and reset its polling cadence immediately.
+	private ManagedParentDevicePoller? ResolveHubPollerForChild (string controllerId)
+		{
+		return _childHubPollers.TryGetValue (controllerId, out ManagedParentDevicePoller? poller) ? poller : null;
+		}
+
 	private IKasaManagedChildEntity CreateManagedLightEntity (ManagedLightDescriptor descriptor, DeviceConfiguration configuration)
 		{
 		ManagedParentDevicePoller? stripPoller = descriptor.DiscoveredDeviceType == KasaDeviceType.Strip && !string.IsNullOrWhiteSpace (descriptor.ChildId)
@@ -133,6 +141,8 @@ public sealed partial class PlatformDriver
 		if (descriptor.ChildKind == ManagedChildKind.Sensor)
 			{
 			int reportIntervalSeconds = _childReportIntervalSeconds.TryGetValue (descriptor.ControllerId, out int storedSensorReportInterval) ? storedSensorReportInterval : 0;
+			ManagedParentDevicePoller sensorHubPoller = GetOrCreateHubPoller (configuration);
+			_childHubPollers[descriptor.ControllerId] = sensorHubPoller;
 			return new KasaSensorEntity (
 				descriptor.ControllerId,
 				descriptor,
@@ -143,7 +153,7 @@ public sealed partial class PlatformDriver
 				_logger,
 				_driverLogId,
 				_args.DriverDataDirectoryPath,
-				GetOrCreateHubPoller (configuration),
+				sensorHubPoller,
 				reportIntervalSeconds);
 			}
 
@@ -151,6 +161,8 @@ public sealed partial class PlatformDriver
 			{
 			bool allowDoubleClick = !_childAllowDoubleClick.TryGetValue (descriptor.ControllerId, out bool storedAllowDoubleClick) || storedAllowDoubleClick;
 			int reportIntervalSeconds = _childReportIntervalSeconds.TryGetValue (descriptor.ControllerId, out int storedButtonReportInterval) ? storedButtonReportInterval : 0;
+			ManagedParentDevicePoller buttonHubPoller = GetOrCreateHubPoller (configuration);
+			_childHubPollers[descriptor.ControllerId] = buttonHubPoller;
 			return new KasaButtonEntity (
 				descriptor.ControllerId,
 				descriptor,
@@ -161,7 +173,7 @@ public sealed partial class PlatformDriver
 				_logger,
 				_driverLogId,
 				_args.DriverDataDirectoryPath,
-				GetOrCreateHubPoller (configuration),
+				buttonHubPoller,
 				allowDoubleClick,
 				reportIntervalSeconds);
 			}
@@ -737,6 +749,14 @@ public sealed partial class PlatformDriver
 					{
 					reportIntervalButtonEntity.SetReportIntervalSeconds (incomingReportIntervalSeconds);
 					}
+
+				// The device may not honor the new interval until its next report, so the
+				// entity's own reconciliation (EnsureReportIntervalApplied) handles that side.
+				// Here we make sure the parent hub poller's own polling cadence - which is
+				// derived from the shortest child-reported interval - is recomputed and reset
+				// immediately rather than waiting out a delay computed from the old interval.
+				ManagedParentDevicePoller? ownerHubPoller = ResolveHubPollerForChild (controllerId);
+				ownerHubPoller?.NotifyChildReportIntervalChanged ();
 				}
 			}
 

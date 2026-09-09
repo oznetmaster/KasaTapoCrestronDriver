@@ -649,6 +649,10 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 	// 0 (or absent) means "use the device's own default"; a positive value is the user-requested
 	// report interval (seconds) to push to the device via ChildReportModeModule.SetIntervalAsync.
 	private readonly ConcurrentDictionary<string, int> _childReportIntervalSeconds = new (StringComparer.OrdinalIgnoreCase);
+	// Tracks which shared hub ManagedParentDevicePoller owns each Sensor/Button controllerId, so
+	// that a change to a child's report interval configuration can notify the correct hub poller
+	// to immediately recompute and reset its own polling cadence.
+	private readonly ConcurrentDictionary<string, ManagedParentDevicePoller> _childHubPollers = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, int> _pendingRemovalMissCounts = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, byte> _configuredChildControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, byte> _inUseChildControllerIds = new (StringComparer.OrdinalIgnoreCase);

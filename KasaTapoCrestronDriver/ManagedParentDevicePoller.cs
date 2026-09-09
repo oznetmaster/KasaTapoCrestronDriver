@@ -135,6 +135,22 @@ internal sealed class ManagedParentDevicePoller : IDisposable
             ? previous.EnableLightPolling != current.EnableLightPolling || previous.LightPollInterval != current.LightPollInterval
             : previous.SensorPollInterval != current.SensorPollInterval;
         if (!restart) return;
+        RestartPollingLoop();
+    }
+
+    // Called when a child's configured report interval is changed (e.g. via the
+    // "Report Interval (Seconds)" configuration item) so that a currently in-flight, possibly
+    // long, delay based on the previous interval doesn't delay the parent from picking up the
+    // new cadence. Restarting the loop cancels any pending delay and immediately performs a
+    // fresh refresh, which recomputes the shortest child-reported interval and the resulting
+    // 50%-of-interval poll delay from scratch.
+    public void NotifyChildReportIntervalChanged()
+    {
+        RestartPollingLoop();
+    }
+
+    private void RestartPollingLoop()
+    {
         lock (_gate)
         {
             if (_disposed) return;
@@ -193,7 +209,17 @@ internal sealed class ManagedParentDevicePoller : IDisposable
             int? seconds = device.GetChildDevice(child.ChildId)?.ReportMode.ReportInterval;
             if (seconds > 0 && (shortest is null || seconds < shortest)) shortest = seconds;
         }
-        _deviceReportedInterval = shortest.HasValue ? TimeSpan.FromSeconds(shortest.Value) : (TimeSpan?)null;
+
+        // Poll at twice the reporting cadence (50% of the shortest child-reported interval) so
+        // that pushed child state is picked up promptly rather than waiting a full report cycle.
+        TimeSpan? updated = shortest.HasValue ? TimeSpan.FromSeconds(shortest.Value * 0.5) : (TimeSpan?)null;
+        if (updated != _deviceReportedInterval)
+        {
+            LogInfo($"UpdateDeviceReportedInterval: shortest child report interval changed; " +
+                $"previousPollIntervalSeconds={_deviceReportedInterval?.TotalSeconds.ToString() ?? "null"}, " +
+                $"newPollIntervalSeconds={updated?.TotalSeconds.ToString() ?? "null"} (50% of shortest reported interval={shortest}).");
+        }
+        _deviceReportedInterval = updated;
     }
 
     public async Task<KasaDevice> ConnectSharedAsync(CancellationToken token)

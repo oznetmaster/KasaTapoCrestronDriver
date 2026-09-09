@@ -16,10 +16,6 @@
 						title="^MotionLabel"
 						line1label="{motionStatusLabel}"
 						visible="{hasMotion}" />
-				<textdisplay id="LastMotionLabelID"
-						title="^LastMotionLabel"
-						line1label="{lastMotionTimeDisplay}"
-						visible="{hasMotion}" />
 				<textdisplay id="ContactLabelID"
 						title="^ContactLabel"
 						line1label="{contactStatusLabel}"
