@@ -33,6 +33,16 @@ public sealed partial class PlatformDriver
 		RememberResolvedDeviceName (controllerId, name, descriptor.DiscoveryDeviceId ?? descriptor.SerialNumber, descriptor.Host);
 		PersistManagedDeviceCache ();
 		LogInfo ($"Managed-device entry added: controllerId='{controllerId}', name='{name}', model='{modelName}', serial='{serialNumber}'.");
+
+		// Only lights participate in the processor-baseline color/white tuning workaround, and
+		// this check is only meaningful when EnableProcessorBaselineWorkaround is on -
+		// ValidateLoadNameFireAndForget itself also gates on this, but check here too to avoid
+		// spawning the background task at all for outlets/sensors/buttons.
+		if (descriptor.ChildKind == ManagedChildKind.Light && _sharedConfiguration.EnableProcessorBaselineWorkaround)
+			{
+			_processorBaselineCoordinator.ValidateLoadNameFireAndForget (name, _runtimeCancellationSource.Token);
+			}
+
 		return true;
 		}
 

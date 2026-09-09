@@ -560,6 +560,11 @@ internal partial class KasaLightEntity
 
 	private async Task RefreshAndApplyStateAsync (CancellationToken cancellationToken)
 		{
+		if (_parentPoller is not null)
+			{
+			await _parentPoller.RefreshAsync (cancellationToken).ConfigureAwait (false);
+			return;
+			}
 		await ExecuteWithConnectedDeviceAsync (async device =>
 			{
 				cancellationToken.ThrowIfCancellationRequested ();

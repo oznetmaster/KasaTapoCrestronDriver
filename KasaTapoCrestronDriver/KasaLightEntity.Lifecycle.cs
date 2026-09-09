@@ -48,6 +48,7 @@ internal partial class KasaLightEntity
 		{
 		DeviceConfiguration? previousConfiguration = _configuration;
 		_configuration = configuration;
+		_parentPoller?.UpdateConfiguration (configuration);
 
 		if (previousConfiguration is not null && HasMaterialConfigurationChange (previousConfiguration, configuration))
 			{
@@ -78,6 +79,7 @@ internal partial class KasaLightEntity
 
 		if (!configured)
 			{
+			_parentPoller?.UnregisterChild (this);
 			ResetConnectionState ();
 			Interlocked.Increment (ref _pollingGeneration);
 			_pollingTask = null;
@@ -106,6 +108,7 @@ internal partial class KasaLightEntity
 
 		if (!configured)
 			{
+			_parentPoller?.UnregisterChild (this);
 			ResetConnectionState ();
 			Interlocked.Increment (ref _pollingGeneration);
 			_pollingTask = null;
@@ -176,6 +179,7 @@ internal partial class KasaLightEntity
 			}
 
 		CancelSliderInteraction ();
+		_parentPoller?.UnregisterChild (this);
 		_lifetimeCancellationSource.Cancel ();
 		Interlocked.Increment (ref _pollingGeneration);
 		_pollingTask = null;
@@ -232,6 +236,7 @@ internal partial class KasaLightEntity
 
 	private void RestartPolling ()
 		{
+		if (UseParentPolling ()) return;
 		if (_disposed)
 			{
 			LogInfo ($"Light entity '{ControllerId}' RestartPolling skipped because the entity is disposed.");
@@ -275,6 +280,9 @@ internal partial class KasaLightEntity
 			OnlineIndicatorIsOnline = false;
 			ReadyIndicatorIsReady = false;
 			}
+
+		// The strip coordinator/cache owns this device; a projection must never dispose it.
+		if (_parentPoller is not null) return;
 
 		if (staleDevice is null)
 			{
@@ -620,7 +628,11 @@ internal partial class KasaLightEntity
 			{
 			throw new InvalidOperationException ($"Light entity '{ControllerId}' cannot connect before child configuration/installation has occurred.");
 			}
-
+		if (_parentPoller is not null)
+			{
+			_connectedDevice = await _parentPoller.ConnectSharedAsync (cancellationToken).ConfigureAwait (false);
+			return _connectedDevice;
+			}
 		KasaDevice? existingDevice = _connectedDevice;
 		// This entity connects via Discover.GetOrConnectSharedAsync (see
 		// ConnectFromConfigurationAsync), which shares a single, long-lived KasaDevice per
@@ -915,6 +927,11 @@ internal partial class KasaLightEntity
 		{
 		try
 			{
+			if (_parentPoller is not null)
+				{
+				await _parentPoller.ExecuteCommandAsync (action, cancellationToken).ConfigureAwait (false);
+				return;
+				}
 			// Phase 1: connect. EnsureConnectedAsync itself only arms the DeviceConnectTimeout
 			// around the actual connect attempt, AFTER the connection gate has been acquired, so
 			// contention from other concurrently-dispatched commands (e.g. the paired

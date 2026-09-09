@@ -93,25 +93,28 @@ public sealed partial class PlatformDriver
 	/// host+port since that is how the hub is physically identified - <see cref="ManagedLightDescriptor"/>
 	/// itself carries no separate "parent hub" controllerId.
 	/// </summary>
-	private ManagedParentDevicePoller GetOrCreateHubPoller (DeviceConfiguration configuration)
+	private ManagedParentDevicePoller GetOrCreateHubPoller (DeviceConfiguration configuration, bool isStrip = false)
 		{
 		string hostKey = $"{configuration.Host}:{configuration.Port}";
+		string pollerKey = (isStrip ? "strip:" : "hub:") + hostKey;
 		lock (_hubPollersGate)
 			{
-			if (_hubPollers.TryGetValue (hostKey, out ManagedParentDevicePoller? existingPoller))
+			if (_hubPollers.TryGetValue (pollerKey, out ManagedParentDevicePoller? existingPoller))
 				{
 				existingPoller.UpdateConfiguration (configuration);
 				return existingPoller;
 				}
 
-			var poller = new ManagedParentDevicePoller (hostKey, configuration, _sharedConfiguration, _logger, _driverLogId);
-			_hubPollers[hostKey] = poller;
+			var poller = new ManagedParentDevicePoller (hostKey, configuration, _sharedConfiguration, _logger, _driverLogId, isStrip);
+			_hubPollers[pollerKey] = poller;
 			return poller;
 			}
 		}
 
 	private IKasaManagedChildEntity CreateManagedLightEntity (ManagedLightDescriptor descriptor, DeviceConfiguration configuration)
 		{
+		ManagedParentDevicePoller? stripPoller = descriptor.DiscoveredDeviceType == KasaDeviceType.Strip && !string.IsNullOrWhiteSpace (descriptor.ChildId)
+			? GetOrCreateHubPoller (configuration, isStrip: true) : null;
 		if (descriptor.ChildKind == ManagedChildKind.Outlet)
 			{
 			return new KasaOutletEntity (
@@ -123,7 +126,7 @@ public sealed partial class PlatformDriver
 				_resources,
 				_logger,
 				_driverLogId,
-				_args.DriverDataDirectoryPath);
+				_args.DriverDataDirectoryPath, stripPoller);
 			}
 
 		if (descriptor.ChildKind == ManagedChildKind.Sensor)
@@ -165,7 +168,7 @@ public sealed partial class PlatformDriver
 			SynchronizeProcessorBaselineAsync,
 			_resources,
 			_logger,
-			_driverLogId);
+			_driverLogId, stripPoller);
 		}
 
 	private Task SynchronizeProcessorBaselineAsync (string loadName, ProcessorLightTuningMode mode, double level, double hue, double saturation, long colorTemperature, CancellationToken cancellationToken)

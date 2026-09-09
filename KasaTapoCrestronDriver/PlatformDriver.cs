@@ -776,6 +776,12 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			lightEntity.Dispose ();
 			}
 
+		lock (_hubPollersGate)
+			{
+			foreach (ManagedParentDevicePoller poller in _hubPollers.Values) poller.Dispose ();
+			_hubPollers.Clear ();
+			}
+
 		_processorBaselineCoordinator.Dispose ();
 
 		_scheduledRefreshGate.Dispose ();

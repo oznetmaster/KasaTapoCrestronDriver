@@ -9,7 +9,7 @@ using Crestron.DeviceDrivers.SDK.EntityModel.Attributes;
 
 namespace KasaTapoCrestronDriver;
 
-internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLightEntity
+internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaManagedLightEntity, IParentDeviceChild
 	{
 	private const string BRIGHTNESS_FEATURE_ID = "brightness";
 	private const string COLOR_TEMPERATURE_FEATURE_ID = "color_temperature";
@@ -507,9 +507,10 @@ internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaMa
 		Func<string, ProcessorLightTuningMode, double, double, double, long, CancellationToken, Task>? synchronizeProcessorBaselineAsync,
 		DriverImplementationResources resources,
 		DriverControllerLogger logger,
-		string driverLogId)
+		string driverLogId, ManagedParentDevicePoller? parentPoller = null)
 		: base (controllerId)
 		{
+		_parentPoller = parentPoller;
 		_descriptorUpdated = descriptorUpdated;
 		_sharedConfiguration = sharedConfiguration;
 		_synchronizeProcessorBaselineAsync = synchronizeProcessorBaselineAsync;

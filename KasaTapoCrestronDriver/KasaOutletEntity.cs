@@ -22,7 +22,7 @@ namespace KasaTapoCrestronDriver;
 /// definition and lifecycle needs. Per-child-kind UI definitions are expected for all future
 /// non-light device kinds as well.
 /// </summary>
-internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity, IKasaManagedChildEntity
+internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity, IKasaManagedChildEntity, IParentDeviceChild
 	{
 	// Startup/reconnect timing mirrors KasaLightEntity's tuning: a cold TPAP PAKE handshake after
 	// a long-idle period can legitimately take this long, so both the connect and command phases
@@ -191,7 +191,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 		OutletStatus = "Off";
 		OutletIcon = "icGenericDeviceOff";
 		OutletTurnedOff?.Invoke (this, EventArgs.Empty);
-		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => device.TurnOffAsync (cancellationToken), _lifetimeCancellationSource.Token), "outletOff");
+		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => StripOutletControl.SetIsOnAsync (device, _descriptor.ChildId, false, cancellationToken), _lifetimeCancellationSource.Token), "outletOff");
 		}
 
 	[EntityCommand (Id = "outletOn")]
@@ -203,7 +203,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 		OutletStatus = "On";
 		OutletIcon = "icGenericDeviceOn";
 		OutletTurnedOn?.Invoke (this, EventArgs.Empty);
-		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => device.TurnOnAsync (cancellationToken), _lifetimeCancellationSource.Token), "outletOn");
+		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => StripOutletControl.SetIsOnAsync (device, _descriptor.ChildId, true, cancellationToken), _lifetimeCancellationSource.Token), "outletOn");
 		}
 
 	[EntityCommand (Id = "outletToggle")]
@@ -251,9 +251,10 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 		DriverImplementationResources resources,
 		DriverControllerLogger logger,
 		string driverLogId,
-		string? driverDataDirectoryPath = null)
+		string? driverDataDirectoryPath = null, ManagedParentDevicePoller? parentPoller = null)
 		: base (controllerId)
 		{
+		_parentPoller = parentPoller;
 		_descriptorUpdated = descriptorUpdated;
 		_sharedConfiguration = sharedConfiguration;
 		_logger = logger;
@@ -355,6 +356,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	public void UpdateConfiguration (DeviceConfiguration configuration)
 		{
 		_configuration = configuration;
+		_parentPoller?.UpdateConfiguration (configuration);
 		}
 
 	public bool TryAttachConnectedDevice (KasaDevice device, string context)
@@ -402,6 +404,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 
 		if (!configured)
 			{
+			_parentPoller?.UnregisterChild (this);
 			Interlocked.Increment (ref _pollingGeneration);
 			_pollingTask = null;
 			return;
@@ -428,6 +431,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 
 		if (!configured)
 			{
+			_parentPoller?.UnregisterChild (this);
 			Interlocked.Increment (ref _pollingGeneration);
 			_pollingTask = null;
 			return;
@@ -460,6 +464,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			return;
 			}
 
+		_parentPoller?.UnregisterChild (this);
 		_lifetimeCancellationSource.Cancel ();
 		Interlocked.Increment (ref _pollingGeneration);
 		_pollingTask = null;
@@ -603,6 +608,11 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 
 	public async Task RefreshAsync (CancellationToken cancellationToken)
 		{
+		if (_parentPoller is not null)
+			{
+			await _parentPoller.RefreshAsync (cancellationToken).ConfigureAwait (false);
+			return;
+			}
 		try
 			{
 			KasaDevice device = await EnsureConnectedAsync (cancellationToken).ConfigureAwait (false);
@@ -625,8 +635,9 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 
 	private void ApplyState (KasaDevice device)
 		{
-		OutletIsOn = device.IsOn ?? false;
-		_energyAvailable = device.Energy?.IsAvailable ?? false;
+		OutletIsOn = StripOutletControl.ReadIsOn (device, _descriptor.ChildId);
+		// Parent aggregate energy must not be displayed as one socket's consumption.
+		_energyAvailable = string.IsNullOrWhiteSpace (_descriptor.ChildId) && (device.Energy?.IsAvailable ?? false);
 		HasEnergyReporting = _energyAvailable;
 		if (_energyAvailable)
 			{
@@ -709,6 +720,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 
 	private async Task<KasaDevice> EnsureConnectedAsync (CancellationToken cancellationToken)
 		{
+		if (_parentPoller is not null) return await _parentPoller.ConnectSharedAsync (cancellationToken).ConfigureAwait (false);
 		KasaDevice? existingDevice = Volatile.Read (ref _connectedDevice);
 		if (existingDevice is not null)
 			{
@@ -800,6 +812,11 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			bool isFinalAttempt = attempt >= DEVICE_COMMAND_MAX_ATTEMPTS;
 			try
 				{
+				if (_parentPoller is not null)
+					{
+					await _parentPoller.ExecuteCommandAsync (action, cancellationToken).ConfigureAwait (false);
+					return;
+					}
 				KasaDevice device = await EnsureConnectedAsync (cancellationToken).ConfigureAwait (false);
 				using CancellationTokenSource timeoutCancellationSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken);
 				timeoutCancellationSource.CancelAfter (DeviceCommandTimeout);
@@ -834,6 +851,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 
 	private void RestartPolling ()
 		{
+		if (UseParentPolling ()) return;
 		int generation = Interlocked.Increment (ref _pollingGeneration);
 		_pollingTask = RunPollingCycleAsync (generation);
 		}

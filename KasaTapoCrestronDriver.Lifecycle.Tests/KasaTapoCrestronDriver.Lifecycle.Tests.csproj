@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>KasaClient.Tests</AssemblyName>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -9,6 +10,12 @@
        Exercise the actual sensor sources with the SDK's desktop-compatible target here;
        the existing net472 suite continues to verify the production build. -->
   <ItemGroup>
+    <Compile Include="../KasaTapoCrestronDriver/LightTuningDecisions.cs" Link="Driver/LightTuningDecisions.cs" />
+    <Compile Include="../KasaTapoCrestronDriver/IParentDeviceChild.cs" Link="Driver/IParentDeviceChild.cs" />
+    <Compile Include="../KasaTapoCrestronDriver/StripOutletControl.cs" Link="Driver/StripOutletControl.cs" />
+    <Compile Include="../KasaTapoCrestronDriver/KasaOutletEntity*.cs" Link="Driver/%(Filename)%(Extension)" />
+    <Compile Include="../KasaTapoCrestronDriver/KasaLightEntity*.cs" Link="Driver/%(Filename)%(Extension)" />
+    <None Include="../KasaTapoCrestronDriver/IncludeInPkg/outlet/uidefinitions/*.xml" Link="outlet/uidefinitions/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../KasaTapoCrestronDriver/RegistrationTracingController.cs" Link="Driver/RegistrationTracingController.cs" />
     <PackageReference Include="MSTest" Version="4.4.0" />
     <PackageReference Include="Crestron.DeviceDrivers.DevKit" Version="27.0.24" />

@@ -280,6 +280,70 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 			}
 		}
 
+	/// <summary>
+	/// Best-effort, non-blocking check performed when a managed device is first published,
+	/// intended to surface a mismatched/garbled processor Load name as early as possible instead
+	/// of only discovering it later when the first light-state synchronize call silently fails
+	/// to resolve a load. This never throws and never blocks the caller on SSH connectivity - it
+	/// is purely diagnostic (logs an error when no processor Load matches under the
+	/// suffix-plus-space rule in <see cref="IsMatchingLoadName"/>) and does not affect whether
+	/// the managed-device entry is published.
+	/// </summary>
+	public void ValidateLoadNameFireAndForget (string loadName, CancellationToken cancellationToken)
+		{
+		if (_disposed || !_configuration.EnableProcessorBaselineWorkaround || string.IsNullOrWhiteSpace (loadName))
+			{
+			return;
+			}
+
+		_ = Task.Run (async () =>
+			{
+			try
+				{
+				using var overallTimeoutSource = new CancellationTokenSource (OverallOperationTimeout);
+				using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken, overallTimeoutSource.Token);
+				await _gate.WaitAsync (linkedSource.Token).ConfigureAwait (false);
+				try
+					{
+					if (_loadIdsByName.ContainsKey (loadName))
+						{
+						// Already resolved by a prior synchronize call; nothing to validate.
+						return;
+						}
+
+					(List<long> matchingIds, List<string> observedProcessorLoadNames) = await ListMatchingLoadIdsAsync (loadName, linkedSource.Token).ConfigureAwait (false);
+					if (matchingIds.Count == 1)
+						{
+						_logInfo ($"Processor baseline load name validated at publish time: loadName='{loadName}', loadId={matchingIds[0]}.");
+						return;
+						}
+
+					if (matchingIds.Count > 1)
+						{
+						_logError ($"Processor baseline load name validation at publish time: loadName='{loadName}' matched {matchingIds.Count} processor loads. Load names must be unique.");
+						return;
+						}
+
+					string observedNamesList = observedProcessorLoadNames.Count > 0
+						? string.Join ("', '", observedProcessorLoadNames)
+						: "(none)";
+					_logError ($"Processor baseline load name validation at publish time: loadName='{loadName}' matched 0 processor loads. This device's color/white tuning mode will not stay synchronized with the Crestron Home baseline until the name matches. Processor Load names currently reported: '{observedNamesList}'.");
+					}
+				finally
+					{
+					_gate.Release ();
+					}
+				}
+			catch (OperationCanceledException)
+				{
+				}
+			catch (Exception ex)
+				{
+				_logInfo ($"Processor baseline load name validation at publish time failed for loadName='{loadName}': {ex.Message}.");
+				}
+			}, cancellationToken);
+		}
+
 	private async Task<long> ResolveLoadIdAsync (string loadName, CancellationToken cancellationToken)
 		{
 		if (_loadIdsByName.TryGetValue (loadName, out long cachedLoadId))
@@ -287,9 +351,11 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 			return cachedLoadId;
 			}
 
+		List<string> lastObservedProcessorLoadNames = new ();
 		for (int attempt = 1; attempt <= LoadResolutionMaxAttempts; attempt++)
 			{
-			List<long> matchingIds = await ListMatchingLoadIdsAsync (loadName, cancellationToken).ConfigureAwait (false);
+			(List<long> matchingIds, List<string> observedProcessorLoadNames) = await ListMatchingLoadIdsAsync (loadName, cancellationToken).ConfigureAwait (false);
+			lastObservedProcessorLoadNames = observedProcessorLoadNames;
 			if (matchingIds.Count == 1)
 				{
 				_loadIdsByName[loadName] = matchingIds[0];
@@ -312,14 +378,25 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 				}
 			}
 
-		_logError ($"Processor baseline synchronization skipped: loadName='{loadName}' matched 0 processor loads after {LoadResolutionMaxAttempts} attempts.");
+		// No managed-device name matched any processor Load under the suffix-plus-space rule
+		// (see IsMatchingLoadName). This is not something that can be validated at configuration
+		// time - the device name comes from Crestron Home's own room assignment, not from a
+		// configuration item this driver owns - so surface the complete set of processor Load
+		// names actually observed here in a single line, making a mismatched/garbled or
+		// unexpected processor name immediately visible instead of requiring a scroll through the
+		// per-candidate "Processor baseline load candidate" log lines above.
+		string observedNamesList = lastObservedProcessorLoadNames.Count > 0
+			? string.Join ("', '", lastObservedProcessorLoadNames)
+			: "(none)";
+		_logError ($"Processor baseline synchronization skipped: loadName='{loadName}' matched 0 processor loads after {LoadResolutionMaxAttempts} attempts. Processor Load names currently reported: '{observedNamesList}'.");
 		return 0;
 		}
 
-	private async Task<List<long>> ListMatchingLoadIdsAsync (string loadName, CancellationToken cancellationToken)
+	private async Task<(List<long> matchingIds, List<string> observedProcessorLoadNames)> ListMatchingLoadIdsAsync (string loadName, CancellationToken cancellationToken)
 		{
 		string loads = await ExecuteCommandAsync ("ch rpc lights ListAllLoads", cancellationToken).ConfigureAwait (false);
 		var matchingIds = new List<long> ();
+		var observedProcessorLoadNames = new List<string> ();
 		long? currentLoadId = null;
 		foreach (string line in Regex.Split (loads, @"\r\n|\r|\n"))
 			{
@@ -340,6 +417,7 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 			if (currentLoadId.HasValue && nameMatch.Success)
 				{
 				string processorLoadName = nameMatch.Groups["name"].Value.Trim ();
+				observedProcessorLoadNames.Add (processorLoadName);
 				bool isMatch = IsMatchingLoadName (loadName, processorLoadName);
 				_logInfo ($"Processor baseline load candidate: requestedName='{loadName}', processorName='{processorLoadName}', loadId={currentLoadId.Value}, isMatch={isMatch}.");
 				if (isMatch)
@@ -349,7 +427,7 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 				}
 			}
 
-		return matchingIds;
+		return (matchingIds, observedProcessorLoadNames);
 		}
 
 	private async Task<string?> ResolveBaselineTuningModeAsync (long loadId, CancellationToken cancellationToken)
