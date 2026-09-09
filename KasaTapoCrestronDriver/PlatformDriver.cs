@@ -645,6 +645,7 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 	private readonly ConcurrentDictionary<string, string> _resolvedDeviceNames = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, IKasaManagedChildEntity> _lightEntities = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, bool> _childTreatAsLight = new (StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, bool> _childAllowDoubleClick = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, int> _pendingRemovalMissCounts = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, byte> _configuredChildControllerIds = new (StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, byte> _inUseChildControllerIds = new (StringComparer.OrdinalIgnoreCase);

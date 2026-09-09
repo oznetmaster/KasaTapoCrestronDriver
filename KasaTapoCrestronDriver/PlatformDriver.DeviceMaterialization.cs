@@ -146,6 +146,7 @@ public sealed partial class PlatformDriver
 
 		if (descriptor.ChildKind == ManagedChildKind.Button)
 			{
+			bool allowDoubleClick = !_childAllowDoubleClick.TryGetValue (descriptor.ControllerId, out bool storedAllowDoubleClick) || storedAllowDoubleClick;
 			return new KasaButtonEntity (
 				descriptor.ControllerId,
 				descriptor,
@@ -156,7 +157,8 @@ public sealed partial class PlatformDriver
 				_logger,
 				_driverLogId,
 				_args.DriverDataDirectoryPath,
-				GetOrCreateHubPoller (configuration));
+				GetOrCreateHubPoller (configuration),
+				allowDoubleClick);
 			}
 
 		return new KasaLightEntity (
@@ -456,7 +458,9 @@ public sealed partial class PlatformDriver
 		{
 		bool supportsTreatAsLightChoice = IsTreatAsLightChoiceEligible (descriptor);
 		bool currentTreatAsLight = _childTreatAsLight.TryGetValue (descriptor.ControllerId, out bool treatAsLight) && treatAsLight;
-		LogInfo ($"CreateChildConfigurationController: controllerId='{descriptor.ControllerId}', supportsTreatAsLightChoice={supportsTreatAsLightChoice}, currentTreatAsLight={currentTreatAsLight} (used as TreatAsLight DefaultValue), childKind={descriptor.ChildKind}.");
+		bool supportsAllowDoubleClickChoice = descriptor.ChildKind == ManagedChildKind.Button;
+		bool currentAllowDoubleClick = !_childAllowDoubleClick.TryGetValue (descriptor.ControllerId, out bool allowDoubleClick) || allowDoubleClick;
+		LogInfo ($"CreateChildConfigurationController: controllerId='{descriptor.ControllerId}', supportsTreatAsLightChoice={supportsTreatAsLightChoice}, currentTreatAsLight={currentTreatAsLight} (used as TreatAsLight DefaultValue), supportsAllowDoubleClickChoice={supportsAllowDoubleClickChoice}, currentAllowDoubleClick={currentAllowDoubleClick} (used as AllowDoubleClick DefaultValue), childKind={descriptor.ChildKind}.");
 
 		var items = new List<ConfigurationItemDefinition>
 			{
@@ -491,6 +495,23 @@ public sealed partial class PlatformDriver
 				Persistent = true,
 				});
 			stepItems.Add ("TreatAsLight");
+			}
+
+		if (supportsAllowDoubleClickChoice)
+			{
+			items.Add (new ()
+				{
+				Id = "AllowDoubleClick",
+				Title = "Allow Double Click",
+				Description = "Enable double-click gesture detection and reporting on this button device.",
+				Availability = Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationItemAvailability.Always,
+				ValueType = Crestron.DeviceDrivers.EntityModel.Data.DeviceConfiguration.ConfigurationItemValueType.Boolean,
+				UsageContext = ConfigurationItemContext.Generic.Prompt,
+				DefaultValue = currentAllowDoubleClick ? "true" : "false",
+				Required = true,
+				Persistent = true,
+				});
+			stepItems.Add ("AllowDoubleClick");
 			}
 
 		var definition = new ConfigurationStepsDefinition
@@ -652,6 +673,18 @@ public sealed partial class PlatformDriver
 					await Task.Delay (TimeSpan.FromMilliseconds (250)).ConfigureAwait (false);
 					ReconcileChildKindAfterTreatAsLightChange (controllerId, "child-config-callback:TreatAsLight");
 					});
+				}
+			}
+
+		if (values.TryGetValue ("AllowDoubleClick", out var allowDoubleClickValue) && allowDoubleClickValue.HasValue)
+			{
+			bool incomingAllowDoubleClick = allowDoubleClickValue.Value.GetValue<bool> ();
+			_childAllowDoubleClick[controllerId] = incomingAllowDoubleClick;
+			LogInfo ($"ApplyChildConfigurationItems: controllerId='{controllerId}' received AllowDoubleClick={incomingAllowDoubleClick}.");
+
+			if (_lightEntities.TryGetValue (controllerId, out IKasaManagedChildEntity? childEntity) && childEntity is KasaButtonEntity buttonEntity)
+				{
+				buttonEntity.SetAllowDoubleClick (incomingAllowDoubleClick);
 				}
 			}
 
