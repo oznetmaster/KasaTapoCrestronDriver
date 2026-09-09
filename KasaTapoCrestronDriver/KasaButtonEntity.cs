@@ -45,6 +45,7 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 	private bool _registeredWithHubPoller;
 	private bool _doubleClickEnableAttempted;
 	private bool _allowDoubleClick = true;
+	private ChildDevice? _lastChild;
 	private long? _lastSeenTriggerTimestamp;
 	private ChildBatterySensorState? _lastBatteryState;
 	private bool _lastStateWasNull = true;
@@ -522,47 +523,40 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 
 	// The S200B only writes 'doubleClick' entries to its trigger log when double-click reporting is
 	// enabled on the device itself; with it off, a double press is logged as two separate
-	// 'singleClick' entries and the doubleClick gesture can never be observed. Enable it once per
-	// driver load so the discrete DoublePressed event can actually fire, unless the "Allow Double
-	// Click" configuration item has been turned off for this device.
+	// 'singleClick' entries and the doubleClick gesture can never be observed. Reconcile the
+	// device's actual DoubleClick.Enabled state against the "Allow Double Click" configuration
+	// preference on every poll tick (not just once per driver load), so a live configuration
+	// change is applied the next time this hub child is polled even if no device was connected
+	// yet when SetAllowDoubleClick was called.
 	private void EnsureDoubleClickEnabled (ChildDevice? child)
 		{
-		if (child is null || _doubleClickEnableAttempted)
+		if (child is null)
 			{
 			return;
 			}
 
 		bool? enabled = child.DoubleClick.Enabled;
-		if (enabled is null)
+		if (enabled is null || enabled.Value == _allowDoubleClick)
 			{
-			// Child does not report double-click support; nothing to enable.
 			return;
 			}
 
-		if (!_allowDoubleClick)
+		if (_doubleClickEnableAttempted)
 			{
-			// AllowDoubleClick is off; do not force-enable it on the device here. SetAllowDoubleClick
-			// handles the disabled case explicitly (including turning it off if it was already on).
 			return;
 			}
 
 		_doubleClickEnableAttempted = true;
-		if (enabled.Value)
-			{
-			LogInfo ($"Button entity '{ControllerId}' EnsureDoubleClickEnabled: already enabled on device.");
-			return;
-			}
-
-		LogInfo ($"Button entity '{ControllerId}' EnsureDoubleClickEnabled: double-click reporting is disabled; enabling it on the device.");
-		_ = SetDoubleClickEnabledAsync (child, true);
+		LogInfo ($"Button entity '{ControllerId}' EnsureDoubleClickEnabled: double-click reporting is {enabled.Value}; setting it to {_allowDoubleClick} on the device.");
+		_ = SetDoubleClickEnabledAsync (child, _allowDoubleClick);
 		}
 
 	/// <summary>
 	/// Invoked when the "Allow Double Click" configuration item changes. Applies the new
-	/// preference to the currently connected child device (if any) by calling
-	/// <c>ChildDoubleClick.SetEnabledAsync</c>; if no device is connected yet, the preference is
-	/// still recorded and will be applied the next time <see cref="EnsureDoubleClickEnabled"/>
-	/// (or a future call to this method) runs against a connected child.
+	/// preference to the most recently pushed hub child device (if any) by calling
+	/// <c>ChildDoubleClick.SetEnabledAsync</c>; if no child has been pushed yet, the preference is
+	/// still recorded and will be applied the next time <see cref="ApplyPushedState"/> runs against
+	/// a connected child.
 	/// </summary>
 	public void SetAllowDoubleClick (bool allowDoubleClick)
 		{
@@ -575,20 +569,7 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 		_doubleClickEnableAttempted = false;
 		LogInfo ($"Button entity '{ControllerId}' SetAllowDoubleClick: allowDoubleClick={allowDoubleClick}.");
 
-		ChildDevice? child = _connectedDevice?.GetChildDevice (ChildId);
-		if (child is null)
-			{
-			return;
-			}
-
-		bool? enabled = child.DoubleClick.Enabled;
-		if (enabled is null || enabled.Value == allowDoubleClick)
-			{
-			return;
-			}
-
-		_doubleClickEnableAttempted = true;
-		_ = SetDoubleClickEnabledAsync (child, allowDoubleClick);
+		EnsureDoubleClickEnabled (_lastChild);
 		}
 
 	private async Task SetDoubleClickEnabledAsync (ChildDevice child, bool enabled)
@@ -628,6 +609,7 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 			}
 
 		UpdateDescriptorFromConnectedDevice (parentDevice);
+		_lastChild = child;
 		EnsureDoubleClickEnabled (child);
 		bool stateChanged = HasChildStateChanged (child);
 		if (stateChanged)
