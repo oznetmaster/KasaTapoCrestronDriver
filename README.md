@@ -128,6 +128,8 @@ Crestron Home Driver NuGet Publishing Standard v1 is **not** an official Crestro
 3. In the Crestron Home configuration UI, add a new device and select the **Kasa/Tapo Platform** driver.
 4. Configure the driver using the values in [Configuration](#configuration) above.
 
+The platform driver instance itself has no room-facing UI and controls no physical load directly \u2014 it can be assigned to any room (or left unassigned) without affecting which physical devices it discovers and manages, since discovery happens over the local network rather than through any particular room's wiring. Only the individual child devices it publishes (lights, outlets, sensors, buttons) need to be placed in the room where the corresponding physical device actually lives.
+
 A single instance of this driver manages all discovered Kasa/Tapo devices — you do not add a separate driver instance per bulb.
 
 ### GitHub Release Asset
