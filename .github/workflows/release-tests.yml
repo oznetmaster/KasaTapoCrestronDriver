@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: master
           fetch-depth: 0
       - uses: actions/setup-dotnet@v4
         with:
@@ -49,7 +49,7 @@ jobs:
       - name: Prepare test-package version
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF -ne 'refs/heads/main') { throw 'Run test releases from main.' }
+          if ($env:GITHUB_REF -ne 'refs/heads/master') { throw 'Run test releases from master.' }
           if ($env:TEST_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Use major.minor.patch.' }
           $tag = "processor-tests-v$env:TEST_VERSION"
           git show-ref --verify --quiet "refs/tags/$tag"
@@ -88,8 +88,8 @@ jobs:
         run: |
           git tag -a $env:TEST_TAG -m "KasaTapoCrestronDriver Tests $env:TEST_VERSION"
           if ($LASTEXITCODE -ne 0) { throw 'Test tag creation failed.' }
-          git push --atomic origin HEAD:refs/heads/main "refs/tags/$env:TEST_TAG"
-          if ($LASTEXITCODE -ne 0) { throw 'Release push failed; main may have advanced.' }
+          git push --atomic origin HEAD:refs/heads/master "refs/tags/$env:TEST_TAG"
+          if ($LASTEXITCODE -ne 0) { throw 'Release push failed; master may have advanced.' }
       - name: Publish test package on GitHub
         shell: pwsh
         run: |
