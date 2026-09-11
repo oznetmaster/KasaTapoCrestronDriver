@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Neil Colvin.
+// Licensed under the MIT License with Commons Clause. See LICENSE in the repository root.
+
 extern alias driverassembly;
 
 using driverassembly::KasaTapoCrestronDriver;
@@ -11,87 +14,87 @@ namespace KasaTapoCrestronDriver.Tests;
 /// bulb must always expose the emulated color-temperature capability so Crestron Home has one stable
 /// LightTunable contract, independent of whether HSV or CT is currently active.
 /// </summary>
-[TestClass]
+[TestFixture]
 public sealed class LightTuningDecisionsTests
 	{
-	[TestMethod]
+	[Test]
 	public void ShouldUseEmulatedColorTemperature_FullColorBulb_ReturnsTrue ()
 		{
 		bool result = LightTuningDecisions.ShouldUseEmulatedColorTemperature (supportsFullColor: true);
 
-		Assert.IsTrue (result);
+		Assert.That (result, Is.True);
 		}
 
-	[TestMethod]
+	[Test]
 	public void ShouldUseEmulatedColorTemperature_TunableWhiteBulb_NeverEmulated ()
 		{
 		// A TunableWhite (CT-only) bulb never supports full color, so it must never select the
 		// emulated shape.
-		Assert.IsFalse (LightTuningDecisions.ShouldUseEmulatedColorTemperature (supportsFullColor: false));
+		Assert.That (LightTuningDecisions.ShouldUseEmulatedColorTemperature (supportsFullColor: false), Is.False);
 		}
 
-	[TestMethod]
+	[Test]
 	public void RequestsWhiteMode_PositiveColorTemperature_ReturnsTrue ()
 		{
-		Assert.IsTrue (LightTuningDecisions.RequestsWhiteMode (colorTemperature: 3000L));
+		Assert.That (LightTuningDecisions.RequestsWhiteMode (colorTemperature: 3000L), Is.True);
 		}
 
-	[TestMethod]
+	[Test]
 	public void RequestsWhiteMode_NullColorTemperature_ReturnsFalse ()
 		{
-		Assert.IsFalse (LightTuningDecisions.RequestsWhiteMode (colorTemperature: null));
+		Assert.That (LightTuningDecisions.RequestsWhiteMode (colorTemperature: null), Is.False);
 		}
 
-	[TestMethod]
+	[Test]
 	public void RequestsWhiteMode_ZeroColorTemperature_ReturnsFalse ()
 		{
 		// colorTemperature==0 signals colour/HSV mode for these bulbs, not white/CT mode.
-		Assert.IsFalse (LightTuningDecisions.RequestsWhiteMode (colorTemperature: 0L));
+		Assert.That (LightTuningDecisions.RequestsWhiteMode (colorTemperature: 0L), Is.False);
 		}
 
-	[TestMethod]
+	[Test]
 	public void RequestsColorMode_HueOnly_ReturnsTrue ()
 		{
-		Assert.IsTrue (LightTuningDecisions.RequestsColorMode (hue: 0.5d, saturation: null));
+		Assert.That (LightTuningDecisions.RequestsColorMode (hue: 0.5d, saturation: null), Is.True);
 		}
 
-	[TestMethod]
+	[Test]
 	public void RequestsColorMode_SaturationOnly_ReturnsTrue ()
 		{
-		Assert.IsTrue (LightTuningDecisions.RequestsColorMode (hue: null, saturation: 0.5d));
+		Assert.That (LightTuningDecisions.RequestsColorMode (hue: null, saturation: 0.5d), Is.True);
 		}
 
-	[TestMethod]
+	[Test]
 	public void RequestsColorMode_NeitherPresent_ReturnsFalse ()
 		{
-		Assert.IsFalse (LightTuningDecisions.RequestsColorMode (hue: null, saturation: null));
+		Assert.That (LightTuningDecisions.RequestsColorMode (hue: null, saturation: null), Is.False);
 		}
 
-	[TestMethod]
+	[Test]
 	public void ToProcessorTuningMode_ColorTemperatureActive_ReturnsWhite ()
 		{
-		Assert.AreEqual (ProcessorLightTuningMode.White, LightTuningDecisions.ToProcessorTuningMode (colorTemperatureUiModeActive: true));
+		Assert.That (LightTuningDecisions.ToProcessorTuningMode (colorTemperatureUiModeActive: true), Is.EqualTo (ProcessorLightTuningMode.White));
 		}
 
-	[TestMethod]
+	[Test]
 	public void ToProcessorTuningMode_ColorActive_ReturnsColor ()
 		{
-		Assert.AreEqual (ProcessorLightTuningMode.Color, LightTuningDecisions.ToProcessorTuningMode (colorTemperatureUiModeActive: false));
+		Assert.That (LightTuningDecisions.ToProcessorTuningMode (colorTemperatureUiModeActive: false), Is.EqualTo (ProcessorLightTuningMode.Color));
 		}
 
-	[TestMethod]
+	[Test]
 	public void RequestsWhiteAndRequestsColor_MutuallyExclusiveOnActualLightTunableSetLevelsInputs ()
 		{
 		// Brightness-only change (neither tuning parameter present): retains current mode.
-		Assert.IsFalse (LightTuningDecisions.RequestsWhiteMode (colorTemperature: null));
-		Assert.IsFalse (LightTuningDecisions.RequestsColorMode (hue: null, saturation: null));
+		Assert.That (LightTuningDecisions.RequestsWhiteMode (colorTemperature: null), Is.False);
+		Assert.That (LightTuningDecisions.RequestsColorMode (hue: null, saturation: null), Is.False);
 
 		// White/CT change.
-		Assert.IsTrue (LightTuningDecisions.RequestsWhiteMode (colorTemperature: 2700L));
-		Assert.IsFalse (LightTuningDecisions.RequestsColorMode (hue: null, saturation: null));
+		Assert.That (LightTuningDecisions.RequestsWhiteMode (colorTemperature: 2700L), Is.True);
+		Assert.That (LightTuningDecisions.RequestsColorMode (hue: null, saturation: null), Is.False);
 
 		// Color/HSV change.
-		Assert.IsFalse (LightTuningDecisions.RequestsWhiteMode (colorTemperature: null));
-		Assert.IsTrue (LightTuningDecisions.RequestsColorMode (hue: 0.25d, saturation: 0.75d));
+		Assert.That (LightTuningDecisions.RequestsWhiteMode (colorTemperature: null), Is.False);
+		Assert.That (LightTuningDecisions.RequestsColorMode (hue: 0.25d, saturation: 0.75d), Is.True);
 		}
 	}

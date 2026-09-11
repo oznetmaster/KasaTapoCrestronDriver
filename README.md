@@ -136,11 +136,11 @@ A single instance of this driver manages all discovered Kasa/Tapo devices — yo
 
 This repository includes a GitHub Actions workflow ([`.github/workflows/release-package.yml`](.github/workflows/release-package.yml)) that builds the Release package and attaches the generated `.pkg` to a GitHub Release.
 
-The same release workflow also publishes the `CrestronHomeDriver.TpLink.KasaTapoPlatform` NuGet package, which wraps the final generated `.pkg` artifact.
+For production `v*` tags, the same release workflow also publishes the `CrestronHomeDriver.TpLink.KasaTapoPlatform` NuGet package, which wraps the final generated `.pkg` artifact.
 
 NuGet publishing uses [nuget.org Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing) (GitHub OIDC) rather than a long-lived API key: the workflow's `id-token: write` permission lets the `NuGet/login` action exchange a GitHub-issued OIDC token for a short-lived nuget.org API key at publish time, using the `NUGET_USER` repository secret for the nuget.org account name. This requires a matching Trusted Publisher policy configured on nuget.org for this repository, workflow file, and (optionally) environment — no `NUGET_API_KEY` secret is needed or stored.
 
-Typical release flow:
+Typical **production driver** release flow:
 1. Push the release commit and tag
 2. Publish the GitHub Release for that tag
 3. Let the workflow build and attach the `.pkg` asset (and publish the NuGet package) automatically
@@ -178,3 +178,17 @@ This driver communicates with TP-Link Kasa and Tapo devices using the independen
 > **Note:** This project references [Crestron.DeviceDrivers.DevKit](https://www.nuget.org/packages/Crestron.DeviceDrivers.DevKit),
 > which is subject to Crestron's SDK license agreement. That license governs the SDK libraries only;
 > the source code in this repository is licensed independently under the terms in [LICENSE](LICENSE).
+## NUnit tests and processor validation
+
+The test projects use NUnit and its Visual Studio adapter. The `net472` project includes 34 ordinary tests and 20 processor lifecycle cases; the desktop lifecycle project runs those 20 cases with the desktop-compatible SDK. The repository `.runsettings` excludes the `Processor` category on Windows.
+
+Build **KasaTapoCrestronDriver.ProcessorTests** in the existing solution to create the separate **Utility / KasaTapoCrestronDriver Tests** package. It runs the shared tests against the real driver and SDK on the processor, using simulated responses without operating live devices. Deployment settings and machine paths remain locally excluded. See [processor test instructions](KasaTapoCrestronDriver.ProcessorTests/README.md).
+
+
+### Test-package releases
+
+Download `KasaTapoCrestronDriver.ProcessorTests.pkg` from a release titled **KasaTapoCrestronDriver Tests**, then add **Utility → Neil Colvin → KasaTapoCrestronDriver Tests** in Crestron Home Configure. All processor test packages use the **Utility** category. Each has its own standalone Home tile and embedded NUnit host, and can also be selected in the [Windows runner](https://github.com/oznetmaster/CrestronHomeNUnit/releases). The production driver and test package can coexist.
+
+The **Release processor tests** workflow takes an independent test-package version, for example `1.0.0`, and publishes a `processor-tests-v1.0.0` tag. Its assets include the test `.pkg`, exact source revisions, documentation and SHA-256 checksums. It builds only the processor package and its test dependencies, validates all 34 ordinary tests and the 20 desktop lifecycle tests, and validates merged package discovery. Running the 20 lifecycle tests against the processor SDK requires a processor.
+
+This workflow never packs or publishes to NuGet and does not bump the production driver version. The production release workflow ignores test-package releases, and test releases do not replace the latest production release. NUnit 4.6.1 and NUnit3TestAdapter replace MSTest in both test projects. See [test-package third-party notices](KasaTapoCrestronDriver.ProcessorTests/THIRD-PARTY-NOTICES.md) for redistributed dependencies.

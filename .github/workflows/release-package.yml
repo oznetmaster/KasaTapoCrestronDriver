@@ -12,6 +12,8 @@ permissions:
 
 jobs:
   build-and-upload-package:
+    # Processor-test releases have their own workflow and never publish NuGet packages.
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
     runs-on: windows-latest
     environment: release
     env:

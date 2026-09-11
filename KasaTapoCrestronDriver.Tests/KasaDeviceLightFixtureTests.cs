@@ -11,10 +11,10 @@ using KasaTapoClient;
 
 namespace KasaTapoCrestronDriver.Tests;
 
-[TestClass]
+[TestFixture]
 public sealed class KasaDeviceLightFixtureTests
 	{
-	[TestMethod]
+	[Test]
 	public async Task UpdateAsync_WithKl130WhiteModeFixture_ReportsColorTemperatureAndNoFullColorState ()
 		{
 		// Real KL130 firmware omits the hue/saturation fields entirely while operating in white
@@ -37,13 +37,13 @@ public sealed class KasaDeviceLightFixtureTests
 
 		await device.UpdateAsync ().ConfigureAwait (false);
 
-		Assert.IsNotNull (device.LightState);
-		Assert.AreEqual (3000, device.LightState.ColorTemperature);
-		Assert.IsFalse (KasaLightEntityFixtureAssertions.HasCurrentFullColorState (device.LightState), "A white-mode KL130 fixture (hue=0, saturation=0, color_temp set) must not be reported as having an active full-color state.");
-		Assert.IsTrue (KasaLightEntityFixtureAssertions.HasColorTemperatureFeature (device.Features), "A KL130 fixture must expose the color_temperature feature so the driver can build its tunable-white range.");
+		Assert.That (device.LightState, Is.Not.Null);
+		Assert.That (device.LightState.ColorTemperature, Is.EqualTo (3000));
+		Assert.That (KasaLightEntityFixtureAssertions.HasCurrentFullColorState (device.LightState), Is.False, "A white-mode KL130 fixture (hue=0, saturation=0, color_temp set) must not be reported as having an active full-color state.");
+		Assert.That (KasaLightEntityFixtureAssertions.HasColorTemperatureFeature (device.Features), Is.True, "A KL130 fixture must expose the color_temperature feature so the driver can build its tunable-white range.");
 		}
 
-	[TestMethod]
+	[Test]
 	public async Task UpdateAsync_WithKl130ColorModeFixture_ReportsFullColorStateAndColorTemperatureUnset ()
 		{
 		var transport = new FakeDeviceTransport (
@@ -64,14 +64,14 @@ public sealed class KasaDeviceLightFixtureTests
 
 		await device.UpdateAsync ().ConfigureAwait (false);
 
-		Assert.IsNotNull (device.LightState);
-		Assert.AreEqual (0, device.LightState.ColorTemperature);
-		Assert.AreEqual (210, device.LightState.Hue);
-		Assert.AreEqual (80, device.LightState.Saturation);
-		Assert.IsTrue (KasaLightEntityFixtureAssertions.HasCurrentFullColorState (device.LightState), "A color-mode KL130 fixture (nonzero hue/saturation) must be reported as having an active full-color state.");
+		Assert.That (device.LightState, Is.Not.Null);
+		Assert.That (device.LightState.ColorTemperature, Is.EqualTo (0));
+		Assert.That (device.LightState.Hue, Is.EqualTo (210));
+		Assert.That (device.LightState.Saturation, Is.EqualTo (80));
+		Assert.That (KasaLightEntityFixtureAssertions.HasCurrentFullColorState (device.LightState), Is.True, "A color-mode KL130 fixture (nonzero hue/saturation) must be reported as having an active full-color state.");
 		}
 
-	[TestMethod]
+	[Test]
 	public async Task UpdateAsync_WithL530SmartWhiteModeFixture_ReportsColorTemperatureAndNoFullColorState ()
 		{
 		// SMART/TAPO-protocol bulbs (e.g. L530) report the same hue/saturation/color_temp triple as legacy
@@ -120,13 +120,13 @@ public sealed class KasaDeviceLightFixtureTests
 
 		await device.UpdateAsync ().ConfigureAwait (false);
 
-		Assert.IsNotNull (device.LightState);
-		Assert.AreEqual (3000, device.LightState.ColorTemperature);
-		Assert.IsFalse (KasaLightEntityFixtureAssertions.HasCurrentFullColorState (device.LightState), "A white-mode L530 SMART fixture (hue=0, saturation=0, color_temp set) must not be reported as having an active full-color state.");
-		Assert.IsTrue (KasaLightEntityFixtureAssertions.HasColorTemperatureFeature (device.Features), "An L530 SMART fixture must expose the color_temperature feature so the driver can build its tunable-white range.");
+		Assert.That (device.LightState, Is.Not.Null);
+		Assert.That (device.LightState.ColorTemperature, Is.EqualTo (3000));
+		Assert.That (KasaLightEntityFixtureAssertions.HasCurrentFullColorState (device.LightState), Is.False, "A white-mode L530 SMART fixture (hue=0, saturation=0, color_temp set) must not be reported as having an active full-color state.");
+		Assert.That (KasaLightEntityFixtureAssertions.HasColorTemperatureFeature (device.Features), Is.True, "An L530 SMART fixture must expose the color_temperature feature so the driver can build its tunable-white range.");
 		}
 
-	[TestMethod]
+	[Test]
 	public async Task UpdateAsync_WithL530SmartColorModeFixture_ReportsFullColorStateAndColorTemperatureUnset ()
 		{
 		var transport = new FakeDeviceTransport (
@@ -173,11 +173,11 @@ public sealed class KasaDeviceLightFixtureTests
 
 		await device.UpdateAsync ().ConfigureAwait (false);
 
-		Assert.IsNotNull (device.LightState);
-		Assert.AreEqual (0, device.LightState.ColorTemperature);
-		Assert.AreEqual (210, device.LightState.Hue);
-		Assert.AreEqual (80, device.LightState.Saturation);
-		Assert.IsTrue (KasaLightEntityFixtureAssertions.HasCurrentFullColorState (device.LightState), "A color-mode L530 SMART fixture (nonzero hue/saturation) must be reported as having an active full-color state.");
+		Assert.That (device.LightState, Is.Not.Null);
+		Assert.That (device.LightState.ColorTemperature, Is.EqualTo (0));
+		Assert.That (device.LightState.Hue, Is.EqualTo (210));
+		Assert.That (device.LightState.Saturation, Is.EqualTo (80));
+		Assert.That (KasaLightEntityFixtureAssertions.HasCurrentFullColorState (device.LightState), Is.True, "A color-mode L530 SMART fixture (nonzero hue/saturation) must be reported as having an active full-color state.");
 		}
 	}
 

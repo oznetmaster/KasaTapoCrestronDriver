@@ -12,10 +12,10 @@ using KasaTapoClient;
 
 namespace KasaTapoCrestronDriver.Tests;
 
-[TestClass]
+[TestFixture]
 public sealed class KasaOutletEnergyFixtureTests
 	{
-	[TestMethod]
+	[Test]
 	public async Task UpdateAsync_WithLegacyEmeterCapablePlugFixture_ReportsEnergyAvailableWithPowerAndTodayUsage ()
 		{
 		// HS110-style legacy plug: emeter.get_realtime reports power_mw/voltage_mv/current_ma/total_wh.
@@ -38,12 +38,12 @@ public sealed class KasaOutletEnergyFixtureTests
 
 		await device.UpdateAsync ().ConfigureAwait (false);
 
-		Assert.IsTrue (device.Energy.IsAvailable, "A legacy plug fixture reporting emeter.get_realtime data must expose energy usage as available.");
-		Assert.AreEqual (36.5d, device.Energy.CurrentPowerWatts, "power_mw must be scaled down to watts (power_mw / 1000).");
-		Assert.AreEqual (1.25d, device.Energy.TotalKilowattHours, "total_wh must be scaled down to kilowatt-hours (total_wh / 1000).");
+		Assert.That (device.Energy.IsAvailable, Is.True, "A legacy plug fixture reporting emeter.get_realtime data must expose energy usage as available.");
+		Assert.That (device.Energy.CurrentPowerWatts, Is.EqualTo (36.5d), "power_mw must be scaled down to watts (power_mw / 1000).");
+		Assert.That (device.Energy.TotalKilowattHours, Is.EqualTo (1.25d), "total_wh must be scaled down to kilowatt-hours (total_wh / 1000).");
 		}
 
-	[TestMethod]
+	[Test]
 	public async Task UpdateAsync_WithSmartEnergyMonitoringPlugFixture_ReportsEnergyAvailableWithCurrentPower ()
 		{
 		// P110-style SMART plug: negotiates the energy_monitoring component and reports get_energy_usage /
@@ -101,11 +101,11 @@ public sealed class KasaOutletEnergyFixtureTests
 
 		await device.UpdateAsync ().ConfigureAwait (false);
 
-		Assert.IsTrue (device.Energy.IsAvailable, "A SMART plug fixture negotiating the energy_monitoring component must expose energy usage as available.");
-		Assert.AreEqual (42.123d, device.Energy.CurrentPowerWatts, "current_power (get_energy_usage, in mW) must be scaled down to watts.");
+		Assert.That (device.Energy.IsAvailable, Is.True, "A SMART plug fixture negotiating the energy_monitoring component must expose energy usage as available.");
+		Assert.That (device.Energy.CurrentPowerWatts, Is.EqualTo (42.123d), "current_power (get_energy_usage, in mW) must be scaled down to watts.");
 		}
 
-	[TestMethod]
+	[Test]
 	public async Task UpdateAsync_WithPlainOnOffPlugFixture_ReportsEnergyNotAvailable ()
 		{
 		// A plain on/off plug (e.g. HS100) reports no emeter data at all.
@@ -127,6 +127,6 @@ public sealed class KasaOutletEnergyFixtureTests
 
 		await device.UpdateAsync ().ConfigureAwait (false);
 
-		Assert.IsFalse (device.Energy.IsAvailable, "A plain on/off plug fixture with no emeter data must not report energy usage as available.");
+		Assert.That (device.Energy.IsAvailable, Is.False, "A plain on/off plug fixture with no emeter data must not report energy usage as available.");
 		}
 	}

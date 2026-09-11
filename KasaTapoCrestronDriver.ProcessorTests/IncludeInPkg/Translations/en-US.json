@@ -1,0 +1,10 @@
+{
+  "Title": "KasaTapoCrestronDriver Tests",
+  "Status": "Test Host",
+  "Suite": "Unit Tests",
+  "Compatibility": "Processor lifecycle",
+  "Run": "Run Tests",
+  "Discovery": "Unit Test Discovery",
+  "Discover": "Discover Tests",
+  "DesktopConnection": "Desktop Runner"
+}

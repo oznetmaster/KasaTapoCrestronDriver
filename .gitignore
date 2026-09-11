@@ -54,3 +54,6 @@ testlog.manifest
 # OS files
 Thumbs.db
 Desktop.ini
+
+# Public dependency notices for processor test release assets
+!KasaTapoCrestronDriver.ProcessorTests/licenses/*.txt

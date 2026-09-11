@@ -1,0 +1,46 @@
+<!--
+Copyright (c) 2026 Neil Colvin.
+Licensed under the MIT License with Commons Clause. See LICENSE in the repository root.
+-->
+<Project>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <Import Project="$(MSBuildProjectName).Local.targets" Condition="Exists('$(MSBuildProjectName).Local.targets')" />
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <ProcessorTestSdkRoot Condition="'$(ProcessorTestSdkRoot)' == ''">$(MSBuildProjectDirectory)\..\..\CrestronHomeNUnit</ProcessorTestSdkRoot>
+    <BuildProcessorTestPackages Condition="'$(BuildProcessorTestPackages)' == '' And '$(BuildingInsideVisualStudio)' == 'true'">true</BuildProcessorTestPackages>
+    <BuildProcessorTestPackages Condition="'$(BuildProcessorTestPackages)' == ''">false</BuildProcessorTestPackages>
+    <AssemblyName>KasaTapoCrestronDriver.ProcessorTests</AssemblyName>
+    <RootNamespace>CrestronHomeNUnit.Driver</RootNamespace>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+  <Import Project="$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.props" Condition="'$(BuildProcessorTestPackages)' == 'true' And Exists('$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.props')" />
+  <ItemGroup Condition="'$(BuildProcessorTestPackages)' == 'true'">
+    <ProjectReference Include="..\KasaTapoCrestronDriver.Tests\KasaTapoCrestronDriver.Tests.csproj" />
+  </ItemGroup>
+  <Import Project="$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.targets" Condition="'$(BuildProcessorTestPackages)' == 'true' And Exists('$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.targets')" />
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup Condition="'$(BuildProcessorTestPackages)' != 'true'">
+    <BuildDependsOn>SkipProcessorPackage</BuildDependsOn>
+    <RebuildDependsOn>SkipProcessorPackage</RebuildDependsOn>
+  </PropertyGroup>
+  <Target Name="SkipProcessorPackage">
+    <Message Importance="high" Text="Processor packaging skipped. Build in Visual Studio or set BuildProcessorTestPackages=true on Windows." />
+  </Target>
+  <Target Name="CheckProcessorTestSdk" BeforeTargets="PrepareForBuild" Condition="'$(BuildProcessorTestPackages)' == 'true'">
+    <Error Condition="!Exists('$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.targets')" Text="Set ProcessorTestSdkRoot to the CrestronHomeNUnit checkout containing the processor package SDK." />
+  </Target>
+  <ItemGroup Condition="'$(BuildProcessorTestPackages)' == 'true'">
+    <ProcessorTestData Include="..\KasaTapoCrestronDriver\IncludeInPkg\sensor\uidefinitions\UiDefinitionBasic.xml" TargetPath="DriverTestData\sensor\uidefinitions\UiDefinitionBasic.xml" />
+    <ProcessorTestData Include="..\KasaTapoCrestronDriver\IncludeInPkg\outlet\uidefinitions\*.xml" TargetPath="DriverTestData\outlet\uidefinitions\%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(BuildProcessorTestPackages)' == 'true'">
+    <ProcessorTestData Include="..\LICENSE" TargetPath="Licenses\Package\LICENSE" />
+    <ProcessorTestData Include="THIRD-PARTY-NOTICES.md" TargetPath="Licenses\Package\THIRD-PARTY-NOTICES.md" />
+    <ProcessorTestData Include="licenses\*" TargetPath="Licenses\Package\licenses\%(Filename)%(Extension)" />
+    <ProcessorTestData Include="..\lib\Renci.SshNet\LICENSE-Renci.SshNet.txt" TargetPath="Licenses\Package\licenses\SSH.NET-LICENSE.txt" />
+    <ProcessorTestData Include="..\lib\Renci.SshNet\README.md" TargetPath="Licenses\Package\licenses\SSH.NET-PROVENANCE.md" />
+  </ItemGroup>
+</Project>

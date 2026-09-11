@@ -133,11 +133,11 @@
 	 <PackageDriverIgnoreExitCode Condition="'$(PackageDriverIgnoreExitCode)' == ''">true</PackageDriverIgnoreExitCode>
   </PropertyGroup>
 
-  <Target Name="BumpDriverVersion" BeforeTargets="BeforeBuild">
+  <Target Name="BumpDriverVersion" BeforeTargets="BeforeBuild" Condition="'$(SkipMergeDependencies)' != 'true' And '$(DesignTimeBuild)' != 'true'">
 	 <Exec Command="pwsh -NoProfile -NonInteractive -File &quot;$(MSBuildProjectDirectory)\BumpDriverVersion.ps1&quot; -ManifestPath &quot;$(MSBuildProjectDirectory)\KasaTapoCrestronDriver.json&quot; -Configuration &quot;$(Configuration)&quot;" />
   </Target>
 
-  <Target Name="MergeDependencies" AfterTargets="Build" Condition="'$(SkipMergeDependencies)' != 'true'">
+  <Target Name="MergeDependencies" AfterTargets="Build" Condition="'$(SkipMergeDependencies)' != 'true' And '$(DesignTimeBuild)' != 'true'">
 	 <ItemGroup>
 		<MergeInputs Include="$(TargetPath)" />
 		<MergeInputs Include="$(TargetDir)*.dll" Exclude="$(TargetPath);$(TargetDir)Crestron.*.dll;$(TargetDir)RAD*.dll;$(TargetDir)Ir*.dll;$(TargetDir)SimplSharp*.dll;$(TargetDir)CrestronCertifiedDriverResourcesLibrary.dll" />
@@ -147,7 +147,7 @@
 	 <Exec Command="pwsh -NoProfile -NonInteractive -File &quot;$(MSBuildProjectDirectory)\PatchMergedAssembly.ps1&quot; -AssemblyPath &quot;$(TargetPath)&quot; -OutputPath &quot;$(TargetDir)patched\$(AssemblyName).dll&quot;" ContinueOnError="false" />
   </Target>
 
-  <Target Name="PackageDriver" AfterTargets="MergeDependencies" Condition="'$(SkipMergeDependencies)' != 'true'">
+  <Target Name="PackageDriver" AfterTargets="MergeDependencies" Condition="'$(SkipMergeDependencies)' != 'true' And '$(DesignTimeBuild)' != 'true'">
 	 <RemoveDir Directories="$(TargetDir)patched\IncludeInPkg" />
 	 <ItemGroup>
 		<IncludeInPkgFiles Include="$(MSBuildProjectDirectory)\IncludeInPkg\**\*" Exclude="$(MSBuildProjectDirectory)\IncludeInPkg\**\*.xsd" />

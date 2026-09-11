@@ -1,0 +1,20 @@
+{
+  "Name": "KasaTapoCrestronDriver Tests",
+  "Port": 0,
+  "Suites": [
+    {
+      "Id": "kasatapodriver",
+      "Name": "KasaTapoCrestronDriver Tests — Unit Tests",
+      "FilterXml": "<filter><and><namespace re='1'>^KasaTapoCrestronDriver[.]Tests($|[.])</namespace><not><cat>Processor</cat></not></and></filter>",
+      "ManualOnly": false,
+      "ExpectedCount": 34
+    },
+    {
+      "Id": "kasatapodriver-lifecycle",
+      "Name": "KasaTapoCrestronDriver Tests — Processor lifecycle",
+      "FilterXml": "<filter><and><namespace re='1'>^KasaTapoCrestronDriver[.]Tests($|[.])</namespace><cat>Processor</cat></and></filter>",
+      "ManualOnly": false,
+      "ExpectedCount": 20
+    }
+  ]
+}

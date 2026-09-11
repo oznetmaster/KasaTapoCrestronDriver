@@ -1,9 +1,16 @@
+<!--
+Copyright (c) 2026 Neil Colvin.
+Licensed under the MIT License with Commons Clause. See LICENSE in the repository root.
+-->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>KasaClient.Tests</AssemblyName>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <RunSettingsFilePath>$(MSBuildProjectDirectory)\..\.runsettings</RunSettingsFilePath>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <!-- The net472 SDK needs processor-only ManagedUtilitiesCE to construct entities.
@@ -15,18 +22,21 @@
     <Compile Include="../KasaTapoCrestronDriver/StripOutletControl.cs" Link="Driver/StripOutletControl.cs" />
     <Compile Include="../KasaTapoCrestronDriver/KasaOutletEntity*.cs" Link="Driver/%(Filename)%(Extension)" />
     <Compile Include="../KasaTapoCrestronDriver/KasaLightEntity*.cs" Link="Driver/%(Filename)%(Extension)" />
-    <None Include="../KasaTapoCrestronDriver/IncludeInPkg/outlet/uidefinitions/*.xml" Link="outlet/uidefinitions/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../KasaTapoCrestronDriver/IncludeInPkg/outlet/uidefinitions/*.xml" Link="DriverTestData/outlet/uidefinitions/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../KasaTapoCrestronDriver/RegistrationTracingController.cs" Link="Driver/RegistrationTracingController.cs" />
-    <PackageReference Include="MSTest" Version="4.4.0" />
+    <PackageReference Include="NUnit" Version="4.6.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" PrivateAssets="all" />
+    <PackageReference Include="NUnit3TestAdapter" Version="6.3.0" PrivateAssets="all" />
+    <PackageReference Include="NUnit.Analyzers" Version="4.14.0" PrivateAssets="all" />
     <PackageReference Include="Crestron.DeviceDrivers.DevKit" Version="27.0.24" />
     <PackageReference Include="KasaTapoClient" Version="1.8.1" />
-    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+    <Using Include="NUnit.Framework" />
     <Compile Include="../KasaTapoCrestronDriver/GlobalUsings.cs" Link="Driver/GlobalUsings.cs" />
     <Compile Include="../KasaTapoCrestronDriver/HubChildCategoryResolver.cs" Link="Driver/HubChildCategoryResolver.cs" />
     <Compile Include="../KasaTapoCrestronDriver/KasaSensorEntity.cs" Link="Driver/KasaSensorEntity.cs" />
     <Compile Include="../KasaTapoCrestronDriver/ManagedLightDescriptor.cs" Link="Driver/ManagedLightDescriptor.cs" />
     <Compile Include="../KasaTapoCrestronDriver/ManagedParentDevicePoller.cs" Link="Driver/ManagedParentDevicePoller.cs" />
     <Compile Include="../KasaTapoCrestronDriver/PlatformSharedConfiguration.cs" Link="Driver/PlatformSharedConfiguration.cs" />
-    <None Include="../KasaTapoCrestronDriver/IncludeInPkg/sensor/uidefinitions/UiDefinitionBasic.xml" Link="sensor/uidefinitions/UiDefinitionBasic.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../KasaTapoCrestronDriver/IncludeInPkg/sensor/uidefinitions/UiDefinitionBasic.xml" Link="DriverTestData/sensor/uidefinitions/UiDefinitionBasic.xml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

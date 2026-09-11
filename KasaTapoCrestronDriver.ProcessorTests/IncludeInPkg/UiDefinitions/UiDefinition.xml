@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+Copyright (c) 2026 Neil Colvin.
+Licensed under the MIT License with Commons Clause. See LICENSE in the repository root.
+-->
+<uidefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://prd-use-rad-assets.azurewebsites.net/ExtensionsSchemaDefinition.xsd">
+  <version ver="2.0" />
+  <tile icon="#icDeviceGeneric" status="{status}" navigation="show:MainPage" showinhomepage="#true" showinroompage="#true" />
+  <layouts>
+    <layout id="MainPage" title="^Title" isdefaultlayout="#true">
+      <controls>
+        <textdisplay id="HostStatus" title="^Status" line1label="{status}" line2label="{lastResult}" />
+        <statusandbutton id="Run" label="^Suite" status="{selfTestResult}" buttonlabel="^Run" buttonaction="command:runTests" />
+        <statusandbutton id="Discover" label="^Discovery" status="{discoveryResult}" buttonlabel="^Discover" buttonaction="command:discoverTests" />
+        <statusandbutton id="Compatibility" label="^Compatibility" status="{compatibilityResult}" buttonlabel="^Run" buttonaction="command:runAdditionalTests" />
+        <textdisplay id="DesktopConnection" title="^DesktopConnection" line1label="{transportStatus}" line2label="Sign in with processor SFTP credentials" />
+      </controls>
+    </layout>
+  </layouts>
+  <alerts />
+</uidefinition>

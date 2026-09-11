@@ -1,0 +1,22 @@
+{
+  "SchemaVersion": "2.0",
+  "GeneralInformation": {
+    "MinSdkVersion": "27.0000.0000",
+    "Guid": "8a277118-d0c5-4646-887d-2c6310289230",
+    "DeviceType": "Utility",
+    "Manufacturer": "Neil Colvin",
+    "BaseModel": "KasaTapoCrestronDriver Tests",
+    "OtherSupportedModels": [],
+    "SupportedSeries": [],
+    "DependencyGroup": "",
+    "Developer": {
+      "Company": "Neil Colvin",
+      "Contact": "Neil Colvin",
+      "Email": "",
+      "Website": "",
+      "PhoneNumber": ""
+    },
+    "DriverVersion": "0.1.000.0003",
+    "VersionDate": "2026-09-11 07:59:29.599"
+  }
+}

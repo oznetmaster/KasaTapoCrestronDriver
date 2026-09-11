@@ -1,0 +1,98 @@
+# Copyright (c) 2026 Neil Colvin.
+# Licensed under the MIT License with Commons Clause. See LICENSE in the repository root.
+
+name: Release processor tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Independent test-package version (major.minor.patch)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: processor-test-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TEST_VERSION: ${{ inputs.version }}
+      TEST_PACKAGE: KasaTapoCrestronDriver.ProcessorTests
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.401
+      - uses: NuGet/setup-nuget@v2
+      - name: Fetch pinned sources
+        shell: pwsh
+        run: |
+          $lock = Get-Content ProcessorTestSdk.lock.json -Raw | ConvertFrom-Json
+          if ($lock.revision -notmatch '^[0-9a-f]{40}$' -or $lock.repository -ne 'https://github.com/oznetmaster/CrestronHomeNUnit.git') { throw 'Invalid SDK source lock.' }
+          $sdk = Join-Path $env:RUNNER_TEMP 'processor-sdk'
+          git clone --no-checkout -- $lock.repository $sdk
+          if ($LASTEXITCODE -ne 0) { throw 'SDK clone failed.' }
+          git -C $sdk checkout --detach $lock.revision
+          if ($LASTEXITCODE -ne 0) { throw 'SDK checkout failed.' }
+          "PROCESSOR_SDK=$sdk" >> $env:GITHUB_ENV
+      - name: Prepare test-package version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/main') { throw 'Run test releases from main.' }
+          if ($env:TEST_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Use major.minor.patch.' }
+          $tag = "processor-tests-v$env:TEST_VERSION"
+          git show-ref --verify --quiet "refs/tags/$tag"
+          if ($LASTEXITCODE -eq 0) { throw "Tag $tag already exists." }
+          $directory = "$env:GITHUB_WORKSPACE/$env:TEST_PACKAGE"
+          $manifest = "$directory/$env:TEST_PACKAGE.json"
+          $project = "$directory/$env:TEST_PACKAGE.csproj"
+          & "$env:PROCESSOR_SDK/CrestronHomeNUnit.Driver/BumpDriverVersion.ps1" -ManifestPath $manifest -Configuration Release -ReleaseVersion $env:TEST_VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'Test-package version preparation failed.' }
+          $text = [IO.File]::ReadAllText($project)
+          $text = [regex]::Replace($text, '<Version>[^<]+</Version>', '<Version>' + $env:TEST_VERSION + '</Version>')
+          [IO.File]::WriteAllText($project, $text)
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- $manifest $project
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 1) {
+            git commit -m "Release $tag"
+            if ($LASTEXITCODE -ne 0) { throw 'Release commit failed.' }
+          } elseif ($LASTEXITCODE -ne 0) { throw 'Cannot inspect staged release version.' }
+          "TEST_TAG=$tag" >> $env:GITHUB_ENV
+          "TEST_PROJECT_DIRECTORY=$directory" >> $env:GITHUB_ENV
+      - name: Install packaging tools
+        shell: pwsh
+        run: '& "$env:PROCESSOR_SDK/tools/InstallCiTools.ps1"'
+      - name: Build and validate test release
+        shell: pwsh
+        run: ./Build-TestRelease.ps1 -Version $env:TEST_VERSION -Package $env:TEST_PACKAGE -SdkRoot $env:PROCESSOR_SDK -ManifestUtilExe $env:MANIFEST_UTIL_EXE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: processor-tests-${{ inputs.version }}
+          path: artifacts/release/*
+          if-no-files-found: error
+      - name: Push test version and annotated tag
+        shell: pwsh
+        run: |
+          git tag -a $env:TEST_TAG -m "KasaTapoCrestronDriver Tests $env:TEST_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw 'Test tag creation failed.' }
+          git push --atomic origin HEAD:refs/heads/main "refs/tags/$env:TEST_TAG"
+          if ($LASTEXITCODE -ne 0) { throw 'Release push failed; main may have advanced.' }
+      - name: Publish test package on GitHub
+        shell: pwsh
+        run: |
+          $assets = @(Get-ChildItem artifacts/release -File | Select-Object -ExpandProperty FullName)
+          gh release create $env:TEST_TAG @assets --verify-tag --title "KasaTapoCrestronDriver Tests v$env:TEST_VERSION" --notes-file "$env:TEST_PROJECT_DIRECTORY/RELEASE-NOTES.md" --latest=false
+          if ($LASTEXITCODE -ne 0) { throw 'Test release creation failed.' }
