@@ -19,6 +19,11 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
   <Import Project="$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.props" Condition="'$(BuildProcessorTestPackages)' == 'true' And Exists('$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.props')" />
   <ItemGroup Condition="'$(BuildProcessorTestPackages)' == 'true'">
     <ProjectReference Include="..\KasaTapoCrestronDriver.Tests\KasaTapoCrestronDriver.Tests.csproj" />
+    <!-- Declare the transitive driver reference explicitly so the SDK preserves its
+         test-build properties instead of adding a production reference without them. -->
+    <ProjectReference Include="..\KasaTapoCrestronDriver\KasaTapoCrestronDriver.csproj">
+      <AdditionalProperties>SkipMergeDependencies=true;DeployAfterBuild=false</AdditionalProperties>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.targets" Condition="'$(BuildProcessorTestPackages)' == 'true' And Exists('$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.targets')" />
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
