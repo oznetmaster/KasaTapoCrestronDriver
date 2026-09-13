@@ -10,7 +10,7 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## 2.0.1 — 2026-09-14
 
-[Draft driver release notes](RELEASE-NOTES.md). Test-only changes do not require a driver release.
+[Driver release notes](RELEASE-NOTES.md). Test-only changes do not require a driver release.
 
 - Test cached controller restoration, stable identity and publication through the SDK registry. Use isolated temporary cache files in fixtures and release Debug diagnostic listeners when disposing a platform driver.
 
