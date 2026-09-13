@@ -1,6 +1,6 @@
 # Kasa/Tapo Crestron Driver
 
-See the [changelog](CHANGELOG.md) for release history and the [draft release notes](RELEASE-NOTES.md) for the next driver update. Driver releases are made for runtime fixes or dependency changes; adding tests alone does not require a driver release.
+See the [changelog](CHANGELOG.md) for release history and the [release notes](RELEASE-NOTES.md) for the current driver update. Driver releases are made for runtime fixes or dependency changes; adding tests alone does not require a driver release.
 
 `KasaTapoCrestronDriver` is a **Crestron Home Entity V2 platform driver** for TP-Link Kasa and Tapo smart home devices. Unlike a single-entity/extension driver that represents one device, this is a **platform driver**: a single instance of it discovers every supported Kasa/Tapo device on the local network, then dynamically creates, publishes, and manages a separate child light entity for each one directly inside Crestron Home. This driver is designed strictly for **local network access** to devices; it does not access Tapo cloud accounts to discover devices, and there are no plans to add cloud-based discovery.
 
@@ -182,7 +182,7 @@ This driver communicates with TP-Link Kasa and Tapo devices using the independen
 > the source code in this repository is licensed independently under the terms in [LICENSE](LICENSE).
 ## NUnit tests and processor validation
 
-The test projects use NUnit and its Visual Studio adapter. The `net472` project includes 34 ordinary tests and 35 processor lifecycle cases; the desktop lifecycle project runs those 20 cases with the desktop-compatible SDK. The repository `.runsettings` excludes the `Processor` category on Windows.
+The test projects use NUnit and its Visual Studio adapter. The `net472` project includes 34 ordinary tests and 35 processor lifecycle cases; the desktop lifecycle project runs those 35 cases with the desktop-compatible SDK. The repository `.runsettings` excludes the `Processor` category on Windows.
 
 Build **KasaTapoCrestronDriver.ProcessorTests** in the existing solution to create the separate **Utility / KasaTapoCrestronDriver Tests** package. It runs the shared tests against the real driver and SDK on the processor, using simulated responses without operating live devices. Deployment settings and machine paths remain locally excluded. See [processor test instructions](KasaTapoCrestronDriver.ProcessorTests/README.md).
 

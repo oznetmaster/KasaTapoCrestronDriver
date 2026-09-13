@@ -7,7 +7,7 @@ This project packages the driver's NUnit tests for Crestron Home. It belongs in 
 1. Open `KasaTapoCrestronDriver.slnx`.
 2. Build **KasaTapoCrestronDriver.ProcessorTests** in Debug. This project targets only `net472`.
 3. Debug builds automatically deploy using this project's private `.csproj.user` settings. It uses the shared test-package SDK's SFTP import script; it does not deploy the production Kasa driver.
-4. In Crestron Home Configure, find **Utility â†’ Neil Colvin â†’ KasaTapoCrestronDriver Tests** and add the test host.
+4. In Crestron Home Configure, find **Utility → Neil Colvin → KasaTapoCrestronDriver Tests** and add the test host.
 5. In the Windows runner, click **Find packages**, select **KasaTapoCrestronDriver Tests**, and connect.
 6. Run **Unit Tests** first, then **Processor lifecycle**.
 
@@ -18,7 +18,7 @@ The host uses an automatically assigned TCP port and advertises itself through m
 | Suite | Cases | Coverage |
 | --- | ---: | --- |
 | Unit Tests | 34 | Light tuning, dimmable plugs, device classification and simulated light/energy responses |
-| Processor lifecycle | 23 | Real `net472` driver entities and Crestron SDK: sensor definitions, child registration, shared parent state, polling, cancellation, disposal and recovery |
+| Processor lifecycle | 35 | Real `net472` driver entities and Crestron SDK: sensor definitions, child registration, shared parent state, polling, cancellation, disposal and recovery |
 
 Both suites use simulated device responses and do not require live network devices or test credentials. The lifecycle suite exercises the actual driver assembly on the processor. Its sources are shared with the existing desktop lifecycle project, which retains its desktop-compatible SDK target for local validation.
 

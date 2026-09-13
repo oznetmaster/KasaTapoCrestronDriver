@@ -66,12 +66,12 @@ jobs:
         run: |
           dotnet build KasaTapoCrestronDriver.ProcessorTests/KasaTapoCrestronDriver.ProcessorTests.csproj -c Release -p:BuildProcessorTestPackages=true -p:ReleaseVersion=1.1.0 -p:DeployAfterBuild=false "-p:ManifestUtilExe=$env:MANIFEST_UTIL_EXE"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Run the packaged unit suite twice
+      - name: Validate all packaged suites
         run: |
           $output = Join-Path $PWD 'KasaTapoCrestronDriver.ProcessorTests/bin/Release/net472'
           $extracted = Join-Path $env:RUNNER_TEMP 'driver-package-tests'
           [IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $output 'KasaTapoCrestronDriver.ProcessorTests.pkg'), $extracted)
-          & ../CrestronHomeNUnit/ProcessorTestPackage.Validation/bin/Release/net472/ProcessorTestPackage.Validation.exe (Join-Path $extracted 'KasaTapoCrestronDriver.ProcessorTests.dll') (Join-Path $PWD 'TestResults/processor') 34 --run-twice
+          & ../CrestronHomeNUnit/ProcessorTestPackage.Validation/bin/Release/net472/ProcessorTestPackage.Validation.exe (Join-Path $extracted 'KasaTapoCrestronDriver.ProcessorTests.dll') (Join-Path $PWD 'TestResults/processor') 72
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: always()
