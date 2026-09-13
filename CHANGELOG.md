@@ -8,7 +8,19 @@ single, scannable index of the full version history.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## 2.0.1 — 2026-09-14
+
+[Draft driver release notes](RELEASE-NOTES.md). Test-only changes do not require a driver release.
+
+- Test cached controller restoration, stable identity and publication through the SDK registry. Use isolated temporary cache files in fixtures and release Debug diagnostic listeners when disposing a platform driver.
+
+- Standardize driver versioning: Debug project/package metadata follows the manifest including its build increment; local Release builds preserve it; three-part release tags select the exact CI release without another patch increment. Verify source and built package versions before publication.
+
+
+
+
+- Expand driver coverage to 34 offline tests and 35 SDK entity/lifecycle tests, with a desktop SDK harness and the same lifecycle fixtures in the net472 processor package.
+- Fix an offline callback reaching an entity removed or replaced by an earlier callback in the same notification pass.
 
 ## [2.0.0]
 

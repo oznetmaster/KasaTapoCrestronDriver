@@ -1,7 +1,7 @@
 // Copyright © 2026 Neil Colvin.
 // Licensed under the MIT License. See LICENSE file in the project root for full license information.
 // Modeled after the equivalent fake transport in the upstream KasaClient test suite
-// (C:\Projects\KasaClient\KasaClient.Tests\FakeDeviceTransport.cs) so KasaDevice instances
+// (KasaClient.Tests/FakeDeviceTransport.cs) so KasaDevice instances
 // can be exercised with canned JSON fixtures instead of real network I/O.
 
 using System;

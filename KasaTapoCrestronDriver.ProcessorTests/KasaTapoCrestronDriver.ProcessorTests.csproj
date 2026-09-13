@@ -14,7 +14,7 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
     <BuildProcessorTestPackages Condition="'$(BuildProcessorTestPackages)' == ''">false</BuildProcessorTestPackages>
     <AssemblyName>KasaTapoCrestronDriver.ProcessorTests</AssemblyName>
     <RootNamespace>CrestronHomeNUnit.Driver</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
   </PropertyGroup>
   <Import Project="$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.props" Condition="'$(BuildProcessorTestPackages)' == 'true' And Exists('$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.props')" />
   <ItemGroup Condition="'$(BuildProcessorTestPackages)' == 'true'">
@@ -38,8 +38,8 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
     <Error Condition="!Exists('$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.targets')" Text="Set ProcessorTestSdkRoot to the CrestronHomeNUnit checkout containing the processor package SDK." />
   </Target>
   <ItemGroup Condition="'$(BuildProcessorTestPackages)' == 'true'">
-    <ProcessorTestData Include="..\KasaTapoCrestronDriver\IncludeInPkg\sensor\uidefinitions\UiDefinitionBasic.xml" TargetPath="DriverTestData\sensor\uidefinitions\UiDefinitionBasic.xml" />
-    <ProcessorTestData Include="..\KasaTapoCrestronDriver\IncludeInPkg\outlet\uidefinitions\*.xml" TargetPath="DriverTestData\outlet\uidefinitions\%(Filename)%(Extension)" />
+
+
   </ItemGroup>
   <ItemGroup Condition="'$(BuildProcessorTestPackages)' == 'true'">
     <ProcessorTestData Include="..\LICENSE" TargetPath="Licenses\Package\LICENSE" />
@@ -47,5 +47,9 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
     <ProcessorTestData Include="licenses\*" TargetPath="Licenses\Package\licenses\%(Filename)%(Extension)" />
     <ProcessorTestData Include="..\lib\Renci.SshNet\LICENSE-Renci.SshNet.txt" TargetPath="Licenses\Package\licenses\SSH.NET-LICENSE.txt" />
     <ProcessorTestData Include="..\lib\Renci.SshNet\README.md" TargetPath="Licenses\Package\licenses\SSH.NET-PROVENANCE.md" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(BuildProcessorTestPackages)' == 'true'">
+    <ProcessorTestData Include="..\KasaTapoCrestronDriver\IncludeInPkg\**\*" Exclude="..\KasaTapoCrestronDriver\IncludeInPkg\**\*.xsd" TargetPath="DriverTestData\%(RecursiveDir)%(Filename)%(Extension)" />
+    <ProcessorTestData Include="..\KasaTapoCrestronDriver\KasaTapoCrestronDriver.json" TargetPath="DriverTestData\DriverDefinition.json" />
   </ItemGroup>
 </Project>

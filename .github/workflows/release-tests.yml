@@ -75,6 +75,23 @@ jobs:
       - name: Install packaging tools
         shell: pwsh
         run: '& "$env:PROCESSOR_SDK/tools/InstallCiTools.ps1"'
+      - name: Restore private desktop SDK dependency
+        env:
+          COMPACT_1: ${{ secrets.CI_COMPACT_JSON_1 }}
+          COMPACT_2: ${{ secrets.CI_COMPACT_JSON_2 }}
+          COMPACT_3: ${{ secrets.CI_COMPACT_JSON_3 }}
+          COMPACT_4: ${{ secrets.CI_COMPACT_JSON_4 }}
+          COMPACT_5: ${{ secrets.CI_COMPACT_JSON_5 }}
+        run: |
+          $encoded = $env:COMPACT_1 + $env:COMPACT_2 + $env:COMPACT_3 + $env:COMPACT_4 + $env:COMPACT_5
+          if ([string]::IsNullOrEmpty($encoded)) { throw 'Desktop SDK dependency unavailable. Fork PRs require a trusted maintainer CI run.' }
+          $inputStream = [IO.MemoryStream]::new([Convert]::FromBase64String($encoded))
+          $gzip = [IO.Compression.GZipStream]::new($inputStream, [IO.Compression.CompressionMode]::Decompress)
+          $path = Join-Path $env:RUNNER_TEMP 'Newtonsoft.Json.Compact.dll'
+          $output = [IO.File]::Create($path)
+          try { $gzip.CopyTo($output) } finally { $output.Dispose(); $gzip.Dispose(); $inputStream.Dispose() }
+          if ((Get-FileHash $path -Algorithm SHA256).Hash -ne '8b9567057419e97b20702a4364283b0b5c34d5e00e006e329e1c92b74638ef90') { throw 'Unexpected desktop SDK dependency checksum.' }
+          "CompactJsonPath=$path" >> $env:GITHUB_ENV
       - name: Build and validate test release
         shell: pwsh
         run: ./Build-TestRelease.ps1 -Version $env:TEST_VERSION -Package $env:TEST_PACKAGE -SdkRoot $env:PROCESSOR_SDK -ManifestUtilExe $env:MANIFEST_UTIL_EXE

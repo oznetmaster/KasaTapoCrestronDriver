@@ -26,7 +26,10 @@ $pkg = Join-Path $output "$Package.pkg"
 # Inspect the actual shipped assembly, not just pre-package build output.
 $extracted = Join-Path $root ('artifacts/verify-' + [Guid]::NewGuid().ToString('N'))
 [IO.Compression.ZipFile]::ExtractToDirectory($pkg, $extracted)
-& "$SdkRoot/ProcessorTestPackage.Validation/bin/Release/net472/ProcessorTestPackage.Validation.exe" "$extracted/$Package.dll" "$root/artifacts/validation" 54
+$suites = (Get-Content "$projectDirectory/ProcessorTests.json" -Raw | ConvertFrom-Json).Suites
+if (@($suites | Where-Object { $_.ExpectedCount -le 0 }).Count) { throw 'Every suite needs an expected discovery count.' }
+$expectedTests = ($suites | Measure-Object -Property ExpectedCount -Sum).Sum
+& "$SdkRoot/ProcessorTestPackage.Validation/bin/Release/net472/ProcessorTestPackage.Validation.exe" "$extracted/$Package.dll" "$root/artifacts/validation" $expectedTests
 if ($LASTEXITCODE -ne 0) { throw 'Packaged test discovery failed.' }
 $manifest = Get-Content "$projectDirectory/$Package.json" -Raw | ConvertFrom-Json
 if ($manifest.GeneralInformation.DeviceType -ne 'Utility') { throw 'Processor test packages must use the Utility category.' }

@@ -1,45 +1,46 @@
+# Copyright (c) 2026 Neil Colvin.
+# Licensed under the MIT License with Commons Clause. See LICENSE in the repository root.
+
 param(
-	[Parameter(Mandatory)][string] $ManifestPath,
-	[string] $Configuration = 'Debug'
+    [Parameter(Mandatory)][string] $ManifestPath,
+    [string] $Configuration = 'Debug',
+    [string] $ReleaseVersion
 )
-
-if (-not (Test-Path $ManifestPath)) {
-	exit 0
+$ErrorActionPreference = 'Stop'
+if (-not (Test-Path -LiteralPath $ManifestPath)) { throw 'Driver manifest was not found.' }
+$content = Get-Content -LiteralPath $ManifestPath -Raw
+$matches = [regex]::Matches($content, '(?<="DriverVersion":\s*")(?<major>\d+)\.(?<minor>\d+)\.(?<release>\d+)\.(?<build>\d+)(?=")')
+if ($matches.Count -ne 1) { throw 'The manifest must contain exactly one four-component DriverVersion.' }
+$match = $matches[0]
+$current = [version]$match.Value
+if (@($current.Major, $current.Minor, $current.Build, $current.Revision | Where-Object { $_ -gt 65535 }).Count) {
+    throw 'Driver version components must be between 0 and 65535.'
 }
-
-# Release version bumps (which advance the release digit and reset build) are reserved for CI,
-# so local Release builds used for validation/deployment don't churn the manifest version.
-# Debug builds always bump the build digit, since those are used for iterative local deployment.
-$isCiBuild = $env:CI -or $env:TF_BUILD -or $env:GITHUB_ACTIONS
-if ($Configuration -eq 'Release' -and -not $isCiBuild) {
-	Write-Host 'BumpDriverVersion: skipping Release version bump outside CI.'
-	exit 0
-}
-
-$content = Get-Content $ManifestPath -Raw
-$match = [regex]::Match($content, '(?<="DriverVersion":\s*")(?<major>\d+)\.(?<minor>\d+)\.(?<release>\d+)\.(?<build>\d+)(?=")')
-if (-not $match.Success) {
-	Write-Warning 'DriverVersion must contain four numeric components.'
-	exit 0
-}
-
-$major = $match.Groups['major'].Value
-$minor = $match.Groups['minor'].Value
-$release = [int]$match.Groups['release'].Value
-$build = [int]$match.Groups['build'].Value
-
+$isCiBuild = @($env:CI, $env:TF_BUILD, $env:GITHUB_ACTIONS | Where-Object { $_ -in @('true', '1') }).Count -gt 0
 switch ($Configuration) {
-	'Debug' {
-		$newVersion = '{0}.{1}.{2}.{3}' -f $major, $minor, $release.ToString('000'), ($build + 1).ToString('0000')
-	}
-	'Release' {
-		$newVersion = '{0}.{1}.{2}.0000' -f $major, $minor, ($release + 1).ToString('000')
-	}
-	default {
-		exit 0
-	}
+    'Debug' {
+        if ($current.Revision -eq 65535) { throw 'Debug build component is exhausted; prepare the next release version.' }
+        $next = [version]::new($current.Major, $current.Minor, $current.Build, $current.Revision + 1)
+    }
+    'Release' {
+        if (-not $isCiBuild) {
+            Write-Host 'BumpDriverVersion: local Release build preserves the manifest.'
+            exit 0
+        }
+        $selected = $current.ToString(3)
+        if ($ReleaseVersion) {
+            if ($ReleaseVersion -notmatch '^\d+\.\d+\.\d+$' -or [version]$ReleaseVersion -ne [version]$selected) {
+                throw 'ReleaseVersion must match the three release components prepared in the manifest.'
+            }
+            $selected = $ReleaseVersion
+        }
+        # Release preparation/tagging selects the release components. CI resets only the build.
+        $next = [version]($selected + '.0')
+    }
+    default { exit 0 }
 }
-
+$newVersion = '{0}.{1}.{2}.{3}' -f $next.Major, $next.Minor, $next.Build.ToString('000'), $next.Revision.ToString('0000')
+if ($match.Value -eq $newVersion) { exit 0 }
 $content = [regex]::Replace($content, '(?<="DriverVersion":\s*")[^"]+(?=")', $newVersion, 1)
 $content = [regex]::Replace($content, '(?<="VersionDate":\s*")[^"]+(?=")', (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff'), 1)
-Set-Content -Path $ManifestPath -Value $content -NoNewline
+Set-Content -LiteralPath $ManifestPath -Value $content -NoNewline

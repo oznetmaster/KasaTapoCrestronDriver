@@ -1,0 +1,86 @@
+# Copyright (c) 2026 Neil Colvin. MIT with Commons Clause; see LICENSE.
+name: Tests
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: driver
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: driver
+      - uses: actions/checkout@v4
+        with:
+          repository: oznetmaster/CrestronHomeNUnit
+          ref: 76c23f5f8e1fe4a19e0a1d023bc04e187e66e056
+          path: CrestronHomeNUnit
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+            8.0.x
+      - uses: NuGet/setup-nuget@v2
+      - name: Install processor packaging tools
+        run: ../CrestronHomeNUnit/tools/InstallCiTools.ps1
+      - name: Run NUnit driver tests
+        run: |
+          dotnet test KasaTapoCrestronDriver.Tests/KasaTapoCrestronDriver.Tests.csproj -c Release --filter "TestCategory!=Processor" --logger "trx;LogFileName=tests.trx" --results-directory TestResults
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [xml]$result = Get-Content TestResults/tests.trx -Raw
+          $counts = $result.TestRun.ResultSummary.Counters
+          if ([int]$counts.passed -ne 34 -or [int]$counts.total -ne 34) { throw "Unexpected test counts: $($counts.OuterXml)" }
+      - name: Restore private desktop SDK dependency
+        env:
+          COMPACT_1: ${{ secrets.CI_COMPACT_JSON_1 }}
+          COMPACT_2: ${{ secrets.CI_COMPACT_JSON_2 }}
+          COMPACT_3: ${{ secrets.CI_COMPACT_JSON_3 }}
+          COMPACT_4: ${{ secrets.CI_COMPACT_JSON_4 }}
+          COMPACT_5: ${{ secrets.CI_COMPACT_JSON_5 }}
+        run: |
+          $encoded = $env:COMPACT_1 + $env:COMPACT_2 + $env:COMPACT_3 + $env:COMPACT_4 + $env:COMPACT_5
+          if ([string]::IsNullOrEmpty($encoded)) { throw 'Desktop SDK dependency unavailable. Fork PRs require a trusted maintainer CI run.' }
+          $inputStream = [IO.MemoryStream]::new([Convert]::FromBase64String($encoded))
+          $gzip = [IO.Compression.GZipStream]::new($inputStream, [IO.Compression.CompressionMode]::Decompress)
+          $path = Join-Path $env:RUNNER_TEMP 'Newtonsoft.Json.Compact.dll'
+          $output = [IO.File]::Create($path)
+          try { $gzip.CopyTo($output) } finally { $output.Dispose(); $gzip.Dispose(); $inputStream.Dispose() }
+          if ((Get-FileHash $path -Algorithm SHA256).Hash -ne '8b9567057419e97b20702a4364283b0b5c34d5e00e006e329e1c92b74638ef90') { throw 'Unexpected desktop SDK dependency checksum.' }
+          "CompactJsonPath=$path" >> $env:GITHUB_ENV
+      - name: Run desktop SDK lifecycle harness
+        run: |
+          dotnet test KasaTapoCrestronDriver.Lifecycle.Tests/KasaTapoCrestronDriver.Lifecycle.Tests.csproj -c Release --logger "trx;LogFileName=lifecycle.trx" --results-directory TestResults -p:DeployAfterBuild=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [xml]$result = Get-Content TestResults/lifecycle.trx -Raw
+          $counts = $result.TestRun.ResultSummary.Counters
+          if ([int]$counts.passed -ne 35 -or [int]$counts.total -ne 35) { throw "Unexpected lifecycle harness counts: $($counts.OuterXml)" }
+      - name: Build processor package
+        run: |
+          dotnet build KasaTapoCrestronDriver.ProcessorTests/KasaTapoCrestronDriver.ProcessorTests.csproj -c Release -p:BuildProcessorTestPackages=true -p:ReleaseVersion=1.1.0 -p:DeployAfterBuild=false "-p:ManifestUtilExe=$env:MANIFEST_UTIL_EXE"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run the packaged unit suite twice
+        run: |
+          $output = Join-Path $PWD 'KasaTapoCrestronDriver.ProcessorTests/bin/Release/net472'
+          $extracted = Join-Path $env:RUNNER_TEMP 'driver-package-tests'
+          [IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $output 'KasaTapoCrestronDriver.ProcessorTests.pkg'), $extracted)
+          & ../CrestronHomeNUnit/ProcessorTestPackage.Validation/bin/Release/net472/ProcessorTestPackage.Validation.exe (Join-Path $extracted 'KasaTapoCrestronDriver.ProcessorTests.dll') (Join-Path $PWD 'TestResults/processor') 34 --run-twice
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: driver/TestResults
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KasaTapoCrestronDriver-processor-tests
+          path: driver/KasaTapoCrestronDriver.ProcessorTests/bin/Release/net472/KasaTapoCrestronDriver.ProcessorTests.pkg
+          if-no-files-found: error

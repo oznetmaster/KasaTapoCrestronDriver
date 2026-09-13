@@ -553,7 +553,7 @@ public sealed partial class PlatformDriver
 
 	private string GetManagedDeviceCachePath ()
 		{
-		return Path.Combine (PERSISTENT_STORAGE_ROOT, MANAGED_DEVICE_CACHE_FILE_NAME);
+		return _managedDeviceCachePath;
 		}
 
 	private string ResolveManagedDeviceName (string controllerId, string? candidateName, string? deviceId, string? host)

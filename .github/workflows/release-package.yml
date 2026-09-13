@@ -29,7 +29,7 @@ jobs:
       - name: Set up .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.401
 
       - name: Set up NuGet
         uses: NuGet/setup-nuget@v2
@@ -37,7 +37,7 @@ jobs:
       - name: Install ILRepack tool
         shell: pwsh
         run: |
-          dotnet tool install --global dotnet-ilrepack
+          dotnet tool install --global dotnet-ilrepack --version 2.0.45
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
       - name: Install ManifestUtil package
@@ -98,7 +98,7 @@ jobs:
           "exe_path=$($manifestUtil.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Restore dependencies
-        run: dotnet restore KasaTapoCrestronDriver.slnx
+        run: dotnet restore KasaTapoCrestronDriver/KasaTapoCrestronDriver.csproj
 
       - name: Write release notes
         id: release_notes
@@ -118,53 +118,21 @@ jobs:
             "path=" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           }
 
+      - name: Verify driver version rules
+        shell: pwsh
+        run: ./tools/Test-DriverVersioning.ps1
+
       - name: Determine release version
         id: package_version
         shell: pwsh
         run: |
           $refName = if ($env:GITHUB_EVENT_NAME -eq 'release' -and $env:GITHUB_EVENT_PATH) {
-            $event = Get-Content $env:GITHUB_EVENT_PATH | ConvertFrom-Json
-            $event.release.tag_name
-          }
-          else {
-            $env:GITHUB_REF_NAME
-          }
-
-          $tagVersion = if (-not [string]::IsNullOrWhiteSpace($refName)) { $refName.TrimStart('v', 'V') } else { $null }
-
-          if ($tagVersion -match '^\d+\.\d+\.\d+-[0-9A-Za-z.-]+$') {
-            # Prerelease-suffixed tag (e.g. v0.1.0-preview): publish this exact version verbatim so
-            # NuGet/the package receive the prerelease version, bypassing the manifest-derived release
-            # version and its consistency check below (which only applies to plain major.minor.patch tags).
-            $releaseVersion = $tagVersion
-          }
-          else {
-            $manifestPath = Join-Path $env:GITHUB_WORKSPACE 'KasaTapoCrestronDriver\KasaTapoCrestronDriver.json'
-            if (-not (Test-Path $manifestPath)) {
-              throw "Driver manifest was not found at '$manifestPath'."
-            }
-
-            $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
-            $driverVersion = $manifest.GeneralInformation.DriverVersion
-            if ([string]::IsNullOrWhiteSpace($driverVersion)) {
-              throw 'DriverVersion is missing from the driver manifest.'
-            }
-
-            $match = [regex]::Match($driverVersion, '^(?<major>\d+)\.(?<minor>\d+)\.(?<release>\d+)\.(?<build>\d+)$')
-            if (-not $match.Success) {
-              throw "DriverVersion '$driverVersion' does not contain four numeric components."
-            }
-
-            # The checked-in manifest's major.minor.release directly is the intended release version - this
-            # commit is expected to set DriverVersion to the exact version being released before tagging.
-            $releaseVersion = '{0}.{1}.{2}' -f $match.Groups['major'].Value, $match.Groups['minor'].Value, [int]$match.Groups['release'].Value
-
-            if ($tagVersion -match '^\d+\.\d+\.\d+$' -and $tagVersion -ne $releaseVersion) {
-              throw "GitHub tag version '$tagVersion' does not match expected Release version '$releaseVersion' derived from pre-build DriverVersion '$driverVersion'."
-            }
-          }
-
-          "value=$releaseVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            (Get-Content -LiteralPath $env:GITHUB_EVENT_PATH -Raw | ConvertFrom-Json).release.tag_name
+          } else { $env:GITHUB_REF_NAME }
+          $selected = & ./tools/Get-DriverReleaseVersion.ps1 -ManifestPath @('./KasaTapoCrestronDriver/KasaTapoCrestronDriver.json') -Tag $refName -RequireTag:($env:GITHUB_EVENT_NAME -eq 'release')
+          "value=$($selected.PackageVersion)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "driver=$($selected.DriverReleaseVersion)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "tag=$($selected.Tag)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Build release package
         shell: pwsh
@@ -174,18 +142,21 @@ jobs:
           # project as a second, parallel instance - that second instance writes to the same obj/bin outputs
           # as this build and previously caused a CS2012 file-lock error ("... KasaTapoCrestronDriver.dll for
           # writing ... locked by VBCSCompiler").
-          dotnet build KasaTapoCrestronDriver/KasaTapoCrestronDriver.csproj -c Release -p:ManifestUtilExe="${{ steps.manifestutil.outputs.exe_path }}" -p:LocalNet472ReferenceAssemblies="$env:NET472_REFERENCE_ASSEMBLIES" -p:LocalNetFxRuntimeDir="$env:NETFX_RUNTIME_DIR" -p:MergeDependenciesContinueOnError=false -p:PackageDriverContinueOnError=false -p:PackageDriverIgnoreExitCode=false
+          dotnet build KasaTapoCrestronDriver/KasaTapoCrestronDriver.csproj -c Release -p:ManifestUtilExe="${{ steps.manifestutil.outputs.exe_path }}" -p:LocalNet472ReferenceAssemblies="$env:NET472_REFERENCE_ASSEMBLIES" -p:LocalNetFxRuntimeDir="$env:NETFX_RUNTIME_DIR" -p:MergeDependenciesContinueOnError=false -p:PackageDriverContinueOnError=false -p:PackageDriverIgnoreExitCode=false -p:DriverReleaseVersion="${{ steps.package_version.outputs.driver }}"
 
       - name: Locate package
         id: package
         shell: pwsh
         run: |
-          $pkg = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\KasaTapoCrestronDriver\bin\Release" -Filter *.pkg -Recurse | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          $pkg = Get-Item -LiteralPath "$env:GITHUB_WORKSPACE\KasaTapoCrestronDriver\bin\Release\net472\KasaTapoCrestronDriver.pkg" -ErrorAction Stop
           if ($null -eq $pkg) {
             throw 'No .pkg file was generated in KasaTapoCrestronDriver/bin/Release.'
           }
 
+          & ./tools/Assert-DriverPackageVersion.ps1 -PackagePath $pkg.FullName -ManifestPath './KasaTapoCrestronDriver/KasaTapoCrestronDriver.json' -ReleaseVersion '${{ steps.package_version.outputs.value }}'
+
           "pkg_path=$($pkg.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
 
       - name: Pack NuGet package
         shell: pwsh

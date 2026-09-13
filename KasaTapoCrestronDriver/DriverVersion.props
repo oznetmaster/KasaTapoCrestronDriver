@@ -1,0 +1,26 @@
+<!--
+Copyright (c) 2026 Neil Colvin.
+Licensed under the MIT License with Commons Clause. See LICENSE in the repository root.
+-->
+<Project>
+  <!-- DriverVersion is authoritative for local builds. An explicit PackageVersion supplied by
+       release CI remains an MSBuild global property and overrides this default. -->
+  <PropertyGroup>
+    <_DriverPackageVersionOverride>$(PackageVersion)</_DriverPackageVersionOverride>
+    <DriverManifestFile Condition="'$(DriverManifestFile)' == ''">$(MSBuildThisFileDirectory)KasaTapoCrestronDriver.json</DriverManifestFile>
+    <DriverManifestVersion>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(DriverManifestFile)')), '&quot;DriverVersion&quot;\s*:\s*&quot;([^&quot;]+)&quot;').Groups[1].Value)</DriverManifestVersion>
+    <Version>$([System.Version]::Parse('$(DriverManifestVersion)').ToString(3))</Version>
+    <Version Condition="'$(Configuration)' == 'Debug'">$([System.Version]::Parse('$(DriverManifestVersion)').ToString(4))</Version>
+    <PackageVersion Condition="'$(_DriverPackageVersionOverride)' == ''">$(Version)</PackageVersion>
+  </PropertyGroup>
+  <!-- Bumping happens after project evaluation: refresh the properties before compilation/packing
+       so this build does not report the preceding build's version. AssemblyVersion stays separate. -->
+  <Target Name="RefreshDriverVersionProperties" AfterTargets="BumpDriverVersion" BeforeTargets="GenerateNuspec">
+    <PropertyGroup>
+      <DriverManifestVersion>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(DriverManifestFile)')), '&quot;DriverVersion&quot;\s*:\s*&quot;([^&quot;]+)&quot;').Groups[1].Value)</DriverManifestVersion>
+      <Version>$([System.Version]::Parse('$(DriverManifestVersion)').ToString(3))</Version>
+      <Version Condition="'$(Configuration)' == 'Debug'">$([System.Version]::Parse('$(DriverManifestVersion)').ToString(4))</Version>
+      <PackageVersion Condition="'$(_DriverPackageVersionOverride)' == ''">$(Version)</PackageVersion>
+    </PropertyGroup>
+  </Target>
+</Project>

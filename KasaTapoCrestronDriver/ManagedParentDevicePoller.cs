@@ -327,6 +327,8 @@ internal sealed class ManagedParentDevicePoller : IDisposable
             if (_disposed) return;
             foreach (var child in _children.Values.ToArray())
             {
+                // A prior callback may have removed or replaced this registration.
+                if (!_children.TryGetValue(child.ChildId, out var current) || !ReferenceEquals(current, child)) continue;
                 try { child.ApplyConnectionState(false); }
                 catch (Exception ex) { LogError($"Offline delivery failed for '{child.ChildId}': {ex}"); }
             }

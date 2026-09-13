@@ -723,9 +723,17 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 		private set => SetAndNotify ("readyIndicator:isReady", value, ref field);
 		}
 
+	private readonly string _managedDeviceCachePath;
+
 	public PlatformDriver (DriverControllerCreationArgs args, DriverImplementationResources resources)
+		: this (args, resources, System.IO.Path.Combine (PERSISTENT_STORAGE_ROOT, MANAGED_DEVICE_CACHE_FILE_NAME))
+		{
+		}
+
+	internal PlatformDriver (DriverControllerCreationArgs args, DriverImplementationResources resources, string managedDeviceCachePath)
 		: base (DriverController.RootControllerId)
 		{
+		_managedDeviceCachePath = managedDeviceCachePath;
 		_args = args;
 		_resources = resources;
 		_logger = args.Logger;
@@ -790,6 +798,14 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			_hubPollers.Clear ();
 			}
 
+#if DEBUG && NETFRAMEWORK
+		if (_diagnosticListener != null)
+			{
+			Debug.Listeners.Remove (_diagnosticListener);
+			_diagnosticListener.Dispose ();
+			_diagnosticListener = null;
+			}
+#endif
 		_processorBaselineCoordinator.Dispose ();
 
 		_scheduledRefreshGate.Dispose ();
@@ -817,13 +833,20 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 		}
 
 	#if DEBUG
+#if NETFRAMEWORK
+	private TraceListener? _diagnosticListener;
+#endif
+
 	private void RegisterKasaClientDebugListener ()
 		{
 		// KasaTapoClient routes its internal diagnostics (discovery, TPAP handshake, etc.) through
 		// System.Diagnostics.Debug.WriteLine, which is compiled out entirely in Release builds. In
 		// DEBUG builds we add a listener so those messages flow into the driver's own log instead of
 		// only being visible through OutputDebugString/attached debuggers.
-		Debug.Listeners.Add (new ForwardingTraceListener (message => LogInfo ($"KasaClientDiagnostic: {message}")));
+		#if NETFRAMEWORK
+		_diagnosticListener = new ForwardingTraceListener (message => LogInfo ($"KasaClientDiagnostic: {message}"));
+		Debug.Listeners.Add (_diagnosticListener);
+#endif
 		}
 
 	private sealed class ForwardingTraceListener : TraceListener

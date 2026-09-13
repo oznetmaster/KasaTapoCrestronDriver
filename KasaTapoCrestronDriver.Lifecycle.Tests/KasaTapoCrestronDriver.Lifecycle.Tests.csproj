@@ -16,14 +16,18 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
   <!-- The net472 SDK needs processor-only ManagedUtilitiesCE to construct entities.
        Exercise the actual sensor sources with the SDK's desktop-compatible target here;
        the existing net472 suite continues to verify the production build. -->
+  <Import Project="DesktopTest.Local.props" Condition="Exists('DesktopTest.Local.props')" />
   <ItemGroup>
-    <Compile Include="../KasaTapoCrestronDriver/LightTuningDecisions.cs" Link="Driver/LightTuningDecisions.cs" />
-    <Compile Include="../KasaTapoCrestronDriver/IParentDeviceChild.cs" Link="Driver/IParentDeviceChild.cs" />
-    <Compile Include="../KasaTapoCrestronDriver/StripOutletControl.cs" Link="Driver/StripOutletControl.cs" />
-    <Compile Include="../KasaTapoCrestronDriver/KasaOutletEntity*.cs" Link="Driver/%(Filename)%(Extension)" />
-    <Compile Include="../KasaTapoCrestronDriver/KasaLightEntity*.cs" Link="Driver/%(Filename)%(Extension)" />
-    <None Include="../KasaTapoCrestronDriver/IncludeInPkg/outlet/uidefinitions/*.xml" Link="DriverTestData/outlet/uidefinitions/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <Compile Include="../KasaTapoCrestronDriver/RegistrationTracingController.cs" Link="Driver/RegistrationTracingController.cs" />
+    <Compile Remove="UnusedProcessorBaselineType.cs" />
+    <Compile Include="../KasaTapoCrestronDriver/*.cs" Exclude="../KasaTapoCrestronDriver/DriverEntryPoint.cs" Link="Driver/%(Filename)%(Extension)" />
+    <Compile Include="../KasaTapoCrestronDriver/Definitions/*.cs" Link="Driver/Definitions/%(Filename)%(Extension)" />
+    <Reference Include="Renci.SshNet"><HintPath>../lib/Renci.SshNet/Renci.SshNet.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Newtonsoft.Json.Compact" Condition="Exists('$(CompactJsonPath)')"><Aliases>compactjson</Aliases><HintPath>$(CompactJsonPath)</HintPath><Private>true</Private></Reference>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <PackageReference Include="Hafner.Compatibility.MetaPackage" Version="1.9.0" />
+    <None Include="../KasaTapoCrestronDriver/IncludeInPkg/**/*" Exclude="../KasaTapoCrestronDriver/IncludeInPkg/**/*.xsd" Link="DriverTestData/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+
+
     <PackageReference Include="NUnit" Version="4.6.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" PrivateAssets="all" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.0" PrivateAssets="all" />
@@ -31,12 +35,9 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
     <PackageReference Include="Crestron.DeviceDrivers.DevKit" Version="27.0.24" />
     <PackageReference Include="KasaTapoClient" Version="1.8.1" />
     <Using Include="NUnit.Framework" />
-    <Compile Include="../KasaTapoCrestronDriver/GlobalUsings.cs" Link="Driver/GlobalUsings.cs" />
-    <Compile Include="../KasaTapoCrestronDriver/HubChildCategoryResolver.cs" Link="Driver/HubChildCategoryResolver.cs" />
-    <Compile Include="../KasaTapoCrestronDriver/KasaSensorEntity.cs" Link="Driver/KasaSensorEntity.cs" />
-    <Compile Include="../KasaTapoCrestronDriver/ManagedLightDescriptor.cs" Link="Driver/ManagedLightDescriptor.cs" />
-    <Compile Include="../KasaTapoCrestronDriver/ManagedParentDevicePoller.cs" Link="Driver/ManagedParentDevicePoller.cs" />
-    <Compile Include="../KasaTapoCrestronDriver/PlatformSharedConfiguration.cs" Link="Driver/PlatformSharedConfiguration.cs" />
-    <None Include="../KasaTapoCrestronDriver/IncludeInPkg/sensor/uidefinitions/UiDefinitionBasic.xml" Link="DriverTestData/sensor/uidefinitions/UiDefinitionBasic.xml" CopyToOutputDirectory="PreserveNewest" />
+
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../KasaTapoCrestronDriver/KasaTapoCrestronDriver.json" Link="DriverTestData/DriverDefinition.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

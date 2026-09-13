@@ -423,4 +423,70 @@ public sealed class ParentDeviceTests
 		Assert.That (transport.Updates, Is.EqualTo (2));
 		Assert.That (device.IsDisposed, Is.False, "A projection/poller must not dispose the shared device.");
 		}
+	private sealed class CallbackChild (string id, Action onState, Action onOffline) : IParentDeviceChild
+		{
+		public string ChildId => id;
+		public void ApplyPushedState (ChildDevice? child, KasaDevice parent) => onState ();
+		public void ApplyConnectionState (bool online)
+			{
+			if (!online)
+				onOffline ();
+			}
+		}
+	[Test]
+	public async Task FailedCommand_DoesNotPoisonFollowingWorkOrSkipHealthySibling ()
+		{
+		var transport = new Transport ();
+		using var device = new KasaDevice (new DeviceConfiguration ("127.0.0.1"), transport);
+		using var poller = new ManagedParentDevicePoller ("test", device.Configuration, Settings (), null, "test", false,
+			(_, _) => Task.FromResult (device), (d, t) => d.UpdateAsync (t), (_, t) => Task.Delay (Timeout.Infinite, t));
+		poller.RegisterChild (new CallbackChild ("a", () => throw new InvalidOperationException ("subscriber"), () => throw new InvalidOperationException ("subscriber")));
+		var healthy = new Child ("b");
+		poller.RegisterChild (healthy);
+		Assert.ThrowsAsync<InvalidOperationException> (() => poller.ExecuteCommandAsync ((_, _) => Task.FromException (new InvalidOperationException ("command")), default));
+		Assert.That (healthy.Offline, Is.EqualTo (1));
+		await poller.RefreshAsync (default).WaitForTestAsync (TimeSpan.FromSeconds (5));
+		Assert.That (healthy.Pushes, Is.EqualTo (1));
+		Assert.That (healthy.IsOn, Is.True);
+		}
+	[Test]
+	public async Task RemovingSiblingDuringFailureNotification_PreventsLateOfflineDelivery ()
+		{
+		var transport = new Transport ();
+		using var device = new KasaDevice (new DeviceConfiguration ("127.0.0.1"), transport);
+		using var poller = new ManagedParentDevicePoller ("test", device.Configuration, Settings (), null, "test", false,
+			(_, _) => Task.FromResult (device), (d, t) => d.UpdateAsync (t), (_, t) => Task.Delay (Timeout.Infinite, t));
+		var removed = new Child ("b");
+		poller.RegisterChild (new CallbackChild ("a", () => { }, () => poller.UnregisterChild (removed)));
+		poller.RegisterChild (removed);
+		Assert.ThrowsAsync<InvalidOperationException> (() => poller.ExecuteCommandAsync ((_, _) => Task.FromException (new InvalidOperationException ("command")), default));
+		Assert.That (removed.Offline, Is.Zero, "A removed entity must not receive a later callback from a captured subscriber list.");
+		await poller.RefreshAsync (default);
+		Assert.That (removed.Pushes, Is.Zero);
+		}
+	[Test]
+	public async Task DisposingDuringUncooperativeRefresh_DiscardsItsLateResult ()
+		{
+		var transport = new Transport ();
+		using var device = new KasaDevice (new DeviceConfiguration ("127.0.0.1"), transport);
+		var started = new TaskCompletionSource<bool> (TaskCreationOptions.RunContinuationsAsynchronously);
+		var release = new TaskCompletionSource<bool> (TaskCreationOptions.RunContinuationsAsynchronously);
+		using var poller = new ManagedParentDevicePoller ("test", device.Configuration, Settings (), null, "test", false,
+			(_, _) => Task.FromResult (device), async (d, _) => { started.TrySetResult (true); await release.Task; await d.UpdateAsync (); },
+			(_, t) => Task.Delay (Timeout.Infinite, t));
+		var child = new Child ("a");
+		poller.RegisterChild (child);
+		Task refresh = poller.RefreshAsync (default);
+		try
+			{
+			await started.Task.WaitForTestAsync (TimeSpan.FromSeconds (5));
+			poller.Dispose ();
+			}
+		finally { release.TrySetResult (true); }
+		Assert.CatchAsync<OperationCanceledException> (() => refresh.WaitForTestAsync (TimeSpan.FromSeconds (5)));
+		Assert.That (child.Pushes, Is.Zero);
+		Assert.That (child.Offline, Is.Zero);
+		Assert.That (device.IsDisposed, Is.False);
+		}
+
 	}

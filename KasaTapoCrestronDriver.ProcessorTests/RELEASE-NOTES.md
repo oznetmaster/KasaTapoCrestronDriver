@@ -1,5 +1,12 @@
 # KasaTapoCrestronDriver Tests
 
+## 1.1.0 — 2026-09-14
+
+- 34 offline tests and 35 SDK lifecycle tests, shared between desktop validation and the net472 processor package.
+- Cover persisted light, outlet, sensor and button descriptors, configured-device markers, incomplete cache metadata, and publication through the real SDK registry without duplicate controllers. Each cache fixture uses its own temporary file. Release the Debug diagnostic listener when its platform driver is disposed.
+- Install the standalone test package from Configure’s **Utility** category. Select suites using its Home tile or the Windows NUnit runner.
+- Processor test packages are GitHub release assets and are not published to NuGet. Private test inputs and deployment settings are excluded.
+
 Initial public processor test package, version 1.0.0. This is a test-package release; no library or production driver NuGet package is published.
 
 - 34 ordinary NUnit tests and 20 processor lifecycle cases using simulated device responses.

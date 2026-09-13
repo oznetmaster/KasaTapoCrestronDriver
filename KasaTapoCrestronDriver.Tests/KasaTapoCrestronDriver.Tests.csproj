@@ -66,4 +66,7 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
   <ItemGroup>
     <Compile Include="..\KasaTapoCrestronDriver.Lifecycle.Tests\DriverTestPaths.cs" Link="Lifecycle\DriverTestPaths.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="../KasaTapoCrestronDriver/KasaTapoCrestronDriver.json" Link="DriverTestData/DriverDefinition.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
