@@ -232,3 +232,7 @@ The SDK's desktop manifest reader needs its `Newtonsoft.Json.Compact.dll` runtim
 
 
 For automated local tests, processor tests and gated driver deployment, see the [Crestron Home NUnit CI development guide](https://github.com/oznetmaster/CrestronHomeNUnit/blob/HEAD/docs/ContinuousIntegration.md). It covers private configuration, live-test gates, install/update waits, results and optional test-package removal.
+
+## Visual Studio processor workflow
+
+The solution includes [KasaTapoCrestronDriver.WorkflowTests](KasaTapoCrestronDriver.WorkflowTests/README.md), using the published Crestron Home Test Adapter. It exposes the complete gated workflow in Test Explorer while the ordinary NUnit fixtures remain available for local testing. Configure its private settings before execution; hosted CI verifies discovery without accessing hardware.

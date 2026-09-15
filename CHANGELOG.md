@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add the published Test Explorer workflow adapter, offline discovery CI and independent GitHub processor-test releases. Private workflow plans control optional live tests, actual-driver updates and temporary-instance cleanup.
+
+
 All notable changes to this project are documented here. Each entry summarizes the corresponding
 [GitHub release](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases), which remains the
 authoritative, detailed record (including build assets) for that version. This file exists as a
@@ -8,7 +13,7 @@ single, scannable index of the full version history.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project follows [Semantic Versioning](https://semver.org/).
 
-## 2.0.1 — 2026-09-14
+## 2.0.1 â€” 2026-09-14
 
 [Driver release notes](RELEASE-NOTES.md). Test-only changes do not require a driver release.
 
@@ -47,7 +52,7 @@ Major release: native hub sensor and button device support, alongside supporting
 - Added full support for converting an already-installed plug or power-strip outlet child device between **Outlet** and **Light** in place, via the **Treat As Light** configuration item, without removing and re-adding the device. See the [Outlet / Plug / Power-Strip Support](README.md#outlet--plug--power-strip-support) section of the README for details.
 - Added a packaged `UiDefinition.xml` and `Translations/en-US.json` for outlet entities, under `IncludeInPkg/outlet/`. Unlike `Light`, `Outlet` is a Crestron extension device type and therefore requires its own custom UI/translation assets; the layout mirrors the per-kind packaging convention used by other Entity Model V2 drivers.
 - Each managed device kind (Light, Outlet) is now implemented as its own standalone entity, rather than sharing a single generic entity implementation.
-- Documented a known Crestron Home **Configure Pro** limitation (not present in Setup): Configure Pro does not show the Installer Settings/configuration section for a device currently configured as a Light (including a plug/outlet converted to a Light), and can show a stale/incorrect device list after an Outlet → Light → Outlet conversion round-trip until the driver is reloaded. See the README for full details and the reload workaround.
+- Documented a known Crestron Home **Configure Pro** limitation (not present in Setup): Configure Pro does not show the Installer Settings/configuration section for a device currently configured as a Light (including a plug/outlet converted to a Light), and can show a stale/incorrect device list after an Outlet â†’ Light â†’ Outlet conversion round-trip until the driver is reloaded. See the README for full details and the reload workaround.
 - Fixed cached/reloaded child devices (e.g. KP303 strip outlets) not showing the Installer Settings section (Ready/Treat As Light/Reconfigure Driver) in Configure Pro after a driver reload, while devices that had been manually reconfigured since the reload (e.g. KP115) showed it correctly. The per-child `ConfigurationStepsDefinition` created in `CreateChildConfigurationController` never set `IncludePersistentValueData`, which defaults to `false`; without it, Configure Pro only recognizes a child controller as configured after the controller itself completes a live `ApplyConfiguration` round-trip through the host - the internal replay `PublishCachedChildControllers` performs after a reload (via a direct `GetFirstConfigurationStep`/`ApplyConfigurationStep` call, not a real Configure Pro session) is invisible to that tracking. Setting `IncludePersistentValueData = true` (and explicitly `IsNotOfflineConfigurable = false`) tells Configure Pro to honor the controller's persisted configuration values directly, so a recreated-from-cache child is recognized as already configured immediately after reload.
 - Fixed a regression where devices restored from the on-disk managed-device cache on driver startup showed their serial number as the secondary info line in Configure Pro instead of manufacturer/model. The cache-seeding code path was missed when this was originally fixed for newly-discovered devices; it now passes `null` for the serial number here too, consistent with every other managed-device publication path.
 - Fixed a bug where a previously-configured child device (e.g. a plug) could keep working correctly in the Room UI after a driver reload, yet never reappear in Configure Pro's Setup/Configure device list. The recreated child's configuration was being replayed back to Configured/Running *before* its controller was registered with the host via `UpdateSubControllers`, so the host never observed the NotConfigured -> Configured transition that Configure Pro's device list relies on. The replay now happens after host registration, matching the ordering used for newly-discovered devices.

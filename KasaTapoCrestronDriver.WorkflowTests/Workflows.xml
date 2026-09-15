@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copyright (c) 2026 Neil Colvin. MIT License with Commons Clause; see LICENSE in the repository root. -->
+<Workflows>
+  <Workflow id="kasatapocrestrondriver_driver" name="KasaTapoCrestronDriver processor workflow" settingsEnvironment="CRESTRON_HOME_KASATAPOCRESTRONDRIVER_WORKFLOW_SETTINGS" />
+</Workflows>

@@ -13,7 +13,7 @@ $root = $PSScriptRoot
 if ($Package -ne 'KasaTapoCrestronDriver.ProcessorTests') { throw 'Unsupported release package.' }
 $projectDirectory = Join-Path $root $Package
 foreach ($project in @('KasaTapoCrestronDriver.Tests/KasaTapoCrestronDriver.Tests.csproj', 'KasaTapoCrestronDriver.Lifecycle.Tests/KasaTapoCrestronDriver.Lifecycle.Tests.csproj')) {
-    dotnet test "$root/$project" -c Release --filter 'TestCategory!=Processor' -p:DeployAfterBuild=false
+    dotnet test "$root/$project" -c Release --filter 'TestCategory!=Live' -p:DeployAfterBuild=false
     if ($LASTEXITCODE -ne 0) { throw "Desktop tests failed: $project" }
 }
 dotnet build "$projectDirectory/$Package.csproj" -c Release -p:BuildProcessorTestPackages=true -p:DeployAfterBuild=false "-p:ProcessorTestSdkRoot=$SdkRoot" "-p:ReleaseVersion=$Version" "-p:ManifestUtilExe=$ManifestUtilExe" "-p:LocalCrestronSdkLibDir=$(Split-Path $ManifestUtilExe -Parent)"
@@ -37,7 +37,7 @@ $revision = git -C $root rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw 'Cannot record package revision.' }
 $sdkRevision = git -C $SdkRoot rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw 'Cannot record SDK revision.' }
-$record = [ordered]@{ package=$Package; version=$Version; packageRevision=$revision; sdkRevision=$sdkRevision; libraryPackage='KasaTapoClient'; libraryVersion='1.8.1'; configuration='Release' }
+$record = [ordered]@{ package=$Package; version=$Version; packageRevision=$revision; sdkRevision=$sdkRevision; configuration='Release' }
 [IO.File]::WriteAllText("$release/$Package.sources.json", ($record | ConvertTo-Json -Depth 6))
 Copy-Item -LiteralPath $pkg -Destination $release
 $docs = Join-Path $root 'artifacts/release-documentation'

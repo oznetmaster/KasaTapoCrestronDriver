@@ -1,0 +1,33 @@
+# Copyright (c) 2026 Neil Colvin. MIT with Commons Clause; see LICENSE.
+name: Workflow discovery
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  discover:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: KasaTapoCrestronDriver.WorkflowTests/KasaTapoCrestronDriver.WorkflowTests.csproj
+            expected: KasaTapoCrestronDriver processor workflow
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Verify offline Test Explorer discovery
+        shell: pwsh
+        env:
+          WORKFLOW_PROJECT: ${{ matrix.project }}
+          EXPECTED_WORKFLOW: ${{ matrix.expected }}
+        run: |
+          $output = @(dotnet test $env:WORKFLOW_PROJECT -c Release --list-tests 2>&1)
+          $output | Write-Output
+          if ($LASTEXITCODE -ne 0) { throw 'Workflow container build/discovery failed.' }
+          if (@($output | Where-Object { $_.ToString().Trim() -eq $env:EXPECTED_WORKFLOW }).Count -ne 1) { throw 'Expected exactly one named processor workflow.' }
