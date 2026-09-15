@@ -1,5 +1,12 @@
 # KasaTapoCrestronDriver Tests
 
+## 1.1.1
+
+- Rebuild with CrestronHomeNUnit 1.2.1. Test execution now participates in the shared processor reservation used by the runner, Test Explorer, CLI and hardware CI.
+- The net472 package contains 72 discovered cases, with 69 in automatic suites. Live suites remain optional and require private inputs where documented.
+- Use the standalone Utility tile, Windows runner, or the solution's Test Explorer workflow project. Private workflow plans can remove the temporary instance after testing.
+- This is an independent processor-test package release on GitHub; it does not publish or update a driver/library NuGet package.
+
 ## 1.1.0 — 2026-09-14
 
 - 34 offline tests and 35 SDK lifecycle tests, shared between desktop validation and the net472 processor package.
