@@ -1,5 +1,11 @@
 # KasaTapoCrestronDriver Tests
 
+## 1.2.0
+
+- Include the shared outlet command-activity and SDK dispatch regressions. All 34 portable and 37 lifecycle cases passed both on Windows and the processor; three optional read-only live checks also passed.
+- Build the tests against the driver's new read-only outlet diagnostics. Running the automatic suites does not operate physical devices; installed-driver control checks are a separate explicitly configured workflow feature.
+- Keep private inputs and deployment settings excluded. Install the package from Configure's Utility category. This is a GitHub-only test-package release, with no test-package NuGet publication.
+
 ## 1.1.1
 
 - Rebuild with CrestronHomeNUnit 1.2.1. Test execution now participates in the shared processor reservation used by the runner, Test Explorer, CLI and hardware CI.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.0 - 2026-09-16
+
+- Add read-only outlet identity and command-completion properties for independent physical control/restoration verification. Existing outlet controls and UI bindings remain unchanged.
+- Add the separate read-only device probe and regression coverage for activity tracking and SDK outlet-setter dispatch. Automatic tests remain non-controlling; optional physical tests require a private device selection.
+- Verify a complete Kasa workflow with physical state restoration, temporary test-host/archive cleanup and lease release. See release notes for the validated absolute On/Off command route and the parameterized-command limitation.
+
 ## Offline release workflow option - 2026-09-15 (no package release)
 
 - Allow an explicit manual release when local hardware or the self-hosted runner is unavailable, with the reason and exact source recorded in the workflow summary.
