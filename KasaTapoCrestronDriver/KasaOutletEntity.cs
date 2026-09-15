@@ -54,6 +54,15 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	private int _pollingGeneration;
 	private Task? _pollingTask;
 	private bool _disposed;
+	private readonly CommandActivity _controlActivity = new ();
+
+	// Read-only diagnostics for automation: physical identity and completion include background retries.
+	[EntityProperty (Id = "controlDeviceId")]
+	public string ControlDeviceId => (_descriptor?.DiscoveryDeviceId ?? string.Empty)
+		+ (string.IsNullOrWhiteSpace (_descriptor?.ChildId) ? string.Empty : "/" + _descriptor!.ChildId);
+
+	[EntityProperty (Id = "controlStatus")]
+	public string ControlStatus => _controlActivity.Snapshot;
 
 	public string DeviceName { get; private set; } = string.Empty;
 
@@ -538,6 +547,8 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			}
 
 		PublishProperty ("deviceLabel", new DriverEntityValue (DeviceLabel), "PublishStateSnapshot");
+		PublishProperty ("controlDeviceId", new DriverEntityValue (ControlDeviceId), "PublishStateSnapshot");
+		PublishControlActivity ();
 		PublishProperty ("outletIsOn", new DriverEntityValue (OutletIsOn), "PublishStateSnapshot");
 		PublishProperty ("outletIcon", new DriverEntityValue (OutletIcon), "PublishStateSnapshot");
 		PublishProperty ("hasEnergyReporting", new DriverEntityValue (HasEnergyReporting), "PublishStateSnapshot");
@@ -720,7 +731,8 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 
 	private async Task<KasaDevice> EnsureConnectedAsync (CancellationToken cancellationToken)
 		{
-		if (_parentPoller is not null) return await _parentPoller.ConnectSharedAsync (cancellationToken).ConfigureAwait (false);
+		if (_parentPoller is not null)
+			return await _parentPoller.ConnectSharedAsync (cancellationToken).ConfigureAwait (false);
 		KasaDevice? existingDevice = Volatile.Read (ref _connectedDevice);
 		if (existingDevice is not null)
 			{
@@ -788,17 +800,46 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 		LogInfo ($"Outlet entity '{ControllerId}' descriptor update callback completed.");
 		}
 
+	private void PublishControlActivity ()
+		{
+		try
+			{
+			lock (_controlActivity)
+				PublishProperty ("controlStatus", new DriverEntityValue (ControlStatus), "CommandActivity");
+			}
+		catch { /* Diagnostic subscribers must not prevent the physical operation or its completion. */ }
+		}
+
 	private void StartBackgroundOperation (Func<Task> operation, string operationName)
 		{
-		Task task = Task.Run (() => operation ());
+		lock (_controlActivity)
+			{
+			_controlActivity.Begin ();
+			PublishControlActivity ();
+			}
+		Task task = Task.Run (async () =>
+			{
+				try
+					{
+					await operation ().ConfigureAwait (false);
+					}
+				finally
+					{
+					lock (_controlActivity)
+						{
+						_controlActivity.Complete ();
+						PublishControlActivity ();
+						}
+					}
+			});
 		task.ContinueWith (
 			continuationTask =>
 				{
-				if (continuationTask.IsFaulted)
-					{
-					Exception exception = continuationTask.Exception?.GetBaseException () ?? continuationTask.Exception!;
-					_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Outlet entity '{ControllerId}' background operation '{operationName}' failed: {exception}");
-					}
+					if (continuationTask.IsFaulted)
+						{
+						Exception exception = continuationTask.Exception?.GetBaseException () ?? continuationTask.Exception!;
+						_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Outlet entity '{ControllerId}' background operation '{operationName}' failed: {exception}");
+						}
 				},
 			CancellationToken.None,
 			TaskContinuationOptions.None,
@@ -851,7 +892,8 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 
 	private void RestartPolling ()
 		{
-		if (UseParentPolling ()) return;
+		if (UseParentPolling ())
+			return;
 		int generation = Interlocked.Increment (ref _pollingGeneration);
 		_pollingTask = RunPollingCycleAsync (generation);
 		}

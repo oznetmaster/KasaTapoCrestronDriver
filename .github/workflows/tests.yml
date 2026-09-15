@@ -31,6 +31,8 @@ jobs:
       - uses: NuGet/setup-nuget@v2
       - name: Install processor packaging tools
         run: ../CrestronHomeNUnit/tools/InstallCiTools.ps1
+      - name: Build read-only installed-control probe
+        run: dotnet build KasaTapoCrestronDriver.ControlProbe/KasaTapoCrestronDriver.ControlProbe.csproj -c Release
       - name: Verify discovery coverage guards
         run: ./tools/Test-DiscoveredCoverageGuards.ps1
       - name: Run discovered NUnit driver tests

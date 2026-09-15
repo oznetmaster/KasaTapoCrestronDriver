@@ -242,3 +242,8 @@ The solution includes [KasaTapoCrestronDriver.WorkflowTests](KasaTapoCrestronDri
 The publish/release workflows support an explicit manual override when the processor or local self-hosted GitHub Actions runner is unavailable. Select `skip_hardware_checks` and provide a single-line `hardware_skip_reason`. Use the workflow's normal source and version controls. The override applies only to that invocation and is recorded with the exact source revision in its warning and job summary; it does not create a passing hardware-test result.
 
 GitHub-hosted validation remains mandatory for the checked-out source, and the normal build, tests and packaging steps still run. Wait for the configured hosted workflows to pass, or run them on the same source revision first. None of these hosted checks needs the local runner or processor. Automatic tag/release-triggered runs retain the normal hardware checks; use a manual invocation of the updated release workflow when an offline override is needed.
+
+
+## Installed-driver control testing
+
+The [read-only control probe](KasaTapoCrestronDriver.ControlProbe/README.md) supports optional workflow tests that operate a selected installed outlet, verify its physical state independently, and restore it. Private device selection and credentials remain local. These controls are opt-in and are not enabled by the ordinary automatic processor-test plans.

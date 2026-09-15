@@ -252,7 +252,11 @@ public sealed class ParentDeviceTests
 		Assert.That (outlet.OutletIsOn, Is.False);
 		Assert.That (LightIsOn (), Is.True);
 		Assert.That (light.GetState ().Definition.Properties.ContainsKey ("light:isOn"), Is.True);
-		outlet.OutletOn ();
+		Assert.That (outlet.GetState ().Definition.Commands["setOutletIsOn"].Parameters.Keys, Is.EquivalentTo (new[] { "value" }));
+		outlet.ExecuteCommand ("setOutletIsOn", new Dictionary<string, Crestron.DeviceDrivers.EntityModel.Data.DriverEntityValue>
+			{
+			["value"] = new Crestron.DeviceDrivers.EntityModel.Data.DriverEntityValue (true)
+			}, result => Assert.That (result.Failed, Is.False));
 		await Until (() => outlet.OutletIsOn && transport.A);
 		typeof (KasaLightEntity).GetMethod ("LightOff", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke (light, null);
 		await Until (() => !LightIsOn () && !transport.B);
