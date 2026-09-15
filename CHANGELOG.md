@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2026-09-15 - Test and development tooling (no driver release)
 
 - Add the published Test Explorer workflow adapter, offline discovery CI and independent GitHub processor-test releases. Private workflow plans control optional live tests, actual-driver updates and temporary-instance cleanup.
 
