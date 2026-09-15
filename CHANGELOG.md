@@ -13,7 +13,7 @@ single, scannable index of the full version history.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project follows [Semantic Versioning](https://semver.org/).
 
-## 2.0.1 â€” 2026-09-14
+## 2.0.1 — 2026-09-14
 
 [Driver release notes](RELEASE-NOTES.md). Test-only changes do not require a driver release.
 
