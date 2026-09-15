@@ -42,7 +42,7 @@ $record = [ordered]@{ package=$Package; version=$Version; packageRevision=$revis
 Copy-Item -LiteralPath $pkg -Destination $release
 $docs = Join-Path $root 'artifacts/release-documentation'
 [IO.Directory]::CreateDirectory($docs) | Out-Null
-foreach ($file in @('README.md', 'LICENSE')) { Copy-Item -LiteralPath "$root/$file" -Destination $docs }
+foreach ($file in @('README.md', 'LICENSE', 'CHANGELOG.md')) { Copy-Item -LiteralPath "$root/$file" -Destination $docs }
 Copy-Item -LiteralPath "$projectDirectory/README.md" -Destination "$docs/Package-Guide.md"
 Copy-Item -LiteralPath "$projectDirectory/RELEASE-NOTES.md" -Destination $docs
 Copy-Item -LiteralPath "$extracted/Licenses" -Destination $docs -Recurse

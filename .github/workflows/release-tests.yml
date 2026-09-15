@@ -62,9 +62,15 @@ jobs:
           $text = [IO.File]::ReadAllText($project)
           $text = [regex]::Replace($text, '<Version>[^<]+</Version>', '<Version>' + $env:TEST_VERSION + '</Version>')
           [IO.File]::WriteAllText($project, $text)
+          $changelog = Join-Path $env:GITHUB_WORKSPACE 'CHANGELOG.md'
+          $existing = [IO.File]::ReadAllText($changelog)
+          $entry = "## $env:TEST_PACKAGE v$env:TEST_VERSION - $([DateTime]::UtcNow.ToString('yyyy-MM-dd'))`n`nPublished processor test package on GitHub. This is a test-package release only; no driver or library NuGet package is published. See the matching package release notes for changes and validation.`n`n"
+          $firstBreak = $existing.IndexOf("`n")
+          if ($firstBreak -lt 0) { throw 'Invalid changelog header.' }
+          [IO.File]::WriteAllText($changelog, $existing.Substring(0, $firstBreak + 1) + "`n" + $entry + $existing.Substring($firstBreak + 1).TrimStart())
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- $manifest $project
+          git add -- $manifest $project $changelog
           git diff --cached --quiet
           if ($LASTEXITCODE -eq 1) {
             git commit -m "Release $tag"
