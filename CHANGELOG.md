@@ -1,5 +1,10 @@
 # Changelog
 
+## Offline release workflow option - 2026-09-15 (no package release)
+
+- Allow an explicit manual release when local hardware or the self-hosted runner is unavailable, with the reason and exact source recorded in the workflow summary.
+- Keep hosted source validation mandatory and preserve all build, test and packaging steps. No runtime, API or package-version changes.
+
 ## Discovery-based CI coverage - 2026-09-15 (no package release)
 
 - Compare desktop results and merged-package discovery with source test identities, replacing duplicated test-count constants. Verify the separate desktop lifecycle harness covers the processor fixture identities.
