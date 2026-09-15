@@ -12,10 +12,8 @@ Set-StrictMode -Version Latest
 $root = $PSScriptRoot
 if ($Package -ne 'KasaTapoCrestronDriver.ProcessorTests') { throw 'Unsupported release package.' }
 $projectDirectory = Join-Path $root $Package
-foreach ($project in @('KasaTapoCrestronDriver.Tests/KasaTapoCrestronDriver.Tests.csproj', 'KasaTapoCrestronDriver.Lifecycle.Tests/KasaTapoCrestronDriver.Lifecycle.Tests.csproj')) {
-    dotnet test "$root/$project" -c Release --filter 'TestCategory!=Live' -p:DeployAfterBuild=false
-    if ($LASTEXITCODE -ne 0) { throw "Desktop tests failed: $project" }
-}
+& "$root/tools/Test-DiscoveredCoverage.ps1" -Stage Desktop -Project "$root/KasaTapoCrestronDriver.Tests/KasaTapoCrestronDriver.Tests.csproj" -Framework net472 -ExcludeProcessor -ResultsDirectory "$root/artifacts/test-results"
+& "$root/tools/Test-DiscoveredCoverage.ps1" -Stage Desktop -Project "$root/KasaTapoCrestronDriver.Lifecycle.Tests/KasaTapoCrestronDriver.Lifecycle.Tests.csproj" -Framework net10.0 -RequiredCategories unit -CompareProcessorInventory "$root/artifacts/test-results/KasaTapoCrestronDriver.Tests/inventory.json" -ResultsDirectory "$root/artifacts/test-results"
 dotnet build "$projectDirectory/$Package.csproj" -c Release -p:BuildProcessorTestPackages=true -p:DeployAfterBuild=false "-p:ProcessorTestSdkRoot=$SdkRoot" "-p:ReleaseVersion=$Version" "-p:ManifestUtilExe=$ManifestUtilExe" "-p:LocalCrestronSdkLibDir=$(Split-Path $ManifestUtilExe -Parent)"
 if ($LASTEXITCODE -ne 0) { throw 'Processor test package build failed.' }
 $output = Join-Path $projectDirectory 'bin/Release/net472'
@@ -26,11 +24,7 @@ $pkg = Join-Path $output "$Package.pkg"
 # Inspect the actual shipped assembly, not just pre-package build output.
 $extracted = Join-Path $root ('artifacts/verify-' + [Guid]::NewGuid().ToString('N'))
 [IO.Compression.ZipFile]::ExtractToDirectory($pkg, $extracted)
-$suites = (Get-Content "$projectDirectory/ProcessorTests.json" -Raw | ConvertFrom-Json).Suites
-if (@($suites | Where-Object { $_.ExpectedCount -le 0 }).Count) { throw 'Every suite needs an expected discovery count.' }
-$expectedTests = ($suites | Measure-Object -Property ExpectedCount -Sum).Sum
-& "$SdkRoot/ProcessorTestPackage.Validation/bin/Release/net472/ProcessorTestPackage.Validation.exe" "$extracted/$Package.dll" "$root/artifacts/validation" $expectedTests
-if ($LASTEXITCODE -ne 0) { throw 'Packaged test discovery failed.' }
+& "$root/tools/Test-DiscoveredCoverage.ps1" -Stage Package -SdkRoot $SdkRoot -PackageAssembly "$extracted/$Package.dll" -SourceInventory "$root/artifacts/test-results/KasaTapoCrestronDriver.Tests/inventory.json" -SuiteCategories @{'kasatapodriver'='unit';'kasatapodriver-lifecycle'='processor';'kasatapodriver-live'='live'} -DiscoveryOnly -ResultsDirectory "$root/artifacts/validation"
 $manifest = Get-Content "$projectDirectory/$Package.json" -Raw | ConvertFrom-Json
 if ($manifest.GeneralInformation.DeviceType -ne 'Utility') { throw 'Processor test packages must use the Utility category.' }
 $revision = git -C $root rev-parse HEAD

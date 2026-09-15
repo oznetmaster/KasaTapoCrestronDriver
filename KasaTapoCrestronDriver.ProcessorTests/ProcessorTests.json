@@ -6,22 +6,19 @@
       "Id": "kasatapodriver",
       "Name": "KasaTapoCrestronDriver Tests — Unit Tests",
       "FilterXml": "<filter><and><namespace re='1'>^KasaTapoCrestronDriver[.]Tests($|[.])</namespace><not><cat>Processor</cat></not></and></filter>",
-      "ManualOnly": false,
-      "ExpectedCount": 34
+      "ManualOnly": false
     },
     {
       "Id": "kasatapodriver-lifecycle",
       "Name": "KasaTapoCrestronDriver Tests — Processor lifecycle",
       "FilterXml": "<filter><and><namespace re='1'>^KasaTapoCrestronDriver[.]Tests($|[.])</namespace><cat>Processor</cat><not><cat>Live</cat></not></and></filter>",
-      "ManualOnly": false,
-      "ExpectedCount": 35
+      "ManualOnly": false
     },
     {
       "Id": "kasatapodriver-live",
       "Name": "KasaTapoCrestronDriver Tests — Live device state",
       "FilterXml": "<filter><class>KasaTapoCrestronDriver.Tests.LiveDriverEntityTests</class></filter>",
-      "ManualOnly": true,
-      "ExpectedCount": 3
+      "ManualOnly": true
     }
   ]
 }
