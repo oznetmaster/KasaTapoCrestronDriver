@@ -1,5 +1,9 @@
 # Changelog
 
+## KasaTapoCrestronDriver.ProcessorTests v1.2.0 - 2026-09-15
+
+Published processor test package on GitHub. This is a test-package release only; no driver or library NuGet package is published. See the matching package release notes for changes and validation.
+
 ## 2.1.0 - 2026-09-16
 
 - Add read-only outlet identity and command-completion properties for independent physical control/restoration verification. Existing outlet controls and UI bindings remain unchanged.
