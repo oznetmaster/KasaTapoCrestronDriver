@@ -14,7 +14,7 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
     <BuildProcessorTestPackages Condition="'$(BuildProcessorTestPackages)' == ''">false</BuildProcessorTestPackages>
     <AssemblyName>KasaTapoCrestronDriver.ProcessorTests</AssemblyName>
     <RootNamespace>CrestronHomeNUnit.Driver</RootNamespace>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
   </PropertyGroup>
   <Import Project="$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.props" Condition="'$(BuildProcessorTestPackages)' == 'true' And Exists('$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.props')" />
   <ItemGroup Condition="'$(BuildProcessorTestPackages)' == 'true'">

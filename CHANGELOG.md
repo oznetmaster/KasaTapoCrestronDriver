@@ -1,5 +1,9 @@
 # Changelog
 
+## KasaTapoCrestronDriver.ProcessorTests v1.1.1 - 2026-09-15
+
+Published processor test package on GitHub. This is a test-package release only; no driver or library NuGet package is published. See the matching package release notes for changes and validation.
+
 ## 2026-09-15 - Test and development tooling (no driver release)
 
 - Add the published Test Explorer workflow adapter, offline discovery CI and independent GitHub processor-test releases. Private workflow plans control optional live tests, actual-driver updates and temporary-instance cleanup.
