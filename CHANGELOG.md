@@ -1,5 +1,10 @@
 # Changelog
 
+## CI validation - 2026-09-15 (no package release)
+
+- Revalidate the current default-branch source after successful release workflows, including version commits created by GitHub Actions.
+- Allow maintainers to configure exact-source, App-specific checks that must pass before publishing through `RELEASE_REQUIRED_CHECKS`; missing, failed or unconfirmed checks block the release.
+
 ## KasaTapoCrestronDriver.ProcessorTests v1.1.1 - 2026-09-15
 
 Published processor test package on GitHub. This is a test-package release only; no driver or library NuGet package is published. See the matching package release notes for changes and validation.
