@@ -83,15 +83,17 @@ jobs:
           $text = [IO.File]::ReadAllText($project)
           $text = [regex]::Replace($text, '<Version>[^<]+</Version>', '<Version>' + $env:TEST_VERSION + '</Version>')
           [IO.File]::WriteAllText($project, $text)
-          $changelog = Join-Path $env:GITHUB_WORKSPACE 'CHANGELOG.md'
-          $existing = [IO.File]::ReadAllText($changelog)
+          $developmentHistory = Join-Path $env:GITHUB_WORKSPACE 'DEVELOPMENT-HISTORY.md'
+          $existing = [IO.File]::ReadAllText($developmentHistory)
           $entry = "## $env:TEST_PACKAGE v$env:TEST_VERSION - $([DateTime]::UtcNow.ToString('yyyy-MM-dd'))`n`nPublished processor test package on GitHub. This is a test-package release only; no driver or library NuGet package is published. See the matching package release notes for changes and validation.`n`n"
-          $firstBreak = $existing.IndexOf("`n")
-          if ($firstBreak -lt 0) { throw 'Invalid changelog header.' }
-          [IO.File]::WriteAllText($changelog, $existing.Substring(0, $firstBreak + 1) + "`n" + $entry + $existing.Substring($firstBreak + 1).TrimStart())
+          $marker = '<!-- development-history -->'
+          $markerIndex = $existing.IndexOf($marker, [StringComparison]::Ordinal)
+          if ($markerIndex -lt 0) { throw 'Missing development history marker.' }
+          $insertAt = $markerIndex + $marker.Length
+          [IO.File]::WriteAllText($developmentHistory, $existing.Substring(0, $insertAt) + "`n`n" + $entry + $existing.Substring($insertAt).TrimStart())
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- $manifest $project $changelog
+          git add -- $manifest $project $developmentHistory
           git diff --cached --quiet
           if ($LASTEXITCODE -eq 1) {
             git commit -m "Release $tag"
