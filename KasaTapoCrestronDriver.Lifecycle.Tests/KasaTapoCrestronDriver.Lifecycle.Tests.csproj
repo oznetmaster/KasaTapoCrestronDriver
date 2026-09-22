@@ -19,6 +19,7 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
   <Import Project="DesktopTest.Local.props" Condition="Exists('DesktopTest.Local.props')" />
   <ItemGroup>
     <Compile Remove="UnusedProcessorBaselineType.cs" />
+    <Compile Include="../KasaTapoCrestronDriver.Tests/LiveDriverEntityTests.cs" Link="LiveDriverEntityTests.cs" />
     <Compile Include="../KasaTapoCrestronDriver/*.cs" Exclude="../KasaTapoCrestronDriver/DriverEntryPoint.cs" Link="Driver/%(Filename)%(Extension)" />
     <Compile Include="../KasaTapoCrestronDriver/Definitions/*.cs" Link="Driver/Definitions/%(Filename)%(Extension)" />
     <Reference Include="Renci.SshNet"><HintPath>../lib/Renci.SshNet/Renci.SshNet.dll</HintPath><Private>true</Private></Reference>
@@ -29,11 +30,11 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
 
 
     <PackageReference Include="NUnit" Version="4.6.1" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" PrivateAssets="all" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.0" PrivateAssets="all" />
-    <PackageReference Include="NUnit.Analyzers" Version="4.14.0" PrivateAssets="all" />
-    <PackageReference Include="Crestron.DeviceDrivers.DevKit" Version="27.0.24" />
-    <PackageReference Include="KasaTapoClient" Version="1.8.1" />
+    <PackageReference Include="NUnit.Analyzers" Version="4.15.0" PrivateAssets="all" />
+    <PackageReference Include="Crestron.DeviceDrivers.DevKit" Version="29.0.10" />
+    <PackageReference Include="KasaTapoClient" Version="2.0.0" />
     <Using Include="NUnit.Framework" />
 
   </ItemGroup>

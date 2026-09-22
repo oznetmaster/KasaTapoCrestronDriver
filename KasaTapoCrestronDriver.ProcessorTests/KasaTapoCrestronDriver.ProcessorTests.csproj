@@ -18,6 +18,7 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
   </PropertyGroup>
   <Import Project="$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.props" Condition="'$(BuildProcessorTestPackages)' == 'true' And Exists('$(ProcessorTestSdkRoot)\ProcessorTestPackage\ProcessorTestPackage.props')" />
   <ItemGroup Condition="'$(BuildProcessorTestPackages)' == 'true'">
+    <PackageReference Update="Crestron.DeviceDrivers.DevKit" Version="29.0.10" />
     <ProjectReference Include="..\KasaTapoCrestronDriver.Tests\KasaTapoCrestronDriver.Tests.csproj" />
     <!-- Declare the transitive driver reference explicitly so the SDK preserves its
          test-build properties instead of adding a production reference without them. -->
@@ -44,7 +45,7 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
   <ItemGroup Condition="'$(BuildProcessorTestPackages)' == 'true'">
     <ProcessorTestData Include="..\LICENSE" TargetPath="Licenses\Package\LICENSE" />
     <ProcessorTestData Include="THIRD-PARTY-NOTICES.md" TargetPath="Licenses\Package\THIRD-PARTY-NOTICES.md" />
-    <ProcessorTestData Include="licenses\*" TargetPath="Licenses\Package\licenses\%(Filename)%(Extension)" />
+    <ProcessorTestData Include="licenses\*" Exclude="licenses\Newtonsoft.Json-LICENSE.md;licenses\log4net-LICENSE.txt;licenses\log4net-NOTICE.txt" TargetPath="Licenses\Package\licenses\%(Filename)%(Extension)" />
     <ProcessorTestData Include="..\lib\Renci.SshNet\LICENSE-Renci.SshNet.txt" TargetPath="Licenses\Package\licenses\SSH.NET-LICENSE.txt" />
     <ProcessorTestData Include="..\lib\Renci.SshNet\README.md" TargetPath="Licenses\Package\licenses\SSH.NET-PROVENANCE.md" />
   </ItemGroup>
@@ -52,4 +53,9 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
     <ProcessorTestData Include="..\KasaTapoCrestronDriver\IncludeInPkg\**\*" Exclude="..\KasaTapoCrestronDriver\IncludeInPkg\**\*.xsd" TargetPath="DriverTestData\%(RecursiveDir)%(Filename)%(Extension)" />
     <ProcessorTestData Include="..\KasaTapoCrestronDriver\KasaTapoCrestronDriver.json" TargetPath="DriverTestData\DriverDefinition.json" />
   </ItemGroup>
+  <Target Name="ExcludeDesktopTestTooling" BeforeTargets="MergeDependencies" Condition="'$(BuildProcessorTestPackages)' == 'true'">
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" Condition="$([System.String]::Copy('%(ReferenceCopyLocalPaths.NuGetPackageId)').ToLowerInvariant().StartsWith('microsoft.testing.')) Or $([System.String]::Copy('%(ReferenceCopyLocalPaths.NuGetPackageId)').ToLowerInvariant().StartsWith('microsoft.testplatform.')) Or '%(ReferenceCopyLocalPaths.NuGetPackageId)' == 'Microsoft.ApplicationInsights' Or '%(ReferenceCopyLocalPaths.NuGetPackageId)' == 'Microsoft.CodeCoverage' Or '%(ReferenceCopyLocalPaths.NuGetPackageId)' == 'NUnit3TestAdapter'" />
+    </ItemGroup>
+  </Target>
 </Project>

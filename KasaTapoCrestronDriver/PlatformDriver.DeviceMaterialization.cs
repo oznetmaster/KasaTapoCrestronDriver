@@ -566,21 +566,10 @@ public sealed partial class PlatformDriver
 					},
 				},
 			FirstStep = "Activation",
-			// Both default to false when left unset. IsNotOfflineConfigurable=false is required so
-			// Configure Pro treats this child as configurable while the device is not actively
-			// mid-handshake with the host (matches the root driver's own configuration args).
-			// IncludePersistentValueData=true is the actual fix for the KP303-vs-KP115 Installer
-			// Settings discrepancy: without it, Configure Pro only recognizes a child controller as
-			// "configured" after ITS OWN live ApplyConfiguration round-trip through the host - our
-			// internal replay in PublishCachedChildControllers (which calls
-			// GetFirstConfigurationStep/ApplyConfigurationStep programmatically, not through a real
-			// Configure Pro session) is invisible to that tracking. Setting this true tells Configure
-			// Pro to honor the controller's persisted configuration values directly, so a
-			// recreated-from-cache child is recognized as already configured (and shows Installer
-			// Settings) without requiring the user to have manually reconfigured it since the reload.
-			IncludePersistentValueData = true,
 			IsNotOfflineConfigurable = false,
 			};
+
+		IncludePersistentConfigurationValues (definition);
 
 		string childDeviceModel = !string.IsNullOrWhiteSpace (descriptor.ModelName)
 			? descriptor.ModelName
@@ -1665,6 +1654,25 @@ public sealed partial class PlatformDriver
 			{
 			_aliasResolutionInFlightControllerIds.TryRemove (controllerId, out _);
 				LogInfo ($"EnrichDiscoveryResultAliasAsync: finished for controllerId='{controllerId}', inFlightCleared=True.");
+			}
+		}
+
+
+	// SDK 29 moved this flag to each step. Older Home runtimes still require the
+	// definition-level flag, so avoid binding directly to the newer setter.
+	internal static void IncludePersistentConfigurationValues (ConfigurationStepsDefinition definition)
+		{
+		var stepProperty = typeof (ConfigurationStepDefinition).GetProperty ("IncludePersistentValueData");
+		if (stepProperty != null)
+			{
+			foreach (var step in definition.Steps)
+				stepProperty.SetValue (step, true);
+			}
+		else
+			{
+#pragma warning disable CS0618 // Required by older processor SDKs; ignored only in newer SDKs.
+			definition.IncludePersistentValueData = true;
+#pragma warning restore CS0618
 			}
 		}
 

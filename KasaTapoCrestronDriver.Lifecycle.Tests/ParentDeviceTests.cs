@@ -6,7 +6,7 @@ using KasaTapoClient.Internal;
 
 using KasaTapoCrestronDriver;
 
-using Newtonsoft.Json.Linq;
+using System.Text.Json.Nodes;
 
 using Crestron.DeviceDrivers.SDK;
 
@@ -32,11 +32,11 @@ public sealed class ParentDeviceTests
 			{
 			token.ThrowIfCancellationRequested ();
 			Commands.Add (json);
-			var command = JObject.Parse (json);
-			if (command["system"]?["set_relay_state"] is JObject relay)
+			var command = JsonNode.Parse (json)!;
+			if (command["system"]?["set_relay_state"] is JsonObject relay)
 				{
-				bool on = relay["state"]!.Value<int> () != 0;
-				string? id = command["context"]?["child_ids"]?[0]?.Value<string> ();
+				bool on = relay["state"]!.GetValue<int> () != 0;
+				string? id = command["context"]?["child_ids"]?[0]?.GetValue<string> ();
 				if (id == "a")
 					A = on;
 				else if (id == "b")
@@ -123,25 +123,25 @@ public sealed class ParentDeviceTests
 		public int IntervalA = 16;
 		public int IntervalB = 32;
 		public Task<string> SendAsync (string json, CancellationToken token) => Task.FromResult (
-			 new JObject
+			 new JsonObject
 				 {
-				 ["result"] = new JObject
+				 ["result"] = new JsonObject
 					 {
-					 ["responses"] = new JArray (
-				  new JObject { ["method"] = "get_device_info", ["result"] = new JObject { ["model"] = "H100", ["type"] = "SMART.TAPOHUB", ["device_id"] = "hub" } },
-				  new JObject { ["method"] = "component_nego", ["result"] = new JObject { ["component_list"] = new JArray (new JObject { ["id"] = "child_device", ["ver_code"] = 1 }) } },
-				  new JObject
+					 ["responses"] = new JsonArray (
+				  new JsonObject { ["method"] = "get_device_info", ["result"] = new JsonObject { ["model"] = "H100", ["type"] = "SMART.TAPOHUB", ["device_id"] = "hub" } },
+				  new JsonObject { ["method"] = "component_nego", ["result"] = new JsonObject { ["component_list"] = new JsonArray (new JsonObject { ["id"] = "child_device", ["ver_code"] = 1 }) } },
+				  new JsonObject
 					  {
 					  ["method"] = "get_child_device_list",
-					  ["result"] = new JObject
+					  ["result"] = new JsonObject
 						  {
-						  ["child_device_list"] = new JArray (
-						new JObject { ["device_id"] = "a", ["model"] = "T310", ["category"] = "subg.trigger.temp-hmdt", ["report_interval"] = IntervalA, ["at_low_battery"] = false },
-						new JObject { ["device_id"] = "b", ["model"] = "T315", ["category"] = "subg.trigger.temp-hmdt", ["report_interval"] = IntervalB, ["at_low_battery"] = false })
+						  ["child_device_list"] = new JsonArray (
+						new JsonObject { ["device_id"] = "a", ["model"] = "T310", ["category"] = "subg.trigger.temp-hmdt", ["report_interval"] = IntervalA, ["at_low_battery"] = false },
+						new JsonObject { ["device_id"] = "b", ["model"] = "T315", ["category"] = "subg.trigger.temp-hmdt", ["report_interval"] = IntervalB, ["at_low_battery"] = false })
 						  }
 					  })
 					 }
-				 }.ToString ());
+				 }.ToJsonString ());
 		public Task<string> SendManyAsync (IReadOnlyList<string> commands, CancellationToken token) => SendAsync ("", token);
 		}
 

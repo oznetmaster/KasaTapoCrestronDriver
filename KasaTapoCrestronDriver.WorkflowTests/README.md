@@ -1,6 +1,6 @@
 # KasaTapoCrestronDriver processor workflow
 
-This .NET 10 test container integrates the processor workflow with Visual Studio Test Explorer and VSTest. It uses the published **CrestronHomeNUnit.TestAdapter 1.3.0**. The existing NUnit test projects and net472 processor package remain separate.
+This .NET 10 test container integrates the processor workflow with Visual Studio Test Explorer and VSTest. It uses the published **CrestronHomeNUnit.TestAdapter 1.12.1**. The existing NUnit test projects and net472 processor package remain separate.
 
 Before launching Visual Studio, set `CRESTRON_HOME_KASATAPOCRESTRONDRIVER_WORKFLOW_SETTINGS` to the absolute path of your private adapter-settings JSON file. That file contains `planPath`, `userName` and `password`; the referenced private plan specifies your processor, certificate fingerprints, source/build paths, required suites, live inputs and cleanup. Keep these files outside the repository, or use `.git/info/exclude` for any private local file. Never commit them or upload results containing private inputs.
 

@@ -11,6 +11,14 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## 2.1.1 validation - 2026-09-22
+
+- Restore KasaTapoClient 2.0.0 from public NuGet into a fresh package folder and verify its published repository commit. Validate 34 net472 unit tests, 38 desktop SDK lifecycle tests and three read-only live entity tests. All 75 corresponding cases also pass on the processor; remove the temporary test instance and successful-run archive afterward.
+- Add a persistence regression exercised against both the desktop SDK and the older SDK installed on the processor. Align the net472 test assembly with the client's existing test friend identity, matching the desktop harness, and update synthetic fixtures for the removed raw-JSON constructor parameter.
+- Verify the final merged production assembly's property names, null omission and derived TPAP registration contract, plus absence of merged Newtonsoft.Json/log4net. Production Release packaging completes without warnings. All 18 driver-versioning checks and workflow-adapter discovery pass.
+- Use NUnit 4.6.1, NUnit3TestAdapter 6.3.0, Microsoft.NET.Test.Sdk 18.10.1, NUnit.Analyzers 4.15.0 and CrestronHomeNUnit.TestAdapter 1.12.1. Exclude desktop runners from processor merging. Share attributed live configuration models and the read-only live fixtures with the desktop harness.
+- NuGet audit reports no remaining direct stable updates, vulnerable packages or deprecated packages in the driver solution. Keep SDK, compatibility and test-tool transitive versions selected by their parent packages; these include framework facades and platform libraries that should not be upgraded independently. Keep the documented patched SSH.NET build. No preview packages are introduced.
+
 ## KasaTapoCrestronDriver.ProcessorTests v1.2.0 - 2026-09-15
 
 Published processor test package on GitHub. This is a test-package release only; no driver or library NuGet package is published. See the matching package release notes for changes and validation.

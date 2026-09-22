@@ -185,7 +185,7 @@ This driver communicates with TP-Link Kasa and Tapo devices using the independen
 > the source code in this repository is licensed independently under the terms in [LICENSE](LICENSE).
 ## NUnit tests and processor validation
 
-The test projects use NUnit and its Visual Studio adapter. The `net472` project includes 34 ordinary tests and 35 processor lifecycle cases; the desktop lifecycle project runs those 35 cases with the desktop-compatible SDK. The repository `.runsettings` excludes the `Processor` category on Windows.
+The test projects use NUnit 4.6.1, NUnit3TestAdapter 6.3.0, Microsoft.NET.Test.Sdk 18.10.1 and NUnit.Analyzers 4.15.0. The workflow project uses CrestronHomeNUnit.TestAdapter 1.12.1. See the [test README](KasaTapoCrestronDriver.Tests/README.md) for local commands and live-test configuration. The `net472` project includes 34 ordinary tests and 38 processor lifecycle cases; the desktop lifecycle project runs those 38 cases with the desktop-compatible SDK. The repository `.runsettings` excludes the `Processor` category on Windows.
 
 Build **KasaTapoCrestronDriver.ProcessorTests** in the existing solution to create the separate **Utility / KasaTapoCrestronDriver Tests** package. It runs the shared tests against the real driver and SDK on the processor, using simulated responses without operating live devices. Deployment settings and machine paths remain locally excluded. See [processor test instructions](KasaTapoCrestronDriver.ProcessorTests/README.md).
 
@@ -194,7 +194,7 @@ Build **KasaTapoCrestronDriver.ProcessorTests** in the existing solution to crea
 
 Download `KasaTapoCrestronDriver.ProcessorTests.pkg` from a release titled **KasaTapoCrestronDriver Tests**, then add **Utility â†’ Neil Colvin â†’ KasaTapoCrestronDriver Tests** in Crestron Home Configure. All processor test packages use the **Utility** category. Each has its own standalone Home tile and embedded NUnit host, and can also be selected in the [Windows runner](https://github.com/oznetmaster/CrestronHomeNUnit/releases). The production driver and test package can coexist.
 
-The **Release processor tests** workflow takes an independent test-package version, for example `1.0.0`, and publishes a `processor-tests-v1.0.0` tag. Its assets include the test `.pkg`, exact source revisions, documentation and SHA-256 checksums. It builds only the processor package and its test dependencies, validates all 34 ordinary tests and the 35 desktop lifecycle tests, and validates merged package discovery. Running the 35 lifecycle tests against the processor SDK requires a processor.
+The **Release processor tests** workflow takes an independent test-package version, for example `1.0.0`, and publishes a `processor-tests-v1.0.0` tag. Its assets include the test `.pkg`, exact source revisions, documentation and SHA-256 checksums. It builds only the processor package and its test dependencies, validates all 34 ordinary tests and the 38 desktop lifecycle tests, and validates merged package discovery. Running the 38 lifecycle tests against the processor SDK requires a processor.
 
 This workflow never packs or publishes to NuGet and does not bump the production driver version. The production release workflow ignores test-package releases, and test releases do not replace the latest production release. NUnit 4.6.1 and NUnit3TestAdapter replace MSTest in both test projects. See [test-package third-party notices](KasaTapoCrestronDriver.ProcessorTests/THIRD-PARTY-NOTICES.md) for redistributed dependencies.
 
@@ -205,7 +205,7 @@ Cover persisted light, outlet, sensor and button descriptors, configured-device 
 
 A failed command releases the operation queue; a failing subscriber cannot stop healthy siblings receiving state; unregistering during offline notification prevents later delivery to that registration; disposal discards late refresh results even when the refresh ignores cancellation.
 
-The current package contains **34 offline tests** and **35 SDK entity/lifecycle tests**. The processor package remains **net472 only**, appears under **Utility** in Configure, and can run independently through its own tile or the Windows NUnit runner. These fixtures use synthetic data and do not operate installed devices or authenticate with real accounts.
+The current package contains **34 offline tests** and **38 SDK entity/lifecycle tests**. The processor package remains **net472 only**, appears under **Utility** in Configure, and can run independently through its own tile or the Windows NUnit runner. These fixtures use synthetic data and do not operate installed devices or authenticate with real accounts.
 
 `KasaTapoCrestronDriver.Lifecycle.Tests` runs the entity checks against the real desktop SDK on .NET 10. It compiles the relevant driver sources and shares fixture sources with the net472 processor tests. Building this project does not deploy a driver.
 

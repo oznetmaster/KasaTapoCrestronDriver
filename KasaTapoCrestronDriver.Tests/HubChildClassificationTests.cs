@@ -24,9 +24,7 @@ public sealed class HubChildClassificationTests
 		{
 		// KasaTapoClient's discovery DTO constructor is internal. Supply a discovery
 		// record with no feature list to exercise the driver's model fallback.
-		var child = (ChildDeviceInfo)Activator.CreateInstance (typeof (ChildDeviceInfo),
-			 BindingFlags.Instance | BindingFlags.NonPublic, null,
-			 new object?[] { "child", "Sensor", model, DeviceType.Hub, null, "{}", category, null, null }, null)!;
+		var child = new ChildDeviceInfo ("child", "Sensor", model, DeviceType.Hub, null, category);
 		var classify = typeof (Driver.PlatformDriver).GetMethod ("ResolveHubChildKind", BindingFlags.Static | BindingFlags.NonPublic)!;
 		var result = ((Driver.ManagedChildKind ChildKind, Driver.HubChildCategory Category))classify.Invoke (null, new object[] { child })!;
 

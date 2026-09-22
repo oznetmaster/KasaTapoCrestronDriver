@@ -3,15 +3,16 @@
 
 using Crestron.DeviceDrivers.SDK;
 using KasaTapoClient;
-using Newtonsoft.Json.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace KasaTapoCrestronDriver.Tests;
 
 // A separate manual suite: never sends a device-control command.
-[TestFixture, Category ("Processor"), Category ("Live"), NonParallelizable]
+[TestFixture, Category ("Processor"), Category ("Live"), NonParallelizable, FixtureLifeCycle (LifeCycle.SingleInstance)]
 public sealed class LiveDriverEntityTests
 	{
-	private JObject _settings = null!;
+	private LiveSettings _settings = null!;
 	private IReadOnlyList<DiscoveryResult> _discovered = null!;
 	private TimeSpan _timeout;
 
@@ -25,19 +26,19 @@ public sealed class LiveDriverEntityTests
 			if (enabled) throw new InvalidDataException ("Enabled live tests require LiveTestSettings.json in TestDataDirectory.");
 			Assert.Ignore ("Live tests require private settings and explicit enablement.");
 			}
-		_settings = JObject.Parse (File.ReadAllText (path));
-		if (!enabled && (bool?)_settings["enabled"] != true)
+		_settings = JsonSerializer.Deserialize<LiveSettings> (File.ReadAllText (path)) ?? throw new InvalidDataException ("Invalid live settings.");
+		if (!enabled && !_settings.Enabled)
 			Assert.Ignore ("Live tests are disabled.");
-		var seconds = (int?)_settings["timeoutSeconds"] ?? 10;
+		var seconds = _settings.TimeoutSeconds;
 		if (seconds < 1 || seconds > 120) throw new InvalidDataException ("Invalid live discovery timeout.");
 		_timeout = TimeSpan.FromSeconds (seconds);
 		_discovered = await Discover.DiscoverAsync (_timeout).ConfigureAwait (false);
 		}
 
-	private JToken Target (string role)
+	private LiveTarget Target (string role)
 		{
-		var target = _settings["devices"]?[role] ?? throw new InvalidDataException ($"Missing live role '{role}'.");
-		if (target["hosts"] is JArray hosts)
+		if (!_settings.Devices.TryGetValue (role, out var target)) throw new InvalidDataException ($"Missing live role '{role}'.");
+		if (target.Hosts is List<LiveTarget> hosts)
 			{
 			if (hosts.Count != 1) throw new InvalidDataException ($"Driver live role '{role}' requires exactly one selected device.");
 			target = hosts[0];
@@ -48,8 +49,8 @@ public sealed class LiveDriverEntityTests
 	private async Task<KasaDevice> Connect (string role)
 		{
 		var target = Target (role);
-		var id = ((string?)target["deviceId"])?.Trim ();
-		var alias = ((string?)target["alias"])?.Trim ();
+		var id = target.DeviceId?.Trim ();
+		var alias = target.Alias?.Trim ();
 		if (string.IsNullOrWhiteSpace (id) && string.IsNullOrWhiteSpace (alias))
 			throw new InvalidDataException ($"Role '{role}' requires a stable deviceId or unique discovery alias.");
 		var matches = _discovered.Where (d => !string.IsNullOrWhiteSpace (id)
@@ -58,7 +59,7 @@ public sealed class LiveDriverEntityTests
 		if (matches.Select (d => d.Host).Distinct (StringComparer.OrdinalIgnoreCase).Count () != 1)
 			throw new InvalidDataException ($"Role '{role}' did not resolve to exactly one reachable device.");
 		var selected = matches.OrderByDescending (d => d.TpapPreferred == true || d.TpapMetadata != null).First ();
-		var credentials = new DeviceCredentials ((string?)_settings["credentials"]?["userName"], (string?)_settings["credentials"]?["password"]);
+		var credentials = new DeviceCredentials (_settings.Credentials?.UserName, _settings.Credentials?.Password);
 		return await Discover.ConnectAsync (Discover.CreateConfiguration (selected, credentials, _timeout)).ConfigureAwait (false);
 		}
 
@@ -98,7 +99,7 @@ public sealed class LiveDriverEntityTests
 	public async Task Outlet_RefreshPublishesObservedPower (string role)
 		{
 		using var device = await Connect (role);
-		string? childId = role == "strip" ? (string?)Target (role)["childDeviceId"] : null;
+		string? childId = role == "strip" ? Target (role).ChildDeviceId : null;
 		if (role == "strip" && string.IsNullOrWhiteSpace (childId)) throw new InvalidDataException ("Select a strip childDeviceId.");
 		using var logger = new DriverLogger ("live-outlet-test");
 		var resources = new DriverImplementationResources { Logger = logger, InitLogger = logger.GetComponentLogger ("test", "live") };
@@ -113,4 +114,25 @@ public sealed class LiveDriverEntityTests
 		Assert.That (expected, Is.Not.Null);
 		Assert.That (entity.OutletIsOn, Is.EqualTo (expected));
 		}
+
+	internal sealed class LiveSettings
+		{
+		[JsonPropertyName ("enabled")] public bool Enabled { get; set; }
+		[JsonPropertyName ("timeoutSeconds")] public int TimeoutSeconds { get; set; } = 10;
+		[JsonPropertyName ("devices")] public Dictionary<string, LiveTarget> Devices { get; set; } = new ();
+		[JsonPropertyName ("credentials")] public LiveCredentials? Credentials { get; set; }
+		}
+	internal sealed class LiveCredentials
+		{
+		[JsonPropertyName ("userName")] public string? UserName { get; set; }
+		[JsonPropertyName ("password")] public string? Password { get; set; }
+		}
+	internal sealed class LiveTarget
+		{
+		[JsonPropertyName ("deviceId")] public string? DeviceId { get; set; }
+		[JsonPropertyName ("alias")] public string? Alias { get; set; }
+		[JsonPropertyName ("childDeviceId")] public string? ChildDeviceId { get; set; }
+		[JsonPropertyName ("hosts")] public List<LiveTarget>? Hosts { get; set; }
+		}
+
 	}

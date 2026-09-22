@@ -10,6 +10,12 @@ project follows [Semantic Versioning](https://semver.org/).
 
 This changelog records shipped features, fixes, compatibility and runtime dependency changes. See [development and validation history](DEVELOPMENT-HISTORY.md) for tests, CI, build tooling and work not yet released.
 
+## 2.1.1 - 2026-09-22
+
+- Upgrade to KasaTapoClient 2.0.0 and Crestron.DeviceDrivers.DevKit 29.0.10. The bundled client uses typed System.Text.Json contracts and removes its Newtonsoft.Json and log4net dependencies.
+- Preserve JSON serialization attributes when preparing the merged assembly for the processor. Existing device controls and configuration remain compatible.
+- Preserve persistent child configuration on both newer SDKs and existing processor runtimes, using the persistence property supported by the installed SDK.
+
 ## 2.1.0 - 2026-09-16
 
 - Add read-only outlet identity and command-completion properties for independent physical control/restoration verification. Existing outlet controls and UI bindings remain unchanged.

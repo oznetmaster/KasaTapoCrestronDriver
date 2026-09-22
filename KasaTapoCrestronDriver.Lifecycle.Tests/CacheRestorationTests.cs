@@ -27,6 +27,21 @@ public sealed class CacheRestorationTests
 	private static void Set (object target, string name, object value) => target.GetType ().GetProperty (name)!.SetValue (target, value);
 	private object Call (string name, params object[] args) => typeof (PlatformDriver).GetMethod (name, Private)!.Invoke (_driver, args)!;
 	private T Field<T> (string name) => (T)typeof (PlatformDriver).GetField (name, Private)!.GetValue (_driver)!;
+	[Test]
+	public void PersistentConfigurationIsEnabledForTheInstalledSdk ()
+		{
+		var definition = new ConfigurationStepsDefinition
+			{
+			Steps = new List<ConfigurationStepDefinition> { new () { StepId = "Activation" } }
+			};
+		PlatformDriver.IncludePersistentConfigurationValues (definition);
+		var stepFlag = typeof (ConfigurationStepDefinition).GetProperty ("IncludePersistentValueData");
+		object owner = stepFlag != null ? definition.Steps.Single () : definition;
+		var flag = stepFlag ?? typeof (ConfigurationStepsDefinition).GetProperty ("IncludePersistentValueData");
+		Assert.That (flag, Is.Not.Null, "The installed SDK must expose persistent configuration storage.");
+		Assert.That (flag!.GetValue (owner), Is.True);
+		}
+
 	[SetUp]
 	public void SetUp ()
 		{
