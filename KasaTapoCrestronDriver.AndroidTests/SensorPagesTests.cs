@@ -136,33 +136,46 @@ public sealed class SensorPagesTests
             .Select(p => p.Item1).ToArray();
         Assert.That(target.DisplayProperties, Is.EquivalentTo(expectedProperties), "Complete selected sensor display binding");
         // These tiles only open telemetry pages. Never use this path for load tiles.
-        await RoomNavigation.Open(target.Room, token);
-        await RoomNavigation.RevealTile(target.Room, target.Name, token);
-        await session.CaptureAsync("sensor." + alias + ".room-tile",
-            h => RoomNavigation.InspectTile(h, target.Room, target.Name, false), token);
-        await session.Device.TapAsync(RoomNavigation.Tile(target.Name),
-            h => RoomNavigation.InspectTile(h, target.Room, target.Name, false), token);
-        await session.CaptureAsync("sensor." + alias + ".controls", hierarchy =>
+        Exception? navigationFailure = null;
+        try
         {
-            CrestronHomePages.RequireExtensionPage(hierarchy, title);
-            var rows = XDocument.Parse(hierarchy.MaskedXml).Descendants("node").Where(n =>
-                (string?)n.Attribute("package") == "com.crestron.phoenix.app" &&
-                (string?)n.Attribute("resource-id") == CrestronHomePages.ResourcePrefix + "customdevice_textdisplay_firstlinetext").ToArray();
-            Assert.That(rows, Has.Length.EqualTo(values.Count), "No missing or extra conditional display rows");
-            foreach (var pair in values)
+            await RoomNavigation.Open(target.Room, token);
+            await RoomNavigation.RevealTile(target.Room, target.Name, token);
+            await session.CaptureAsync("sensor." + alias + ".room-tile",
+                h => RoomNavigation.InspectTile(h, target.Room, target.Name, false), token);
+            await session.Device.TapAsync(RoomNavigation.Tile(target.Name),
+                h => RoomNavigation.InspectTile(h, target.Room, target.Name, false), token);
+            await session.CaptureAsync("sensor." + alias + ".controls", hierarchy =>
             {
-                string label = Label(pair.Key);
-                var row = hierarchy.RequireUnique(new AndroidSelector(AndroidSelectorKind.ResourceId,
-                    CrestronHomePages.ResourcePrefix + "customdevice_textdisplay_firstlinetext") { SiblingText = label });
-                // The app capitalizes status values. Keep the value bound to its
-                // own labelled row while allowing that presentation difference.
-                Assert.That(row.Text, Is.EqualTo(pair.Value).IgnoreCase, label);
+                CrestronHomePages.RequireExtensionPage(hierarchy, title);
+                var rows = XDocument.Parse(hierarchy.MaskedXml).Descendants("node").Where(n =>
+                    (string?)n.Attribute("package") == "com.crestron.phoenix.app" &&
+                    (string?)n.Attribute("resource-id") == CrestronHomePages.ResourcePrefix + "customdevice_textdisplay_firstlinetext").ToArray();
+                Assert.That(rows, Has.Length.EqualTo(values.Count), "No missing or extra conditional display rows");
+                foreach (var pair in values)
+                {
+                    string label = Label(pair.Key);
+                    var row = hierarchy.RequireUnique(new AndroidSelector(AndroidSelectorKind.ResourceId,
+                        CrestronHomePages.ResourcePrefix + "customdevice_textdisplay_firstlinetext") { SiblingText = label });
+                    // The app capitalizes status values. Keep the value bound to its
+                    // own labelled row while allowing that presentation difference.
+                    Assert.That(row.Text, Is.EqualTo(pair.Value).IgnoreCase, label);
+                }
+            }, token);
+            await session.Device.TapAsync(CrestronHomePages.Resource("customdevices_toolbarClose"),
+                h => CrestronHomePages.RequireExtensionPage(h, title), token);
+            await session.CaptureAsync("sensor." + alias + ".room-returned", h => CrestronHomePages.RequireRoom(h, target.Room), token);
             }
-        }, token);
-        await session.Device.TapAsync(CrestronHomePages.Resource("customdevices_toolbarClose"),
-            h => CrestronHomePages.RequireExtensionPage(h, title), token);
-        await session.CaptureAsync("sensor." + alias + ".room-returned", h => CrestronHomePages.RequireRoom(h, target.Room), token);
-        await RoomNavigation.Restore(target.Room, title, token);
+        catch (Exception error) { navigationFailure = error; throw; }
+        finally
+        {
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            try { await RoomNavigation.Restore(target.Room, title, cleanup.Token); }
+            catch (Exception error) when (navigationFailure != null)
+            {
+                throw new AggregateException("Sensor inspection and Home restoration both failed.", navigationFailure, error);
+            }
+        }
         string report = Path.Combine(session.Context.EvidenceDirectory, "sensor-" + alias + "-api.json");
         await using (var file = new FileStream(report, FileMode.CreateNew, FileAccess.Write))
             await JsonSerializer.SerializeAsync(file, new { DeviceId = id, target.Model, target.Name, Values = values, ObservedUtc = DateTimeOffset.UtcNow }, cancellationToken: token);

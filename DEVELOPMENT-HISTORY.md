@@ -13,6 +13,7 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 ## 2.1.2 preparation - 2026-09-26
 
+- Search the app's retained Rooms-list scroll position before opening a selected room, and restore Home after each sensor inspection even when an assertion fails. This changes Android test navigation only.
 - Cover separate discovery/child identities across cache rewrites and driver recreation, including legacy strip entries, unrelated hub child IDs and ambiguous sanitized IDs. All 54 desktop lifecycle tests pass; the Release package builds without warnings. Hardware verification of this identity correction remains separate.
 - Exercise the actual saved-configuration callback with cached lights, outlets, sensors and buttons, both configured and unconfigured. The regression detects a startup publication bypass missed by tests that called the publication helper directly. All 47 desktop lifecycle and 34 portable net472 tests pass after restoring publication before the managed-device snapshot.
 
