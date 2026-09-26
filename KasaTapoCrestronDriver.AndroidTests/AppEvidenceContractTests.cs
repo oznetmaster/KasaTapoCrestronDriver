@@ -31,6 +31,8 @@ public sealed class AppEvidenceContractTests
     }
 
     [TestCase("outlet.energy", "android")]
+    [TestCase("device-power.offline", "android")]
+    [TestCase("device-power.recovery", "android")]
     [TestCase("outlet.basic.presentation", "android")]
     [TestCase("outlet.energy.presentation", "android")]
     [TestCase("sensor.temperature.presentation", "android")]
@@ -58,8 +60,10 @@ public sealed class AppEvidenceContractTests
             File.WriteAllText(original, "{\"synthetic\":true}");
             File.WriteAllText(restored, "{\"synthetic\":true}");
             var time = DateTimeOffset.UtcNow;
+            bool power = scope.StartsWith("device-power.", StringComparison.Ordinal);
             void Write(bool restoredOk, string? originalPath = null) => AppEvidence.WriteForContext(Context(root), Identity,
-                restoredOk, scope, "Synthetic contract check only.", time, time, time, originalPath ?? original, restored);
+                restoredOk, scope, "Synthetic contract check only.", time, time, time, originalPath ?? original, restored,
+                power ? new(time, time, original, restored) : null);
             Assert.Throws<InvalidOperationException>(() => Write(false));
             Assert.That(Directory.GetFiles(root, "*-observations.json"), Is.Empty);
             Assert.Throws<InvalidDataException>(() => Write(true, Path.Combine(testRoot, "missing.json")));
@@ -73,7 +77,7 @@ public sealed class AppEvidenceContractTests
             var json = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, Converters = { new JsonStringEnumConverter() } };
             var document = JsonSerializer.Deserialize<SubmissionEvidenceDocument>(output.RootElement.GetRawText(), json)!;
             SubmissionRequirement[] requirements = [new("kasa.app." + scope, TimeSpan.Zero, Execution:
-                new("$kasa." + scope, method, SubmissionEvidenceOutcome.Passed, null, true))];
+                new("$kasa." + scope, method, SubmissionEvidenceOutcome.Passed, power ? 15 : null, true))];
             Assert.That(SubmissionEvidence.Evaluate(Identity, requirements, document.Observations, testRoot,
                 DateTimeOffset.UtcNow).EvidenceChecksPassed, Is.True);
             File.AppendAllText(restored, " ");

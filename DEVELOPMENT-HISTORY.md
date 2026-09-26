@@ -11,6 +11,12 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## Power recovery app verification - 2026-09-26
+
+- The selected P110 power interruption now recovers with the corrected TPAP client: retained Room captures show OFFLINE followed by the independently verified original OFF state. The preparation run interrupted the device supply for more than 60 seconds and restored the supply, plug, collateral light and app navigation. Processor and network equipment remained powered; this is not a whole-system outage test.
+- Require the selected unobscured Room tile to show OFFLINE and then the independently read ON/OFF state. Emit separate scoped observations only after physical restoration, with retained trigger/capture references and a 15-second app-capture bound measured from the first matching driver API observation. Keep physical power loss and driver detection timestamps separate.
+- All 56 offline Android contracts pass. Replaying the retained actual before/offline/recovery captures verifies the new status assertions and rejects the opposite state without operating hardware again. The full integrated run remains separate from this preparation evidence.
+
 ## Power recorder discovery - 2026-09-26
 
 - Retry a missing UDP discovery response up to three times before connecting, while rejecting ambiguous hosts immediately. Record discovery counts and the connection stage on failure without exposing credentials or raw device payloads. Device writes are not retried by this change.

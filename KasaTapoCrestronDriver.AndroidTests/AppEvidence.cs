@@ -28,18 +28,19 @@ internal static class AppEvidence
 
     internal static void Write(string scope, string rationale, DateTimeOffset started,
         DateTimeOffset originalAt, DateTimeOffset actionAt, string? originalFile = null,
-        string? restoredFile = null)
+        string? restoredFile = null, SubmissionResponseObservation? response = null)
     {
         var session = SensorSession.Current!;
         var identity = SensorSession.Settings!.EvidenceIdentity;
         if (identity == null) return;
         WriteForContext(session.Context, identity, SensorSession.PhysicalRestorationConfirmed,
-            scope, rationale, started, originalAt, actionAt, originalFile, restoredFile);
+            scope, rationale, started, originalAt, actionAt, originalFile, restoredFile, response);
     }
 
     internal static void WriteForContext(AndroidRunContext context, SubmissionEvidenceIdentity identity,
         bool physicallyRestored, string scope, string rationale, DateTimeOffset started,
-        DateTimeOffset originalAt, DateTimeOffset actionAt, string? originalFile, string? restoredFile)
+        DateTimeOffset originalAt, DateTimeOffset actionAt, string? originalFile, string? restoredFile,
+        SubmissionResponseObservation? response = null)
     {
         Validate(identity, context);
         if (!physicallyRestored)
@@ -52,7 +53,8 @@ internal static class AppEvidence
              parts[1] == "energy" && parts[2] is "navigation" or "display" or "close");
         bool nativeDetail = parts.Length == 2 && parts[0] == "native-light" && parts[1] is "slider" or "buttons" or "selectors" or "subpages";
         if (!sensorDetail && !outletDetail && !nativeDetail && scope is not ("sensor.temperature" or "sensor.motion" or "sensor.button" or "outlet.energy" or "outlet.basic" or "native-light" or "configuration.platform" or
-            "configuration.catalogue" or "configuration.connection" or "configuration.attributes" or "configuration.installation"))
+            "configuration.catalogue" or "configuration.connection" or "configuration.attributes" or "configuration.installation" or
+            "device-power.offline" or "device-power.recovery"))
             throw new InvalidDataException("Unknown app assertion scope.");
         string root = context.EvidenceDirectory;
         string stage = Directory.GetParent(root)!.Name;
@@ -87,7 +89,10 @@ internal static class AppEvidence
         }
         var observation = new SubmissionObservation("kasa.app." + scope, identity, SubmissionEvidenceOutcome.Passed,
             started, finished, files, rationale, new SubmissionExecutionObservation("$kasa." + scope,
-                scope.StartsWith("configuration.", StringComparison.Ordinal) ? "configuration" : "android", Restoration: restoration));
+                scope.StartsWith("configuration.", StringComparison.Ordinal) ? "configuration" : "android",
+                Response: response == null ? null : response with {
+                    TriggerEvidence = Reference(response.TriggerEvidence), ResponseEvidence = Reference(response.ResponseEvidence) },
+                Restoration: restoration));
         using var output = new FileStream(Path.Combine(root, "kasa-" + scope + "-observations.json"), FileMode.CreateNew);
         JsonSerializer.Serialize(output, new SubmissionEvidenceDocument(1, [observation]), Json);
     }

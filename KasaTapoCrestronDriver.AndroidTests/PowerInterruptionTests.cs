@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using KasaTapoClient;
+using CrestronHomeDevTools;
 using CrestronHomeNUnit.Android;
 using NUnit.Framework;
 
@@ -10,13 +11,16 @@ namespace KasaTapoCrestronDriver.AndroidTests;
 public sealed record PhysicalPowerTarget(string DiscoveryId, string AuthenticatedId, string? ChildId, bool ControlsAuthorized);
 public sealed record PowerInterruptionSettings(string OutletAlias, PhysicalPowerTarget Supply, PhysicalPowerTarget[] CollateralLights);
 
-// A preparatory recorder. It asserts a real selected-device interruption,
-// API recovery and physical restoration, and retains app captures for review.
-// It deliberately emits no checklist pass for app timing or whole-system power.
+// Selected-device interruption, unobscured app feedback and physical restoration.
+// App response is measured from observed driver detection, not physical power loss.
+// This does not establish a whole-system power or network-interruption pass.
 [TestFixture, NonParallelizable]
 public sealed class PowerInterruptionTests
 {
     internal sealed record LightSnapshot(bool On, int Brightness, int Temperature, int Hue, int Saturation, bool EffectEnabled);
+
+    internal static void RequireTileState(AndroidHierarchy hierarchy, OutletTarget target, string expected) =>
+        RoomNavigation.InspectTile(hierarchy, target.Room, target.Name, target.EnergyPage, expected);
 
     internal static async Task<T> DiscoverUnique<T>(Func<CancellationToken, Task<IReadOnlyList<T>>> discover,
         Func<T, string> host, Func<int, int, int, Task> observe, CancellationToken token)
@@ -54,6 +58,7 @@ public sealed class PowerInterruptionTests
     {
         var session = SensorSession.Current!;
         var settings = SensorSession.Settings!;
+        var started = DateTimeOffset.UtcNow;
         if (settings.PowerInterruption == null) Assert.Ignore("No authorized power-interruption bindings supplied.");
         var plan = settings.PowerInterruption!;
         var target = settings.Outlets?.Single(t => t.Alias == plan.OutletAlias)
@@ -136,26 +141,41 @@ public sealed class PowerInterruptionTests
                 Ready = Status("readyIndicator:isReady"), ExtensionReady = Status("readyIndicatorIsReady") });
             return d.PropertyValues["onlineIndicator:isOnline"].GetBoolean();
         }
-        async Task WaitDriver(bool online, TimeSpan maximum, CancellationToken ct)
+        async Task<(DateTimeOffset Utc, long Timestamp)> WaitDriver(bool online, TimeSpan maximum, CancellationToken ct)
         {
             var clock = Stopwatch.StartNew();
             while (clock.Elapsed < maximum)
             {
                 bool actual = await DriverOnline(ct);
                 await Record("driver-state", new { Expected = online, Actual = actual });
-                if (actual == online) return;
+                if (actual == online) return (DateTimeOffset.UtcNow, Stopwatch.GetTimestamp());
                 await Task.Delay(TimeSpan.FromSeconds(2), ct);
             }
             throw new TimeoutException("Driver did not report the expected connection state within the bounded recording window.");
         }
-        async Task Capture(string phase, CancellationToken ct)
+        var responses = new Dictionary<string, SubmissionResponseObservation>();
+        async Task Capture(string phase, CancellationToken ct, string? expected = null,
+            (DateTimeOffset Utc, long Timestamp)? driverObserved = null)
         {
+            string triggerFile = Path.Combine(folder, phase + "-driver-observed.json");
+            if (driverObserved is { } trigger)
+                await File.WriteAllTextAsync(triggerFile, JsonSerializer.Serialize(new {
+                    DriverObservedUtc = trigger.Utc, ExpectedAppStatus = expected,
+                    TimingOrigin = "First matching driver API observation, not physical power loss." }), ct);
             await session.CaptureAsync("device-power." + phase, h => {
                 CrestronHomePages.RequireRoom(h, target.Room);
                 RoomNavigation.RequireVisibleRoomControl(h, target.Room, RoomNavigation.Tile(target.Name));
+                if (expected != null) RequireTileState(h, target, expected);
             }, ct);
+            var observedUtc = DateTimeOffset.UtcNow;
+            double? elapsed = driverObserved is { } measurement ? Stopwatch.GetElapsedTime(measurement.Timestamp).TotalMilliseconds : null;
             await Record("app-capture", new { Phase = phase, CompletedUtc = DateTimeOffset.UtcNow,
-                AppOfflineStateAsserted = false });
+                ExpectedStatus = expected, AppStateAsserted = expected != null, AfterDriverObservationMilliseconds = elapsed,
+                TimingOrigin = "First matching driver API observation; not physical power loss or an internal device timestamp." });
+            if (elapsed > 15000) throw new TimeoutException("App capture did not complete within 15 seconds of the observed driver state change.");
+            if (driverObserved is { } start)
+                responses.Add(phase, new(start.Utc, observedUtc, triggerFile,
+                    Path.Combine(session.Context.EvidenceDirectory, "device-power." + phase, "observation.json")));
         }
 
         bool originalSupply = await ReadPower(plan.Supply, token);
@@ -170,20 +190,24 @@ public sealed class PowerInterruptionTests
         }
         await File.WriteAllTextAsync(Path.Combine(folder, "original.json"), JsonSerializer.Serialize(new {
             plan, OriginalSupply = originalSupply, OriginalSubject = originalSubject, OriginalLights = originalLights }), token);
+        var originalAt = DateTimeOffset.UtcNow;
+        var actionAt = originalAt;
         bool attempted = false;
         Exception? testFailure = null;
         try
         {
             await RoomNavigation.Open(target.Room, token);
             await RoomNavigation.RevealTile(target.Room, target.Name, token);
-            await Capture("before", token);
+            await Capture("before", token, originalSubject ? "ON" : "OFF");
             await Record("supply-off-intent", new { plan.Supply });
+            actionAt = DateTimeOffset.UtcNow;
             attempted = true;
             SensorSession.PhysicalRestorationConfirmed = false;
             await SetPower(plan.Supply, false, token);
             var interrupted = Stopwatch.StartNew();
             await Record("supply-off-confirmed", new { Subject = subject.AuthenticatedId });
-            try { await WaitDriver(false, TimeSpan.FromSeconds(120), token); }
+            (DateTimeOffset Utc, long Timestamp) offlineObserved;
+            try { offlineObserved = await WaitDriver(false, TimeSpan.FromSeconds(120), token); }
             catch (TimeoutException)
             {
                 // Retain the app's actual response even when the API condition
@@ -195,15 +219,16 @@ public sealed class PowerInterruptionTests
                 throw;
             }
             await Record("driver-offline-observed", new { SincePowerOffSeconds = interrupted.Elapsed.TotalSeconds });
-            await Capture("offline-observation", token);
+            await Capture("offline-observation", token, "OFFLINE", offlineObserved);
             var remainder = TimeSpan.FromSeconds(60) - interrupted.Elapsed;
             if (remainder > TimeSpan.Zero) await Task.Delay(remainder, token);
             if (await ReadPower(plan.Supply, token)) throw new InvalidDataException("Supply changed during the interruption.");
             await Record("supply-on-intent", new { MinimumInterruptedSeconds = interrupted.Elapsed.TotalSeconds });
             await SetPower(plan.Supply, true, token);
             await Record("supply-on-confirmed", new { Subject = subject.AuthenticatedId });
-            await WaitDriver(true, TimeSpan.FromSeconds(120), token);
-            await Capture("recovery-observation", token);
+            var onlineObserved = await WaitDriver(true, TimeSpan.FromSeconds(120), token);
+            bool recoveredPower = await ReadPower(subject, token);
+            await Capture("recovery-observation", token, recoveredPower ? "ON" : "OFF", onlineObserved);
         }
         catch (Exception e) { testFailure = e; throw; }
         finally
@@ -259,7 +284,13 @@ public sealed class PowerInterruptionTests
         await File.WriteAllTextAsync(Path.Combine(folder, "scope.json"), JsonSerializer.Serialize(new {
             Scope = "Selected device power supply only; processor and network equipment stayed powered.",
             PhysicalRestorationConfirmed = SensorSession.PhysicalRestorationConfirmed,
-            AppOfflinePresentation = "Captured for review, not asserted by this recorder.",
+            AppOfflinePresentation = "Selected unobscured Room tile asserted OFFLINE and then independently observed ON/OFF after recovery.",
+            AppTimingOrigin = "First matching driver API observation; physical power and driver detection times remain separate in the journal.",
             WholeSystemPowerRequirementPassed = false, NetworkInterruptionTested = false }), token);
+        foreach (string scope in new[] { "device-power.offline", "device-power.recovery" })
+            AppEvidence.Write(scope,
+                "Selected device lost supply power for at least 60 seconds. Its unobscured Room tile showed OFFLINE and then the independently read physical power state after recovery. Each capture completed within 15 seconds of the matching driver API observation; this timing starts at observed driver detection, not physical power loss. Processor and network equipment stayed powered. Physical states and app Home were restored. No whole-system power or network test is claimed.",
+                started, originalAt, actionAt, Path.Combine(folder, "original.json"), Path.Combine(folder, "restored.json"),
+                responses[scope == "device-power.offline" ? "offline-observation" : "recovery-observation"]);
     }
 }

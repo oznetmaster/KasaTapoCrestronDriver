@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Neil Colvin. See LICENSE in the repository root.
 using KasaTapoCrestronDriver.AndroidTests;
+using CrestronHomeNUnit.Android;
+using System.Xml.Linq;
 using NUnit.Framework;
 
 namespace KasaAppEvidenceContracts;
@@ -10,6 +12,41 @@ public sealed class PowerInterruptionContractTests
     static OutletTarget Subject => new("selected", 1, "plug", "Test Plug", "Test Room", 1, "subject-discovery", "subject-auth", null, true, true);
     static PowerInterruptionSettings Plan => new("selected", new("supply-discovery", "supply-auth", "socket", true),
         [new("light-discovery", "light-auth", null, true)]);
+
+    static AndroidHierarchy Tile(string status, string room = "Test Room", string tileBounds = "[0,100][200,300]")
+    {
+        XElement Node(string id, string text = "", string bounds = "[0,100][20,120]") => new("node",
+            new XAttribute("package", "com.crestron.phoenix.app"),
+            new XAttribute("resource-id", RoomNavigation.Prefix + id), new XAttribute("text", text),
+            new XAttribute("enabled", "true"), new XAttribute("bounds", bounds));
+        var tile = Node("tile", bounds: tileBounds);
+        tile.Add(new XAttribute("content-desc", "room_service_Test Plug"), Node("serviceTitle", "Test Plug"),
+            Node("serviceIcon"), Node("serviceDots"), Node("serviceSubtitle", status));
+        return new AndroidHierarchy(new XElement("hierarchy", Node("room_name", room),
+            Node("room_back", bounds: "[0,0][100,80]"), Node("bottomNavigationView", bounds: "[0,400][300,500]"), tile).ToString(),
+            "com.crestron.phoenix.app");
+    }
+
+    [TestCase("OFFLINE")]
+    [TestCase("OFF")]
+    [TestCase("ON")]
+    public void AppStateMustMatchTheSelectedVisibleTile(string state) =>
+        Assert.DoesNotThrow(() => PowerInterruptionTests.RequireTileState(Tile(state), Subject, state));
+
+    [Test]
+    public void StaleOnlineTileCannotPassAnOfflineCheckAndOfflineCannotPassRecovery()
+    {
+        Assert.Throws<InvalidDataException>(() => PowerInterruptionTests.RequireTileState(Tile("OFF"), Subject, "OFFLINE"));
+        Assert.Throws<InvalidDataException>(() => PowerInterruptionTests.RequireTileState(Tile("OFFLINE"), Subject, "OFF"));
+        Assert.Throws<InvalidDataException>(() => PowerInterruptionTests.RequireTileState(Tile("ON"), Subject, "OFF"));
+    }
+
+    [Test]
+    public void HiddenOrWrongRoomTileIsNotAppFeedbackEvidence()
+    {
+        Assert.Throws<InvalidDataException>(() => PowerInterruptionTests.RequireTileState(Tile("OFFLINE", tileBounds: "[0,350][200,450]"), Subject, "OFFLINE"));
+        Assert.Throws<InvalidOperationException>(() => PowerInterruptionTests.RequireTileState(Tile("OFFLINE", room: "Other Room"), Subject, "OFFLINE"));
+    }
 
     [Test]
     public void IndependentAuthorizedSupplyAndCollateralLightAreAccepted() =>
