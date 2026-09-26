@@ -144,6 +144,9 @@ as a suffix beginning after a space (case-insensitive). For example, `Demo Tapo 
 `Portincaple Demo Tapo L530`; `Demo Tapo Light` does not. There must be exactly one matching
 native load on the processor. Keep this relationship when naming or renaming the light in
 Crestron Home: valid credentials alone cannot compensate for an unmatched or ambiguous name.
+Choose the compatible name during managed-device commissioning and verify it after a driver
+reload. Renaming only the generated native load can be undone when the parent restores its
+configured name; a successful immediate rename is not proof that the setup will survive reload.
 
 If the workaround is disabled, or the SSH user name/password are left blank, the driver simply
 skips baseline synchronization and relies solely on the (currently non-functional)
