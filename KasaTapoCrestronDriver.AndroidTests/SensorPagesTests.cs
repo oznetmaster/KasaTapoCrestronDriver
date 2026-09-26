@@ -18,6 +18,7 @@ public sealed record FixtureSettings(string ProcessorHost, string CredentialBind
     string? DeviceCredentialsFile = null, OutletTarget[]? Outlets = null, LightTarget? Light = null,
     SubmissionEvidenceIdentity? EvidenceIdentity = null, bool PlatformConfigurationAuthorized = false)
 {
+    public bool ResolveDeviceIds { get; init; }
     public static FixtureSettings Read(AndroidRunContext context)
     {
         string evidence = Path.GetFullPath(context.EvidenceDirectory);
@@ -65,6 +66,12 @@ public sealed class SensorSession
             .Resolve(DevToolsCredentialPurpose.Processor, Settings.ProcessorHost);
         Api = await ConfigurationClient.ConnectAsync(new() { Host = Settings.ProcessorHost, CertificateSha256 = credential.CertificateSha256 },
             new NetworkCredential(credential.UserName, credential.Password));
+        if (Settings.ResolveDeviceIds)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+            Settings = FixtureTargetResolution.Resolve(Settings, Current.Context, await Api.GetDevicesAsync(timeout.Token));
+            FixtureTargetResolution.Write(Path.Combine(Current.Context.EvidenceDirectory, "resolved-targets.json"), Settings, Current.Context.InstalledDriverId);
+        }
         await Navigation.VerifySavedEndpointAsync("sensor.endpoint", Current.Context.Profile.LocalPort);
     }
 

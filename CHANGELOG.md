@@ -12,6 +12,7 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 
 ## 2.1.2 - Unreleased
 
+- Notify Crestron Home when light polling detects changes made outside the driver, including switches between colour and tunable white.
 - Include illustrated user help, an account-free support contact and third-party license notices in the driver package.
 - Use the descriptive `NeilColvin_Platform_KasaTapo_IP_V2` package and DLL filename while preserving the existing driver identity and controls.
 
