@@ -103,6 +103,11 @@ public sealed class PowerInterruptionTests
                 d.LocationId != target.LocationId || d.PropertyValues["controlDeviceId"].GetString() != target.DiscoveryId ||
                 Version.Parse(d.PropertyValues["cp.driverInformation:version"].GetString()!) != Version.Parse(session.Context.DriverVersion))
                 throw new InvalidDataException("Selected driver identity changed.");
+            bool? Status(string key) => d.PropertyValues.TryGetValue(key, out var value) &&
+                value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : null;
+            await Record("driver-status-properties", new {
+                Online = Status("onlineIndicator:isOnline"), ExtensionOnline = Status("onlineIndicatorIsOnline"),
+                Ready = Status("readyIndicator:isReady"), ExtensionReady = Status("readyIndicatorIsReady") });
             return d.PropertyValues["onlineIndicator:isOnline"].GetBoolean();
         }
         async Task WaitDriver(bool online, TimeSpan maximum, CancellationToken ct)
@@ -152,7 +157,17 @@ public sealed class PowerInterruptionTests
             await SetPower(plan.Supply, false, token);
             var interrupted = Stopwatch.StartNew();
             await Record("supply-off-confirmed", new { Subject = subject.AuthenticatedId });
-            await WaitDriver(false, TimeSpan.FromSeconds(120), token);
+            try { await WaitDriver(false, TimeSpan.FromSeconds(120), token); }
+            catch (TimeoutException)
+            {
+                // Retain the app's actual response even when the API condition
+                // fails. A capture is diagnostic, never a substitute for a pass.
+                using var captureTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                try { await Capture("offline-timeout", captureTimeout.Token); }
+                catch (Exception captureError)
+                { await Record("diagnostic-capture-failed", new { ErrorType = captureError.GetType().Name }); }
+                throw;
+            }
             await Record("driver-offline-observed", new { SincePowerOffSeconds = interrupted.Elapsed.TotalSeconds });
             await Capture("offline-observation", token);
             var remainder = TimeSpan.FromSeconds(60) - interrupted.Elapsed;

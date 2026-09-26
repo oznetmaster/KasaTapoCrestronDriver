@@ -12,6 +12,7 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 
 ## 2.1.2 - Unreleased
 
+- Keep outlet polling active after a transport request timeout and report the device offline until a subsequent refresh succeeds.
 - Preserve the parent device identity separately from each child's serial number when saving and restoring managed devices; recover unambiguous parent identities from older caches.
 - Register cached child controllers before advertising their identities during startup, so Crestron Home can restore their configuration without waiting for network discovery.
 

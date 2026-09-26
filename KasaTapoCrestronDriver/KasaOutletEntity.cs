@@ -632,7 +632,10 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			OnlineIndicatorIsOnline = true;
 			ReadyIndicatorIsReady = true;
 			}
-		catch (OperationCanceledException)
+		// Transport request timeouts can also surface as cancellation. Only the
+		// caller's cancellation ends polling; a timed-out device must go offline
+		// and remain eligible for the next refresh/recovery attempt.
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 			{
 			throw;
 			}
