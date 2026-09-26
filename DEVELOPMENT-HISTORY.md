@@ -11,6 +11,13 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## 2.1.2 preparation - 2026-09-26
+
+- Add opt-in Android fixtures for temperature, motion and button displays, energy-capable and basic outlet controls, and individual native lighting controls. Private bindings select exact devices; shared processor/emulator reservations, independent device reads and verified restoration protect the configured installation. Hosted CI compiles these fixtures without operating hardware.
+- Validate the preparatory app routes on the existing driver: three sensor pages, two outlet variants, and native power, brightness, white temperature, hue and saturation. Retain original failed attempts separately; the corrected slider interaction uses dragging rather than tapping. These checks prepare reusable fixtures and illustrations, rather than asserting a future package passed.
+- Build the renamed Release package and verify exact illustrated help bytes, all 25 merged dependency identities and their reviewed notices. Check the merged JSON contracts and run 34 portable and 38 desktop lifecycle cases.
+- Use the complete public ManifestUtil 29.0.10 package in hosted build/test jobs, including its desktop SDK dependency. Normalize package archive paths through a checksum-pinned public tool, preserving payload bytes and retaining validation reports.
+
 ## 2.1.1 validation - 2026-09-22
 
 - Restore KasaTapoClient 2.0.0 from public NuGet into a fresh package folder and verify its published repository commit. Validate 34 net472 unit tests, 38 desktop SDK lifecycle tests and three read-only live entity tests. All 75 corresponding cases also pass on the processor; remove the temporary test instance and successful-run archive afterward.

@@ -3,7 +3,7 @@
   "packageType": "CrestronHomeDriver",
   "driverPlatform": "Crestron Home",
   "payloadType": "pkg",
-  "payloadFile": "KasaTapoCrestronDriver.pkg",
+  "payloadFile": "NeilColvin_Platform_KasaTapo_IP_V2.pkg",
   "containsManagedDllPayload": false,
   "packageId": "CrestronHomeDriver.TpLink.KasaTapoPlatform",
   "packageVersion": "$packageVersion$",

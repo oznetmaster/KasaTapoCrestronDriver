@@ -1,0 +1,5 @@
+# Preserve reviewed license bytes and their pinned digests across checkouts.
+licenses/** -text -whitespace
+lib/Renci.SshNet/LICENSE-Renci.SshNet.txt -text -whitespace
+LICENSE -text -whitespace
+KasaTapoCrestronDriver/IncludeInPkg/THIRD-PARTY-NOTICES.txt -text -whitespace

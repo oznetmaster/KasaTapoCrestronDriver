@@ -41,7 +41,11 @@ try
 	var credentials = settings.Credentials;
 	using var device = await Discover.ConnectAsync (Discover.CreateConfiguration (selected,
 		new DeviceCredentials (credentials.UserName, credentials.Password), TimeSpan.FromSeconds (15)), timeout.Token);
-	if (!string.Equals (device.SystemInfo?.DeviceId, id, StringComparison.OrdinalIgnoreCase))
+	// Tapo discovery may return a hashed identifier rather than the authenticated
+	// system identifier. Pin both explicitly in private settings; do not skip the
+	// authenticated identity check or infer identity from a changing IP address.
+	string authenticatedId = configured.AuthenticatedDeviceId ?? id;
+	if (!string.Equals (device.SystemInfo?.DeviceId, authenticatedId, StringComparison.OrdinalIgnoreCase))
 		throw new InvalidDataException ();
 	bool? power = string.IsNullOrWhiteSpace (childId) ? device.IsOn : device.GetChild (childId!)?.IsOn;
 	if (power == null)
@@ -75,6 +79,7 @@ internal sealed class ProbeCredentials
 internal sealed class ProbeTarget
 	{
 	[JsonPropertyName ("deviceId")] public string DeviceId { get; set; } = "";
+	[JsonPropertyName ("authenticatedDeviceId")] public string? AuthenticatedDeviceId { get; set; }
 	[JsonPropertyName ("childDeviceId")] public string? ChildDeviceId { get; set; }
 	[JsonPropertyName ("hosts")] public ProbeTarget[]? Hosts { get; set; }
 	}

@@ -20,7 +20,7 @@ Use the existing solution and [processor test instructions](../KasaTapoCrestronD
 After building the production Release package, run the merged-assembly contract check in a fresh .NET Framework PowerShell process:
 
 ```powershell
-powershell.exe -NoProfile -File tools/Test-MergedJson.ps1 -AssemblyPath KasaTapoCrestronDriver/bin/Release/net472/patched/KasaTapoCrestronDriver.dll
+pwsh -NoProfile -File tools/Test-MergedJson.ps1 -AssemblyPath KasaTapoCrestronDriver/bin/Release/net472/patched/NeilColvin_Platform_KasaTapo_IP_V2.dll
 ```
 
 This checks actual serialization from the packaged assembly, including renamed serializer attributes and the required TPAP registration field, and rejects merged Newtonsoft.Json/log4net code.

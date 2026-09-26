@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin.
+// Copyright (c) 2026 Neil Colvin.
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 using Crestron.DeviceDrivers.EntityModel;
@@ -21,7 +21,7 @@ public sealed class EntryPoint : DriverAssemblyEntryPoint
 	/// </returns>
 	public override DriverController CreateDriverControllerInstance (DriverControllerCreationArgs args)
 		{
-		var resources = DriverImplementationResources.FromCreationArgs (args, typeof (EntryPoint));
+		var resources = DriverImplementationResources.FromCreationArgs (args, typeof (EntryPoint), "KasaTapoCrestronDriver.KasaTapoCrestronDriver.json");
 		var platform = new KasaTapoCrestronDriver.PlatformDriver (args, resources);
 		var rootEntity = new ConfigurableDriverEntity (platform.ControllerId, platform, platform.ConfigurationController);
 

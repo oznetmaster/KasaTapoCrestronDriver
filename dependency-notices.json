@@ -1,0 +1,341 @@
+{
+  "schemaVersion": 1,
+  "driverNoticeIds": [
+    "driver"
+  ],
+  "documents": [
+    {
+      "id": "driver",
+      "path": "LICENSE",
+      "sha256": "49874651e22000500748fcfc495010da028decd0e2e4532570212f4003a22789",
+      "source": "https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/LICENSE"
+    },
+    {
+      "id": "upstream-562ca644a750",
+      "path": "licenses/upstream-562ca644a750.txt",
+      "sha256": "634aa3fcd5108b2fbad705b269f0c5adadab529d8567a30d7968573459fb56b3",
+      "source": "https://github.com/HugoRoss/Hafner.Compatibility.Packages/blob/562ca644a750f7c9ed151d66df578ddfe834c10e/LICENSE"
+    },
+    {
+      "id": "kasatapoclient-2.0.0-license",
+      "path": "licenses/kasatapoclient-2.0.0-license.txt",
+      "sha256": "6397217a42a5c29dfdb7358dba771eee0e1c2ee7bda0af27e92492cdd2134145",
+      "source": "https://www.nuget.org/packages/KasaTapoClient/2.0.0"
+    },
+    {
+      "id": "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt",
+      "path": "licenses/microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt.txt",
+      "sha256": "6d15e10a101c6bfff2ab4429ed061bf76c456fc4b23ad6b03e0d0f8377148a21",
+      "source": "https://www.nuget.org/packages/Microsoft.Bcl.AsyncInterfaces/10.0.12"
+    },
+    {
+      "id": "ssh-net",
+      "path": "lib/Renci.SshNet/LICENSE-Renci.SshNet.txt",
+      "sha256": "a923a70b2b9584b9841307fd1cd7642555f00c7045f5eaa225d4a5dc19ec846e",
+      "source": "https://github.com/sshnet/SSH.NET/blob/2025.1.0/LICENSE"
+    },
+    {
+      "id": "upstream-95017c711e6a",
+      "path": "licenses/upstream-95017c711e6a.txt",
+      "sha256": "ae48df11a335dc1a615f4f938b69cba73bcf4485c4f97af49b38efb0f216353b",
+      "source": "https://github.com/dotnet/dotnet/blob/95017c711e6afc1085133d440e42b4bd78155701/LICENSE.TXT"
+    },
+    {
+      "id": "bouncycastle.cryptography-2.7.0-license.md",
+      "path": "licenses/bouncycastle.cryptography-2.7.0-license.md.txt",
+      "sha256": "be0592a6c76f398356fbf252a4fb43476fb3ca3c45331428c2f4f22c499e8311",
+      "source": "https://www.nuget.org/packages/BouncyCastle.Cryptography/2.7.0"
+    },
+    {
+      "id": "upstream-6b84308c9ad0",
+      "path": "licenses/upstream-6b84308c9ad0.txt",
+      "sha256": "cfc21f5e8bd655ae997eec916138b707b1d290b83272c02a95c9f821b8c87310",
+      "source": "https://github.com/dotnet/maintenance-packages/blob/6b84308c9ad012f53240d72c1d716d7e42546483/LICENSE"
+    }
+  ],
+  "components": [
+    {
+      "assembly": "BouncyCastle.Cryptography.dll",
+      "sha256": "4f96977e9c67334742c683410b3a361258219f0d3084a5e0bc10fba96cf23a0d",
+      "packageId": "BouncyCastle.Cryptography",
+      "packageVersion": "2.7.0",
+      "license": "MIT",
+      "copyright": "Copyright © Legion of the Bouncy Castle Inc. 2000-2026",
+      "noticeIds": [
+        "bouncycastle.cryptography-2.7.0-license.md"
+      ]
+    },
+    {
+      "assembly": "Hafner.Compatibility.CallerInformationAttributes.G2.dll",
+      "sha256": "aa8a463f94c4a72539d8b263ab2a234bcd4e53bf45ef965553ca85601023eb60",
+      "packageId": "Hafner.Compatibility.CallerInformationAttributes.G2",
+      "packageVersion": "1.0.0",
+      "license": "MIT",
+      "copyright": "Copyright (C) 2025 by Christoph Hafner",
+      "noticeIds": [
+        "upstream-562ca644a750"
+      ]
+    },
+    {
+      "assembly": "Hafner.Compatibility.ConstantExpectedAttribute.dll",
+      "sha256": "fe679285089dcd602ace1af59f94fce66b8deba14602e9a43ea24413ca8a11c2",
+      "packageId": "Hafner.Compatibility.ConstantExpectedAttribute",
+      "packageVersion": "2.0.0",
+      "license": "MIT",
+      "copyright": "Copyright (C) 2022 - 2024 by Christoph Hafner",
+      "noticeIds": [
+        "upstream-562ca644a750"
+      ]
+    },
+    {
+      "assembly": "Hafner.Compatibility.DynamicallyAccessedMembersAttribute.dll",
+      "sha256": "f7dbdfea2f14045203cfd2470e5325053e0d1f5cf5b7250efe13e2865783b8ea",
+      "packageId": "Hafner.Compatibility.DynamicallyAccessedMembersAttribute",
+      "packageVersion": "1.1.3",
+      "license": "MIT",
+      "copyright": "Copyright (C) 2024 - 2025 by Christoph Hafner",
+      "noticeIds": [
+        "upstream-562ca644a750"
+      ]
+    },
+    {
+      "assembly": "Hafner.Compatibility.ExperimentalAttribute.dll",
+      "sha256": "b65aae3dde1ab075fdbd873b7bc54bab401eb4098458782779994cef8b01fca5",
+      "packageId": "Hafner.Compatibility.ExperimentalAttribute",
+      "packageVersion": "1.0.0",
+      "license": "MIT",
+      "copyright": "Copyright (C) 2024 by Christoph Hafner",
+      "noticeIds": [
+        "upstream-562ca644a750"
+      ]
+    },
+    {
+      "assembly": "Hafner.Compatibility.FeatureGuardAttribute.dll",
+      "sha256": "b0531f0cec6c09bea85bbb4d5ced6b024d2bcb2cc786cfd7bbcfb634f17fc97a",
+      "packageId": "Hafner.Compatibility.FeatureGuardAttribute",
+      "packageVersion": "1.0.0",
+      "license": "MIT",
+      "copyright": "Copyright (C) 2024 by Christoph Hafner",
+      "noticeIds": [
+        "upstream-562ca644a750"
+      ]
+    },
+    {
+      "assembly": "Hafner.Compatibility.MetaPackage.dll",
+      "sha256": "831cfb26d556c0c0c935ee43a7f4ad0c0ef76c935f2fc6ec5cd2ad9617f6e5b4",
+      "packageId": "Hafner.Compatibility.MetaPackage",
+      "packageVersion": "1.9.0",
+      "license": "MIT",
+      "copyright": "Copyright (C) 2023 - 2025 by Christoph Hafner",
+      "noticeIds": [
+        "upstream-562ca644a750"
+      ]
+    },
+    {
+      "assembly": "Hafner.Compatibility.NullableReferenceTypeAttributes.G1.dll",
+      "sha256": "a58f1499d1ef37c064d9e0774012c6fb87b5dd011f69af3c178516d0a4a9588b",
+      "packageId": "Hafner.Compatibility.NullableReferenceTypeAttributes.G1",
+      "packageVersion": "1.0.3",
+      "license": "MIT",
+      "copyright": "Copyright (C) 2022 - 2024 by Christoph Hafner",
+      "noticeIds": [
+        "upstream-562ca644a750"
+      ]
+    },
+    {
+      "assembly": "Hafner.Compatibility.NullableReferenceTypeAttributes.G2.dll",
+      "sha256": "6c10a8e680e52580c4b3a62020fb9eaf1b3cfc234c22d64350328915dbff5eaf",
+      "packageId": "Hafner.Compatibility.NullableReferenceTypeAttributes.G2",
+      "packageVersion": "1.0.3",
+      "license": "MIT",
+      "copyright": "Copyright (C) 2022 - 2024 by Christoph Hafner",
+      "noticeIds": [
+        "upstream-562ca644a750"
+      ]
+    },
+    {
+      "assembly": "Hafner.Compatibility.NullableReferenceTypeAttributes.G3.dll",
+      "sha256": "ba10d998bbe02372790a6a4e4876b376c520fab4b1f9aca94a86a7cca3c353a5",
+      "packageId": "Hafner.Compatibility.NullableReferenceTypeAttributes.G3",
+      "packageVersion": "1.0.3",
+      "license": "MIT",
+      "copyright": "Copyright (C) 2022 - 2024 by Christoph Hafner",
+      "noticeIds": [
+        "upstream-562ca644a750"
+      ]
+    },
+    {
+      "assembly": "KasaTapoClient.dll",
+      "sha256": "2ad3a62331a0399749d702ef85d63a57b527e6fefda5233864729b0074e0bf33",
+      "packageId": "KasaTapoClient",
+      "packageVersion": "2.0.0",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2026 Neil Colvin",
+      "noticeIds": [
+        "kasatapoclient-2.0.0-license"
+      ]
+    },
+    {
+      "assembly": "Microsoft.Bcl.AsyncInterfaces.dll",
+      "sha256": "1009baea2f1a87f37530a1eecedbe1e7f42227df8ca9775799bf403cee022325",
+      "packageId": "Microsoft.Bcl.AsyncInterfaces",
+      "packageVersion": "10.0.12",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-95017c711e6a",
+        "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
+      ]
+    },
+    {
+      "assembly": "Microsoft.Bcl.Memory.dll",
+      "sha256": "f994b4dc7c27499c927aefcf542ae34abc0aa4c4dbd13283c9e0c7f7a6abf0d5",
+      "packageId": "Microsoft.Bcl.Memory",
+      "packageVersion": "10.0.12",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-95017c711e6a",
+        "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
+      ]
+    },
+    {
+      "assembly": "Microsoft.Extensions.DependencyInjection.Abstractions.dll",
+      "sha256": "bebe73dcc4667ef7103f470e6346677fe8fa5e6d6f62cc1ddd9b45fe766499e0",
+      "packageId": "Microsoft.Extensions.DependencyInjection.Abstractions",
+      "packageVersion": "10.0.12",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-95017c711e6a",
+        "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
+      ]
+    },
+    {
+      "assembly": "Microsoft.Extensions.Logging.Abstractions.dll",
+      "sha256": "2ffe4217a536b447ba35ca5b6ad79b3a43dd3041dab07b266615780786a33c17",
+      "packageId": "Microsoft.Extensions.Logging.Abstractions",
+      "packageVersion": "10.0.12",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-95017c711e6a",
+        "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
+      ]
+    },
+    {
+      "assembly": "System.Buffers.dll",
+      "sha256": "2d78d770c9cb997199154ae8c018b9f1d1efbc86729f7264dde6dbad2a12cac3",
+      "packageId": "System.Buffers",
+      "packageVersion": "4.6.1",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-6b84308c9ad0"
+      ]
+    },
+    {
+      "assembly": "System.Diagnostics.DiagnosticSource.dll",
+      "sha256": "07f1825f419f32f83c59a45acd491a9e8c6bdc3a4a37fc27f7cae27876b95a20",
+      "packageId": "System.Diagnostics.DiagnosticSource",
+      "packageVersion": "10.0.12",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-95017c711e6a",
+        "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
+      ]
+    },
+    {
+      "assembly": "System.IO.Pipelines.dll",
+      "sha256": "eb4d58a1769115fe6452437fa0e5e0bc22e140366d67e688b81d1dc8f61ec74a",
+      "packageId": "System.IO.Pipelines",
+      "packageVersion": "10.0.12",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-95017c711e6a",
+        "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
+      ]
+    },
+    {
+      "assembly": "System.Memory.dll",
+      "sha256": "d5e8e4866f9cfa66f7765660f84b210198893e55335487afe5ebda342c0e913d",
+      "packageId": "System.Memory",
+      "packageVersion": "4.6.3",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-6b84308c9ad0"
+      ]
+    },
+    {
+      "assembly": "System.Numerics.Vectors.dll",
+      "sha256": "20c2fa81b8c70d651099d762954f285fd4f942e63b2d7217c145dab8d4b2f4c9",
+      "packageId": "System.Numerics.Vectors",
+      "packageVersion": "4.6.1",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-6b84308c9ad0"
+      ]
+    },
+    {
+      "assembly": "System.Runtime.CompilerServices.Unsafe.dll",
+      "sha256": "08cbd7278b66f1e68425a82d4b97181a4130d93e3dd91831407aba7212ccdacf",
+      "packageId": "System.Runtime.CompilerServices.Unsafe",
+      "packageVersion": "6.1.2",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-6b84308c9ad0"
+      ]
+    },
+    {
+      "assembly": "System.Text.Encodings.Web.dll",
+      "sha256": "2ca6caee74e5e7c3714ed8284970813befaba446fc82e17d9d07397eed8d93d7",
+      "packageId": "System.Text.Encodings.Web",
+      "packageVersion": "10.0.12",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-95017c711e6a",
+        "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
+      ]
+    },
+    {
+      "assembly": "System.Text.Json.dll",
+      "sha256": "8bc0e77a67553d9b16eee8981365f1b13d9de714a540cef1051daf0d1a392eba",
+      "packageId": "System.Text.Json",
+      "packageVersion": "10.0.12",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-95017c711e6a",
+        "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
+      ]
+    },
+    {
+      "assembly": "System.Threading.Tasks.Extensions.dll",
+      "sha256": "af4e13ef418fd89b432de20cd1dfb7fa10a7179c8dd049c9856316e50c5949ca",
+      "packageId": "System.Threading.Tasks.Extensions",
+      "packageVersion": "4.6.3",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "noticeIds": [
+        "upstream-6b84308c9ad0"
+      ]
+    },
+    {
+      "assembly": "Renci.SshNet.dll",
+      "sha256": "b27a3444380b37678c649c02c32f430d96ae0505e48987b4a0ae129ae4dbc8d7",
+      "packageId": "SSH.NET",
+      "packageVersion": "2025.1.0-vendored-patched",
+      "license": "MIT",
+      "copyright": "SSH.NET contributors; see included license",
+      "noticeIds": [
+        "ssh-net"
+      ]
+    }
+  ]
+}

@@ -156,6 +156,12 @@ Typical **production driver** release flow:
 
 See [CHANGELOG.md](CHANGELOG.md) for a summary of all release history, or the [GitHub releases](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases) page for full per-version details and build assets.
 
+## Help and support
+
+The driver package includes `NeilColvin_Platform_KasaTapo_IP_V2.pdf`, with illustrated setup and operation instructions, device limitations and tested firmware details. Third-party license notices are included in `THIRD-PARTY-NOTICES.txt`.
+
+Use the [support form](https://oznetmaster.github.io/support/) to contact Neil Colvin without a GitHub account. Include the driver version, device model, processor/app versions and the steps needed to reproduce the problem. Do not include passwords. The [repository](https://github.com/oznetmaster/KasaTapoCrestronDriver) also provides source, documentation and release history.
+
 ---
 
 ## Repository Notes
@@ -231,7 +237,7 @@ Run `pwsh -File tools/Test-DriverVersioning.ps1` to check these rules with tempo
 See [versioning details](docs/Versioning.md) for build, release and installed-instance verification rules.
 ### Desktop SDK dependency in CI
 
-The SDK's desktop manifest reader needs its `Newtonsoft.Json.Compact.dll` runtime dependency. Supply a local SDK/runtime copy through the `CompactJsonPath` MSBuild property (or private `DesktopTest.Local.props`). Maintainer CI restores the same verified copy from encrypted Actions secrets into its temporary directory; it is not committed, attached to release assets or included in processor packages. Fork pull requests do not receive these secrets and require a trusted maintainer validation run.
+The SDK's desktop manifest reader needs its `Newtonsoft.Json.Compact.dll` runtime dependency. Obtain the complete `Crestron.DeviceDrivers.ManifestUtil` 29.0.10 package from NuGet and set the `CompactJsonPath` MSBuild property (or private `DesktopTest.Local.props`) to `tools/net8.0/any/Newtonsoft.Json.Compact.dll` inside that package. CI downloads and verifies this public dependency; no maintainer-only secret is required. The desktop SDK dependency is not included in the processor package.
 
 
 For automated local tests, processor tests and gated driver deployment, see the [Crestron Home NUnit CI development guide](https://github.com/oznetmaster/CrestronHomeNUnit/blob/HEAD/docs/ContinuousIntegration.md). It covers private configuration, live-test gates, install/update waits, results and optional test-package removal.
@@ -250,3 +256,5 @@ GitHub-hosted validation remains mandatory for the checked-out source, and the n
 ## Installed-driver control testing
 
 The [read-only control probe](KasaTapoCrestronDriver.ControlProbe/README.md) supports optional workflow tests that operate a selected installed outlet, verify its physical state independently, and restore it. Private device selection and credentials remain local. These controls are opt-in and are not enabled by the ordinary automatic processor-test plans.
+
+The separate [Android app fixtures](KasaTapoCrestronDriver.AndroidTests/README.md) check sensor displays and explicitly selected outlet/native-light controls through the Crestron Home app. They run on a Windows worker using the public NUnit workflow and restore the selected devices and app afterward.

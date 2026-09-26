@@ -29,9 +29,7 @@ jobs:
     runs-on: windows-latest
     environment: release
     env:
-      MANIFESTUTIL_VERSION: 27.0.24
-      OFFICE_CORE_VERSION: 12.0.0
-      WORD_INTEROP_VERSION: 15.0.4797.1004
+      MANIFESTUTIL_VERSION: 29.0.10
       NET472_REFERENCE_ASSEMBLIES: C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2
       NETFX_RUNTIME_DIR: C:\Windows\Microsoft.NET\Framework64\v4.0.30319
     steps:
@@ -67,57 +65,16 @@ jobs:
         run: |
           nuget install Crestron.DeviceDrivers.ManifestUtil -Version $env:MANIFESTUTIL_VERSION -OutputDirectory "$env:RUNNER_TEMP\nuget-tools"
 
-      - name: Install Word interop package
-        shell: pwsh
-        run: |
-          nuget install Microsoft.Office.Interop.Word -Version $env:WORD_INTEROP_VERSION -OutputDirectory "$env:RUNNER_TEMP\nuget-tools"
-
-      - name: Install Office core package
-        shell: pwsh
-        run: |
-          nuget install Microsoft.Office.Core -Version $env:OFFICE_CORE_VERSION -OutputDirectory "$env:RUNNER_TEMP\nuget-tools"
-
-      - name: Resolve ManifestUtil path
+      - name: Resolve complete ManifestUtil package
         id: manifestutil
         shell: pwsh
         run: |
-          $toolRoot = Join-Path $env:RUNNER_TEMP "nuget-tools\Crestron.DeviceDrivers.ManifestUtil.$env:MANIFESTUTIL_VERSION"
-          $manifestUtil = Get-ChildItem -Path $toolRoot -Filter ManifestUtil.exe -Recurse | Select-Object -First 1
-          if ($null -eq $manifestUtil) {
-            throw "ManifestUtil.exe was not found under $toolRoot"
+          $toolRoot = Join-Path $env:RUNNER_TEMP "nuget-tools\Crestron.DeviceDrivers.ManifestUtil.$env:MANIFESTUTIL_VERSION\tools\net8.0\any"
+          $manifestUtil = Join-Path $toolRoot 'ManifestUtil.exe'
+          foreach ($required in @('ManifestUtil.exe', 'ManifestUtil.dll', 'ManifestUtil.runtimeconfig.json', 'Newtonsoft.Json.Compact.dll')) {
+            if (!(Test-Path -LiteralPath (Join-Path $toolRoot $required))) { throw "Incomplete ManifestUtil package: $required" }
           }
-
-          $wordInteropRoot = Join-Path $env:RUNNER_TEMP "nuget-tools\Microsoft.Office.Interop.Word.$env:WORD_INTEROP_VERSION"
-          $wordInterop = Get-ChildItem -Path $wordInteropRoot -Filter Microsoft.Office.Interop.Word.dll -Recurse | Select-Object -First 1
-          if ($null -eq $wordInterop) {
-            throw "Microsoft.Office.Interop.Word.dll was not found under $wordInteropRoot"
-          }
-
-          $officeCoreRoot = Join-Path $env:RUNNER_TEMP "nuget-tools\Microsoft.Office.Core.$env:OFFICE_CORE_VERSION"
-          $officeCore = Get-ChildItem -Path $officeCoreRoot -Filter office.dll -Recurse | Select-Object -First 1
-          if ($null -eq $officeCore) {
-            throw "office.dll was not found under $officeCoreRoot"
-          }
-
-          Copy-Item $wordInterop.FullName (Join-Path $manifestUtil.Directory.FullName 'Microsoft.Office.Interop.Word.dll') -Force
-          Copy-Item $officeCore.FullName (Join-Path $manifestUtil.Directory.FullName 'office.dll') -Force
-
-          $manifestUtilConfig = @'
-          <?xml version="1.0" encoding="utf-8"?>
-          <configuration>
-            <runtime>
-              <assemblyBinding xmlns="urn:schemas-microsoft-com:asm.v1">
-                <dependentAssembly>
-                  <assemblyIdentity name="office" publicKeyToken="71e9bce111e9429c" culture="neutral" />
-                  <bindingRedirect oldVersion="0.0.0.0-15.0.0.0" newVersion="12.0.0.0" />
-                </dependentAssembly>
-              </assemblyBinding>
-            </runtime>
-          </configuration>
-          '@
-          Set-Content -Path (Join-Path $manifestUtil.Directory.FullName 'ManifestUtil.exe.config') -Value $manifestUtilConfig -Encoding UTF8
-
-          "exe_path=$($manifestUtil.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "exe_path=$manifestUtil" >> $env:GITHUB_OUTPUT
 
       - name: Restore dependencies
         run: dotnet restore KasaTapoCrestronDriver/KasaTapoCrestronDriver.csproj
@@ -170,11 +127,12 @@ jobs:
         id: package
         shell: pwsh
         run: |
-          $pkg = Get-Item -LiteralPath "$env:GITHUB_WORKSPACE\KasaTapoCrestronDriver\bin\Release\net472\KasaTapoCrestronDriver.pkg" -ErrorAction Stop
+          $pkg = Get-Item -LiteralPath "$env:GITHUB_WORKSPACE\KasaTapoCrestronDriver\bin\Release\net472\NeilColvin_Platform_KasaTapo_IP_V2.pkg" -ErrorAction Stop
           if ($null -eq $pkg) {
             throw 'No .pkg file was generated in KasaTapoCrestronDriver/bin/Release.'
           }
 
+          & ./tools/Normalize-DriverPackage.ps1 -PackagePath $pkg.FullName
           & ./tools/Assert-DriverPackageVersion.ps1 -PackagePath $pkg.FullName -ManifestPath './KasaTapoCrestronDriver/KasaTapoCrestronDriver.json' -ReleaseVersion '${{ steps.package_version.outputs.value }}'
 
           "pkg_path=$($pkg.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8

@@ -10,6 +10,11 @@ project follows [Semantic Versioning](https://semver.org/).
 
 This changelog records shipped features, fixes, compatibility and runtime dependency changes. See [development and validation history](DEVELOPMENT-HISTORY.md) for tests, CI, build tooling and work not yet released.
 
+## 2.1.2 - Unreleased
+
+- Include illustrated user help, an account-free support contact and third-party license notices in the driver package.
+- Use the descriptive `NeilColvin_Platform_KasaTapo_IP_V2` package and DLL filename while preserving the existing driver identity and controls.
+
 ## 2.1.1 - 2026-09-22
 
 - Upgrade to KasaTapoClient 2.0.0 and Crestron.DeviceDrivers.DevKit 29.0.10. The bundled client uses typed System.Text.Json contracts and removes its Newtonsoft.Json and log4net dependencies.

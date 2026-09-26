@@ -57,3 +57,5 @@ Desktop.ini
 
 # Public dependency notices for processor test release assets
 !KasaTapoCrestronDriver.ProcessorTests/licenses/*.txt
+!licenses/*.txt
+!KasaTapoCrestronDriver/IncludeInPkg/THIRD-PARTY-NOTICES.txt

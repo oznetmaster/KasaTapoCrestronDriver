@@ -2,7 +2,7 @@
   <PropertyGroup>
 	 <TargetFramework>net472</TargetFramework>
 	 <OutputType>Library</OutputType>
-	 <AssemblyName>KasaTapoCrestronDriver</AssemblyName>
+	 <AssemblyName>NeilColvin_Platform_KasaTapo_IP_V2</AssemblyName>
 	 <RootNamespace>KasaTapoCrestronDriver</RootNamespace>
 	 <LangVersion>latest</LangVersion>
 	 <Nullable>enable</Nullable>
