@@ -139,6 +139,12 @@ items:
 | **Processor SSH User Name** | SSH login user name for the processor console. |
 | **Processor SSH Password** | SSH login password for the processor console. |
 
+The native Crestron light name must match the driver's discovered light name, either in full or
+as a suffix beginning after a space (case-insensitive). For example, `Demo Tapo L530` matches
+`Portincaple Demo Tapo L530`; `Demo Tapo Light` does not. There must be exactly one matching
+native load on the processor. Keep this relationship when naming or renaming the light in
+Crestron Home: valid credentials alone cannot compensate for an unmatched or ambiguous name.
+
 If the workaround is disabled, or the SSH user name/password are left blank, the driver simply
 skips baseline synchronization and relies solely on the (currently non-functional)
 `lightTunable:mode` publication
