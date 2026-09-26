@@ -11,6 +11,11 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## Power recorder discovery - 2026-09-26
+
+- Retry a missing UDP discovery response up to three times before connecting, while rejecting ambiguous hosts immediately. Record discovery counts and the connection stage on failure without exposing credentials or raw device payloads. Device writes are not retried by this change.
+- All 49 offline Android evidence contracts pass, including missing responses, conflicting identities and cancellation. This is fixture reliability work, not a driver runtime or product release.
+
 ## 2.1.2 preparation - 2026-09-26
 
 - Regress standard and extension availability notifications across online/offline/recovery for outlets, sensors and buttons, including full SDK state snapshots. All 58 desktop lifecycle tests pass. An actual outlet interruption distinguished the extension field turning offline from the previously unchanged standard field; app behavior is verified separately after the correction.

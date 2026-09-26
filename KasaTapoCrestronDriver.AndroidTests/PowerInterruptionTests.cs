@@ -18,6 +18,23 @@ public sealed class PowerInterruptionTests
 {
     internal sealed record LightSnapshot(bool On, int Brightness, int Temperature, int Hue, int Saturation, bool EffectEnabled);
 
+    internal static async Task<T> DiscoverUnique<T>(Func<CancellationToken, Task<IReadOnlyList<T>>> discover,
+        Func<T, string> host, Func<int, int, int, Task> observe, CancellationToken token)
+    {
+        // UDP discovery can miss one response. Retry only absence, before any connection or write.
+        // Conflicting identities/hosts must never be made acceptable by trying again.
+        for (int attempt = 1; attempt <= 3; attempt++)
+        {
+            token.ThrowIfCancellationRequested();
+            var matches = await discover(token);
+            int hosts = matches.Select(host).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            await observe(attempt, matches.Count, hosts);
+            if (hosts > 1) throw new InvalidDataException("Physical identity has multiple discovered hosts.");
+            if (hosts == 1) return matches[0];
+        }
+        throw new InvalidDataException("Physical identity was absent from three discovery attempts.");
+    }
+
     internal static void Validate(PowerInterruptionSettings plan, OutletTarget target)
     {
         bool Valid(PhysicalPowerTarget p) => p.ControlsAuthorized && !string.IsNullOrWhiteSpace(p.DiscoveryId) &&
@@ -55,23 +72,32 @@ public sealed class PowerInterruptionTests
 
         async Task<KasaDevice> Connect(PhysicalPowerTarget physical, CancellationToken ct)
         {
+            string stage = "credential-input";
             try
             {
                 using var input = JsonDocument.Parse(await File.ReadAllTextAsync(settings.DeviceCredentialsFile, ct));
                 var auth = input.RootElement.GetProperty("credentials");
-                var matches = (await Discover.DiscoverAsync(TimeSpan.FromSeconds(2), cancellationToken: ct))
-                    .Where(d => string.Equals(d.DeviceId, physical.DiscoveryId, StringComparison.OrdinalIgnoreCase)).ToArray();
-                if (matches.Select(d => d.Host).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 1)
-                    throw new InvalidDataException("Physical identity not uniquely discovered.");
-                var selected = matches.OrderByDescending(d => d.TpapPreferred == true || d.TpapMetadata != null).First();
+                stage = "discovery";
+                var selected = await DiscoverUnique<DiscoveryResult>(async cancellation =>
+                    (await Discover.DiscoverAsync(TimeSpan.FromSeconds(2), cancellationToken: cancellation))
+                        .Where(d => string.Equals(d.DeviceId, physical.DiscoveryId, StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(d => d.TpapPreferred == true || d.TpapMetadata != null).ToArray(),
+                    d => d.Host, (attempt, matches, hosts) => Record("physical-discovery", new {
+                        physical.DiscoveryId, Attempt = attempt, Matches = matches, UniqueHosts = hosts }), ct);
+                stage = "authenticated-connection";
                 var device = await Discover.ConnectAsync(Discover.CreateConfiguration(selected,
                     new DeviceCredentials(auth.GetProperty("userName").GetString(), auth.GetProperty("password").GetString()), TimeSpan.FromSeconds(10)), ct);
+                stage = "authenticated-identity";
                 if (!string.Equals(device.SystemInfo?.DeviceId, physical.AuthenticatedId, StringComparison.OrdinalIgnoreCase))
                 { device.Dispose(); throw new InvalidDataException("Authenticated identity differs."); }
                 return device;
             }
             catch (OperationCanceledException) { throw; }
-            catch (Exception e) { throw new InvalidDataException("Power test physical connection failed (" + e.GetType().Name + ")."); }
+            catch (Exception e)
+            {
+                await Record("physical-connection-failed", new { physical.DiscoveryId, Stage = stage, ErrorType = e.GetType().Name });
+                throw new InvalidDataException("Power test physical connection failed at " + stage + " (" + e.GetType().Name + ").");
+            }
         }
         async Task<bool> ReadPower(PhysicalPowerTarget physical, CancellationToken ct)
         {
