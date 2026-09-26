@@ -12,6 +12,10 @@ namespace KasaTapoCrestronDriver.AndroidTests;
 public sealed class OutletControlsTests
 {
     sealed record Activity(string Epoch, long Completed, int Pending);
+    // Wire contract consumed by the optional public response comparison stage.
+    // Keep this producer compatible with the currently released DevTools package.
+    sealed record ResponseMeasurement(string Id, DateTimeOffset InputUtc, DateTimeOffset ObservedUtc, double ElapsedMilliseconds);
+    const string ResponseMethod = "Monotonic time from validated input guard to attributed command completion observed through the configuration API; includes ADB transport and API polling. Not physical relay or visible UI latency.";
 
     [TestCase("energy")]
     [TestCase("basic")]
@@ -32,6 +36,7 @@ public sealed class OutletControlsTests
         string physicalId = target.DiscoveryId + (string.IsNullOrWhiteSpace(target.ChildId) ? "" : "/" + target.ChildId);
         string evidence = Path.Combine(session.Context.EvidenceDirectory, "outlet-" + alias);
         Directory.CreateDirectory(evidence);
+        var measurements = new List<ResponseMeasurement>();
         int sequence = 0;
         async Task Record(string phase, object data) => await File.WriteAllTextAsync(Path.Combine(evidence,
             (++sequence).ToString("D3") + "-" + phase + ".json"), JsonSerializer.Serialize(new { phase, target.DeviceId, physicalId, data, Utc = DateTimeOffset.UtcNow }));
@@ -155,17 +160,21 @@ public sealed class OutletControlsTests
                 long inputReturned = Stopwatch.GetTimestamp();
                 var done = await Completion(baseline, token, intendedCommands);
                 long completionObserved = Stopwatch.GetTimestamp();
+                var observedUtc = DateTimeOffset.UtcNow;
+                string control = onDetailPage ? "detail-power" : "room-tile";
+                double elapsed = Stopwatch.GetElapsedTime(inputStart, completionObserved).TotalMilliseconds;
+                measurements.Add(new(control + (expectedOn ? ":on" : ":off"), inputUtc, observedUtc, elapsed));
                 await Record("command-response", new
                 {
-                    Control = onDetailPage ? "detail-power" : "room-tile",
+                    Control = control,
                     ExpectedOn = expectedOn,
                     InputGuardCompletedUtc = inputUtc,
-                    CompletionObservedUtc = DateTimeOffset.UtcNow,
+                    CompletionObservedUtc = observedUtc,
                     InputTransportMilliseconds = Stopwatch.GetElapsedTime(inputStart, inputReturned).TotalMilliseconds,
-                    CommandCompletionObservedMilliseconds = Stopwatch.GetElapsedTime(inputStart, completionObserved).TotalMilliseconds,
+                    CommandCompletionObservedMilliseconds = elapsed,
                     ExpectedCompleted = baseline.Completed + intendedCommands,
                     Observed = done,
-                    Method = "Monotonic time from validated input guard to attributed command completion observed through the configuration API; includes ADB transport and API polling. Not physical relay or visible UI latency."
+                    Method = ResponseMethod
                 });
                 return done;
             }
@@ -250,6 +259,14 @@ public sealed class OutletControlsTests
                 }
             }
             finally { await RoomNavigation.Restore(target.Room, target.EnergyPage ? title : null, cleanup.Token); }
+        }
+        if (settings.EvidenceIdentity is {} identity)
+        {
+            AppEvidence.Validate(identity, session.Context);
+            if (!SensorSession.PhysicalRestorationConfirmed) throw new InvalidOperationException("Response evidence requires completed restoration.");
+            using var output = new FileStream(Path.Combine(evidence, "response-measurements.json"), FileMode.CreateNew);
+            JsonSerializer.Serialize(output, new { SchemaVersion = 1, Identity = identity, DeviceIdentity = physicalId,
+                Method = ResponseMethod, Measurements = measurements });
         }
         AppEvidence.Write("outlet." + alias,
             "Verified the selected outlet identity and displayed control inventory, operated the individual app power control and its return, then sent three further guarded presses without waiting for acknowledgements. Correlated the exact completed command count with two independent physical/API observations and app feedback after each sequence, restored its original physical state and returned Home. Burst timestamps are retained; no fixed tap rate, outage, telemetry accuracy or quantified response-time assertion.",

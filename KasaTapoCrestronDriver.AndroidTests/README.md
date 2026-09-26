@@ -65,6 +65,16 @@ controls, selector-icon artwork or a quantified response deadline.
 
 The fixtures return the app to Home. On failure, inspect the original NUnit result, capture and restoration journal before recovery. Do not release retained reservations or repeat uncertain inputs automatically.
 
+With `EvidenceIdentity`, a successful outlet sequence also saves
+`outlet-<alias>/response-measurements.json` after physical restoration and return
+Home. It follows the public DevTools `SubmissionResponseSeries` contract, without
+requiring a newer runtime package: candidate identity, physical device/child ID,
+measurement method, and the two existing timed commands. IDs distinguish control
+and requested ON/OFF state. This adds no commands. A later comparison requires
+matching operations and separate reviewed criteria; merely collecting timings
+does not assert unchanged performance. Measurements include ADB/API observation
+overhead and do not measure physical relay or first visible UI latency.
+
 Sensor cases first scroll the selected Room tile fully into view and capture its title, icon presence and absence of an ellipsis. They press that read-only tile, verify the expected detail page and every conditional display row for the selected hardware, then explicitly close to the same Room and return Home. Separate observation suffixes `sensor.<alias>.tile`, `.navigation`, `.display` and `.close` allow policies to use those actual assertions independently while sharing the retained captures. Icon glyph correctness, Home-page absence, physical sensor stimulation and sensor types absent from the selected hardware are not asserted by these checks.
 
 The optional configuration case changes only the platform's discovery timeout through the public configuration API, reopens configuration and checks the saved value, unchanged polling settings and selected child readiness, then restores and verifies the original settings. It uses 11 seconds when the original value is 10, or 10 seconds otherwise; supported original values are 1–60 seconds. This produces `kasa.app.configuration.platform` with target `$kasa.configuration.platform` and method `configuration`. It does not claim Configure Pro visual validation, persistence across a reboot or changes to physical device settings. Restoration failure retains the workflow reservation. Keeping the setting on the selected processor also avoids competing with other processors that may manage the same physical devices.
