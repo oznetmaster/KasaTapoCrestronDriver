@@ -13,6 +13,7 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 ## 2.1.2 preparation - 2026-09-26
 
+- Add an explicitly bound power-interruption recorder with original-state capture, separate device/API/app timestamps, at least 60 seconds of supply interruption, and restoration of the outlet and selected collateral lights. It does not turn a device-only power interruption or unreviewed app capture into a checklist pass.
 - Check captured Room tile glyphs and state colours against reviewed icon crops, with bounded antialiasing tolerance and explicit failure for unreviewed icons or changed geometry. Offline checks reject wrong glyphs, on/off colours, blank images and changed sizes; the image decoder is Windows test-only. Existing presence-only evidence remains separate from the new icon observations.
 - Search the app's retained Rooms-list scroll position before opening a selected room, and restore Home after each sensor inspection even when an assertion fails. This changes Android test navigation only.
 - Cover separate discovery/child identities across cache rewrites and driver recreation, including legacy strip entries, unrelated hub child IDs and ambiguous sanitized IDs. All 54 desktop lifecycle tests pass; the Release package builds without warnings. Hardware verification of this identity correction remains separate.

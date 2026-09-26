@@ -19,6 +19,7 @@ public sealed record FixtureSettings(string ProcessorHost, string CredentialBind
     SubmissionEvidenceIdentity? EvidenceIdentity = null, bool PlatformConfigurationAuthorized = false)
 {
     public bool ResolveDeviceIds { get; init; }
+    public PowerInterruptionSettings? PowerInterruption { get; init; }
     public static FixtureSettings Read(AndroidRunContext context)
     {
         string evidence = Path.GetFullPath(context.EvidenceDirectory);

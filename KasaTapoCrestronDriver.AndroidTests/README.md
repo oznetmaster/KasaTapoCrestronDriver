@@ -68,6 +68,12 @@ controls, selector-icon artwork or a quantified response deadline.
 
 The fixtures return the app to Home. On failure, inspect the original NUnit result, capture and restoration journal before recovery. Do not release retained reservations or repeat uncertain inputs automatically.
 
+The optional `PowerInterruptionTests.RecordDevicePowerInterruptionAndRestore` is a preparatory recorder, selected separately from normal controls. Private `PowerInterruption` settings identify `OutletAlias`, an independently controllable `Supply` strip socket, and any `CollateralLights` sharing the possibly interrupted supply. Every physical binding has `DiscoveryId`, `AuthenticatedId`, `ChildId` (null for lights) and explicit `ControlsAuthorized`. The selected outlet must be an authorized root plug. Pin the wiring before unattended use; a supply that powers another device causes the expected outlet-offline check to fail.
+
+The recorder saves original states, records the supply-off intent before switching, confirms at least 60 seconds without supply power, observes the selected driver child disconnect/reconnect and captures its unobscured Room tile before, during and after. It restores the supply, outlet and explicitly selected collateral light states even after a failed observation; unresolved restoration retains reservations. Active lighting effects or incomplete colour state are rejected before the interruption because their restoration is not covered here. Restoration attempts are independent, so failure restoring one device does not skip the others.
+
+This recorder produces no passing checklist observations: app offline appearance and timing require review of the captures, and interruption of a selected device's supply does not establish a processor/network power outage or a network-only test. Its journal, original/restored states and scope report keep these distinctions explicit. Do not select it automatically merely because a power strip was discovered.
+
 With `EvidenceIdentity`, a successful outlet sequence also saves
 `outlet-<alias>/response-measurements.json` after physical restoration and return
 Home. It follows the public DevTools `SubmissionResponseSeries` contract, without
