@@ -17,10 +17,10 @@
       "source": "https://github.com/HugoRoss/Hafner.Compatibility.Packages/blob/562ca644a750f7c9ed151d66df578ddfe834c10e/LICENSE"
     },
     {
-      "id": "kasatapoclient-2.0.0-license",
-      "path": "licenses/kasatapoclient-2.0.0-license.txt",
+      "id": "kasatapoclient-2.0.1-license",
+      "path": "licenses/kasatapoclient-2.0.1-license.txt",
       "sha256": "6397217a42a5c29dfdb7358dba771eee0e1c2ee7bda0af27e92492cdd2134145",
-      "source": "https://www.nuget.org/packages/KasaTapoClient/2.0.0"
+      "source": "https://www.nuget.org/packages/KasaTapoClient/2.0.1"
     },
     {
       "id": "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt",
@@ -166,13 +166,13 @@
     },
     {
       "assembly": "KasaTapoClient.dll",
-      "sha256": "2ad3a62331a0399749d702ef85d63a57b527e6fefda5233864729b0074e0bf33",
+      "sha256": "1b81282cbefaeacf2ea1b3f2a30dafb995b0abb00e562d48b61e31d4fdf61c0a",
       "packageId": "KasaTapoClient",
-      "packageVersion": "2.0.0",
+      "packageVersion": "2.0.1",
       "license": "MIT",
       "copyright": "Copyright (c) 2026 Neil Colvin",
       "noticeIds": [
-        "kasatapoclient-2.0.0-license"
+        "kasatapoclient-2.0.1-license"
       ]
     },
     {

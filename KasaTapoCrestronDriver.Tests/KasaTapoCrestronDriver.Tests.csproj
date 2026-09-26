@@ -52,7 +52,7 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
         package), not a local sibling build, otherwise KasaDevice/DeviceType/etc. resolve as distinct
         types (CS1503) between this project and the driverassembly-aliased ProjectReference above. -->
   <ItemGroup>
-    <PackageReference Include="KasaTapoClient" Version="2.0.0" />
+    <PackageReference Include="KasaTapoClient" Version="2.0.1" />
   </ItemGroup>
 
   <ItemGroup>

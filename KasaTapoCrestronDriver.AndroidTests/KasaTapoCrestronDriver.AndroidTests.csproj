@@ -17,6 +17,6 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" PrivateAssets="all" />
     <PackageReference Include="CrestronHomeNUnit.TestAdapter" Version="1.12.2" PrivateAssets="all" />
     <PackageReference Include="CrestronHomeDevTools" Version="1.19.0" PrivateAssets="all" />
-    <PackageReference Include="KasaTapoClient" Version="2.0.0" PrivateAssets="all" />
+    <PackageReference Include="KasaTapoClient" Version="2.0.1" PrivateAssets="all" />
   </ItemGroup>
 </Project>

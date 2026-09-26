@@ -12,6 +12,7 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 
 ## 2.1.2 - Unreleased
 
+- Use KasaTapoClient 2.0.1 to renew TPAP sessions rejected after a device restarts, allowing automatic recovery without reloading the driver.
 - Keep outlet polling active after a transport request timeout and report the device offline until a subsequent refresh succeeds.
 - Publish outlet, sensor and button availability through Crestron Home's standard online/ready interfaces, preserving the existing extension property bindings.
 - Preserve the parent device identity separately from each child's serial number when saving and restoring managed devices; recover unambiguous parent identities from older caches.

@@ -11,6 +11,11 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## Published client recovery dependency - 2026-09-26
+
+- Update the driver and its test/support projects to the published KasaTapoClient 2.0.1 package. Refresh the exact dependency DLL digest, license reference and packaged third-party notices.
+- With that published dependency, all 34 portable tests, 58 lifecycle tests and 56 offline Android contracts pass. The strict Release build and package/dependency-notice validation also pass. These checks do not replace the integrated hardware and app run.
+
 ## Power recovery app verification - 2026-09-26
 
 - The selected P110 power interruption now recovers with the corrected TPAP client: retained Room captures show OFFLINE followed by the independently verified original OFF state. The preparation run interrupted the device supply for more than 60 seconds and restored the supply, plug, collateral light and app navigation. Processor and network equipment remained powered; this is not a whole-system outage test.

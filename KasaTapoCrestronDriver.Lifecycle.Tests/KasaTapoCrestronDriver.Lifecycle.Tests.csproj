@@ -34,7 +34,7 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.0" PrivateAssets="all" />
     <PackageReference Include="NUnit.Analyzers" Version="4.15.0" PrivateAssets="all" />
     <PackageReference Include="Crestron.DeviceDrivers.DevKit" Version="29.0.10" />
-    <PackageReference Include="KasaTapoClient" Version="2.0.0" />
+    <PackageReference Include="KasaTapoClient" Version="2.0.1" />
     <Using Include="NUnit.Framework" />
 
   </ItemGroup>

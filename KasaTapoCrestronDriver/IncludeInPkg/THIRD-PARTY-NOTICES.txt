@@ -54,10 +54,10 @@ Declared license: MIT
 Copyright (C) 2022 - 2024 by Christoph Hafner
 Documents: upstream-562ca644a750
 
-KasaTapoClient 2.0.0 (KasaTapoClient.dll)
+KasaTapoClient 2.0.1 (KasaTapoClient.dll)
 Declared license: MIT
 Copyright (c) 2026 Neil Colvin
-Documents: kasatapoclient-2.0.0-license
+Documents: kasatapoclient-2.0.1-license
 
 Microsoft.Bcl.AsyncInterfaces 10.0.12 (Microsoft.Bcl.AsyncInterfaces.dll)
 Declared license: MIT
@@ -211,8 +211,8 @@ SOFTWARE.
 
 
 ========================================================================
-kasatapoclient-2.0.0-license
-Source: https://www.nuget.org/packages/KasaTapoClient/2.0.0
+kasatapoclient-2.0.1-license
+Source: https://www.nuget.org/packages/KasaTapoClient/2.0.1
 
 MIT License
 
