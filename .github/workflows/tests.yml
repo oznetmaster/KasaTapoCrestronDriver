@@ -35,6 +35,8 @@ jobs:
         run: dotnet build KasaTapoCrestronDriver.ControlProbe/KasaTapoCrestronDriver.ControlProbe.csproj -c Release
       - name: Compile optional Android app fixtures
         run: dotnet build KasaTapoCrestronDriver.AndroidTests/KasaTapoCrestronDriver.AndroidTests.csproj -c Release
+      - name: Verify offline app evidence contracts
+        run: dotnet test KasaTapoCrestronDriver.AndroidTests/KasaTapoCrestronDriver.AndroidTests.csproj -c Release --no-build --filter FullyQualifiedName~KasaAppEvidenceContracts --logger "trx;LogFileName=app-evidence-contracts.trx" --results-directory TestResults/AppEvidence
       - name: Verify discovery coverage guards
         run: ./tools/Test-DiscoveredCoverageGuards.ps1
       - name: Run discovered NUnit driver tests

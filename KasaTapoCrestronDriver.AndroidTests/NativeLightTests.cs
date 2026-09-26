@@ -16,6 +16,7 @@ public sealed class NativeLightTests
     [Test]
     public async Task IndividualNativeLightPowerBrightnessWhiteAndColor()
     {
+        var started = DateTimeOffset.UtcNow;
         var session = SensorSession.Current!;
         var settings = SensorSession.Settings!;
         if (settings.Light == null) Assert.Ignore("No explicitly authorized native light binding supplied.");
@@ -88,6 +89,8 @@ public sealed class NativeLightTests
         }
         void Tuning(AndroidHierarchy h) => Assert.That(h.RequireUnique(CrestronHomePages.Resource("lightLoadTuning_title")).Text, Is.EqualTo(target.Name));
         var original = await Read(ct); await Record("original", original);
+        var originalAt = DateTimeOffset.UtcNow;
+        var actionAt = originalAt;
         bool entered = false;
         try
         {
@@ -97,6 +100,7 @@ public sealed class NativeLightTests
                 Assert.That(h.RequireUnique(CrestronHomePages.Resource("twoButtonsTile_title")).Text, Is.EqualTo("Lights"));
             }, ct);
             entered = true; SensorSession.PhysicalRestorationConfirmed = false;
+            actionAt = DateTimeOffset.UtcNow;
             var toggle = new AndroidSelector(AndroidSelectorKind.ContentDescription, "toggle_" + target.Name);
             await session.Device.TapAsync(toggle, List, ct);
             await Wait(s => s.On != original.On, "power-changed", ct);
@@ -190,5 +194,9 @@ public sealed class NativeLightTests
               finally { await RoomNavigation.Restore(target.Room,null,cleanup.Token); }
             }
         }
+        AppEvidence.Write("native-light",
+            "Verified native load/wrapper/platform identity; operated individual power, brightness, white-temperature, hue and saturation controls; matched physical reads and displayed tuning values; restored original power and colour state and returned Home. Direct physical commands were restoration only. No initial tuning-mode, outage or quantified response-time assertion.",
+            started, originalAt, actionAt, Directory.GetFiles(dir, "*-original.json").Single(),
+            Directory.GetFiles(dir, "*-restored.json").Order(StringComparer.Ordinal).Last());
     }
 }

@@ -14,7 +14,8 @@ public sealed record OutletTarget(string Alias, int DeviceId, string Model, stri
 public sealed record LightTarget(int DeviceId, int WrapperId, string Model, string Name, string Room,
     int LocationId, string DiscoveryId, string AuthenticatedId, bool ControlsAuthorized);
 public sealed record FixtureSettings(string ProcessorHost, string CredentialBindings, SensorTarget[] Sensors,
-    string? DeviceCredentialsFile = null, OutletTarget[]? Outlets = null, LightTarget? Light = null)
+    string? DeviceCredentialsFile = null, OutletTarget[]? Outlets = null, LightTarget? Light = null,
+    SubmissionEvidenceIdentity? EvidenceIdentity = null)
 {
     public static FixtureSettings Read(AndroidRunContext context)
     {
@@ -36,6 +37,7 @@ public sealed record FixtureSettings(string ProcessorHost, string CredentialBind
             settings.Sensors.Any(s => s.Alias is not ("temperature" or "motion" or "button") || s.DisplayProperties.Length == 0 ||
                 s.DisplayProperties.Any(p => p is not ("temperatureDisplay" or "humidityDisplay" or "batteryStatusLabel" or "motionStatusLabel" or "lastGestureLabel" or "lastTriggerTimeDisplay"))))
             throw new InvalidDataException("Sensor bindings do not match this fixture's read-only scope.");
+        if (settings.EvidenceIdentity != null) AppEvidence.Validate(settings.EvidenceIdentity, context);
         return settings;
     }
 }
@@ -91,6 +93,7 @@ public sealed class SensorPagesTests
     [TestCase("button")]
     public async Task RoomSensorValuesMatchInstalledDriver(string alias)
     {
+        var started = DateTimeOffset.UtcNow;
         var session = SensorSession.Current!;
         var target = SensorSession.Settings!.Sensors.Single(s => s.Alias == alias);
         int id = target.DeviceId > 0 ? target.DeviceId : session.Context.RequireManagedDevice(alias).DeviceId;
@@ -127,8 +130,11 @@ public sealed class SensorPagesTests
             }
         }, token);
         string report = Path.Combine(session.Context.EvidenceDirectory, "sensor-" + alias + "-api.json");
-        await using var file = new FileStream(report, FileMode.CreateNew, FileAccess.Write);
-        await JsonSerializer.SerializeAsync(file, new { DeviceId = id, target.Model, target.Name, Values = values, ObservedUtc = DateTimeOffset.UtcNow }, cancellationToken: token);
+        await using (var file = new FileStream(report, FileMode.CreateNew, FileAccess.Write))
+            await JsonSerializer.SerializeAsync(file, new { DeviceId = id, target.Model, target.Name, Values = values, ObservedUtc = DateTimeOffset.UtcNow }, cancellationToken: token);
         Assert.That(SensorSession.Navigation.HomeRestored, Is.True);
+        AppEvidence.Write("sensor." + alias,
+            "Verified the selected installed child's identity and ready state, navigated its Room tile to its read-only page, matched each configured labelled display with the API snapshot, and returned Home. No sensor stimulation, freshness, offline or response-time assertion.",
+            started, started, started);
     }
 }

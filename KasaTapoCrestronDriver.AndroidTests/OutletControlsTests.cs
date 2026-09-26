@@ -16,6 +16,7 @@ public sealed class OutletControlsTests
     [TestCase("basic")]
     public async Task AppPowerControlChangesPhysicalOutletAndRestoresIt(string alias)
     {
+        var started = DateTimeOffset.UtcNow;
         var session = SensorSession.Current!;
         var settings = SensorSession.Settings!;
         if (settings.Outlets == null) Assert.Ignore("No explicitly authorized outlet bindings supplied.");
@@ -102,6 +103,8 @@ public sealed class OutletControlsTests
         await VerifyState(original, baseline, token);
         string title = (await Device(token)).PropertyValues["deviceLabel"].GetString()!;
         await Record("original", new { original, baseline });
+        var originalAt = DateTimeOffset.UtcNow;
+        var actionAt = originalAt;
         bool attempted = false;
         try
         {
@@ -129,6 +132,7 @@ public sealed class OutletControlsTests
             await session.CaptureAsync("outlet." + alias + ".before", guard, token);
             await Record("ui-intent", new { original, requested = !original, baseline });
             attempted = true; SensorSession.PhysicalRestorationConfirmed = false;
+            actionAt = DateTimeOffset.UtcNow;
             await session.Device.TapAsync(selector, guard, token);
             var completed = await Completion(baseline, token);
             await VerifyState(!original, completed, token);
@@ -167,5 +171,9 @@ public sealed class OutletControlsTests
             }
             finally { await RoomNavigation.Restore(target.Room, target.EnergyPage ? title : null, cleanup.Token); }
         }
+        AppEvidence.Write("outlet." + alias,
+            "Verified the selected outlet identity, operated its individual app power control, correlated one completed driver command with two independent physical/API observations and app feedback, restored its original physical state and returned Home. No outage or quantified response-time assertion.",
+            started, originalAt, actionAt,
+            Directory.GetFiles(evidence, "*-original.json").Single(), Directory.GetFiles(evidence, "*-restored.json").Single());
     }
 }
