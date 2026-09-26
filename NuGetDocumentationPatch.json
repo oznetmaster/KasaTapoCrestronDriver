@@ -1,0 +1,8 @@
+{
+  "BaseSha256": "B6D2CFBCB9B3127343CD286BA003BC66CFDA11FFF88BF286CEF84BE0F60B21AA",
+  "ReleaseNotesFile": "NUGET-PATCH-NOTES.md",
+  "ReadmeBaseUrl": "https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/v2.1.2/",
+  "Version": "2.1.3",
+  "Id": "CrestronHomeDriver.TpLink.KasaTapoPlatform",
+  "BaseVersion": "2.1.2"
+}

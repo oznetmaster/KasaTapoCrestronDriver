@@ -3,6 +3,11 @@ name: Release Package
 on:
   workflow_dispatch:
     inputs:
+      documentation_patch:
+        description: Publish only the reviewed NuGet documentation patch; preserve existing runtime binaries and GitHub releases
+        required: false
+        type: boolean
+        default: false
       skip_hardware_checks:
         description: Publish without hardware validation when the processor or local runner is unavailable
         required: false
@@ -25,7 +30,7 @@ permissions:
 jobs:
   build-and-upload-package:
     # Processor-test releases have their own workflow and never publish NuGet packages.
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
+    if: inputs.documentation_patch != true && (github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v'))
     runs-on: windows-latest
     environment: release
     env:
@@ -85,17 +90,12 @@ jobs:
         env:
           RELEASE_BODY: ${{ github.event.release.body }}
         run: |
-          # Reuses the published GitHub Release's description as the NuGet package's release notes, so the
-          # two stay in sync without duplicating the text. Only populated for an actual "release" event;
-          # a manual workflow_dispatch run has no release body, so the NuGet package simply omits notes.
           $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.txt'
-          if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_BODY)) {
-            Set-Content -Path $notesPath -Value $env:RELEASE_BODY -Encoding UTF8 -NoNewline
-            "path=$notesPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          }
-          else {
-            "path=" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          }
+          $notes = $env:RELEASE_BODY
+          if ([string]::IsNullOrWhiteSpace($notes)) { $notes = Get-Content RELEASE-NOTES.md -Raw }
+          if ([string]::IsNullOrWhiteSpace($notes)) { throw 'NuGet release notes are required for every release trigger.' }
+          Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8NoBOM -NoNewline
+          "path=$notesPath" >> $env:GITHUB_OUTPUT
 
       - name: Verify driver version rules
         shell: pwsh
@@ -162,6 +162,10 @@ jobs:
           Set-Content -Path $manifestPath -Value $manifest -Encoding UTF8
 
           dotnet pack KasaTapoCrestronDriver/KasaTapoCrestronDriver.csproj -c Release --no-build --output $outputDir -p:PackageVersion="${{ steps.package_version.outputs.value }}" -p:PackageDriverPkgPath="${{ steps.package.outputs.pkg_path }}" -p:PackageDriverManifestPath="$manifestPath" -p:PackageReleaseNotesFile="${{ steps.release_notes.outputs.path }}"
+          if ($LASTEXITCODE -ne 0) { throw 'NuGet pack failed.' }
+          $packages = @(Get-ChildItem -LiteralPath $outputDir -Filter *.nupkg -File)
+          if ($packages.Count -ne 1) { throw 'Expected exactly one NuGet package.' }
+          ./tools/Test-NuGetDocumentation.ps1 -PackagePath $packages[0].FullName
 
       - name: Locate NuGet package
         id: nuget_package
@@ -208,3 +212,35 @@ jobs:
           tag_name: ${{ github.event.release.tag_name || github.ref_name }}
           files: ${{ steps.package.outputs.pkg_path }}
           fail_on_unmatched_files: true
+
+  nuget-documentation:
+    if: github.event_name == 'workflow_dispatch' && inputs.documentation_patch == true
+    runs-on: windows-latest
+    timeout-minutes: 15
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.401
+      - name: Build and verify documentation-only package
+        shell: pwsh
+        run: ./tools/New-NuGetDocumentationPatch.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-documentation-patch
+          path: artifacts/nuget-documentation/*
+          if-no-files-found: error
+      - uses: NuGet/login@v1
+        id: documentation-login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+      - name: Publish verified NuGet documentation patch
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ steps.documentation-login.outputs.NUGET_API_KEY }}
+        run: |
+          $packages = @(Get-ChildItem artifacts/nuget-documentation -Filter *.nupkg -File)
+          if ($packages.Count -ne 1) { throw 'Expected exactly one verified package.' }
+          dotnet nuget push $packages[0].FullName --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json
+          if ($LASTEXITCODE -ne 0) { throw 'NuGet documentation patch publication failed.' }

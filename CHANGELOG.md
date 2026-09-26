@@ -10,7 +10,7 @@ project follows [Semantic Versioning](https://semver.org/).
 
 This changelog records shipped features, fixes, compatibility and runtime dependency changes. See [development and validation history](DEVELOPMENT-HISTORY.md) for tests, CI, build tooling and work not yet released.
 
-## 2.1.2 - Unreleased
+## 2.1.2 - 2026-09-26
 
 - Use KasaTapoClient 2.0.1 to renew TPAP sessions rejected after a device restarts, allowing automatic recovery without reloading the driver.
 - Keep outlet polling active after a transport request timeout and report the device offline until a subsequent refresh succeeds.

@@ -1,9 +1,9 @@
 # Kasa/Tapo Crestron Driver
 
-For shipped changes, see the [changelog](CHANGELOG.md). Test, CI and build history is recorded separately in [development and validation history](DEVELOPMENT-HISTORY.md).
+For shipped changes, see the [changelog](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/CHANGELOG.md). Test, CI and build history is recorded separately in [development and validation history](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/DEVELOPMENT-HISTORY.md).
 
 
-See the [changelog](CHANGELOG.md) for release history and the [release notes](RELEASE-NOTES.md) for the current driver update. Driver releases are made for runtime fixes or dependency changes; adding tests alone does not require a driver release.
+See the [changelog](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/CHANGELOG.md) for release history and the [release notes](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/RELEASE-NOTES.md) for the current driver update. Driver releases are made for runtime fixes or dependency changes; adding tests alone does not require a driver release.
 
 `KasaTapoCrestronDriver` is a **Crestron Home Entity V2 platform driver** for TP-Link Kasa and Tapo smart home devices. Unlike a single-entity/extension driver that represents one device, this is a **platform driver**: a single instance of it discovers every supported Kasa/Tapo device on the local network, then dynamically creates, publishes, and manages a separate child light entity for each one directly inside Crestron Home. This driver is designed strictly for **local network access** to devices; it does not access Tapo cloud accounts to discover devices, and there are no plans to add cloud-based discovery.
 
@@ -11,7 +11,7 @@ See the [changelog](CHANGELOG.md) for release history and the [release notes](RE
 
 TP-Link, Kasa, and Tapo are trademarks of their respective owners. This project is an independent, unofficial driver and is not affiliated with, endorsed by, or sponsored by TP-Link. Crestron and Crestron Home are trademarks or registered trademarks of Crestron Electronics, Inc. This project is not affiliated with, endorsed by, or sponsored by Crestron Electronics, Inc.
 
-[![License: MIT + Commons Clause](https://img.shields.io/badge/License-MIT%20%2B%20Commons%20Clause-blue.svg)](LICENSE)
+[![License: MIT + Commons Clause](https://img.shields.io/badge/License-MIT%20%2B%20Commons%20Clause-blue.svg)](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/LICENSE)
 
 ---
 
@@ -84,17 +84,17 @@ Neither issue is present in the Crestron Home **Setup** program, which correctly
 
 **Recommended for affected color/tunable-white lights until a Crestron firmware fix is verified.** Enable **Enable Processor Baseline Workaround** and supply **Processor SSH User Name** and **Processor SSH Password** in the platform driver's configuration. These are the Crestron processor's console credentials, not the Tapo device credentials. **Processor SSH Host** can remain blank to use the processor's own address. The workaround remains opt-in and disabled by default because these credentials must be supplied and stored in the driver's configuration; it cannot be enabled automatically without them.
 
-Polling alone does not correct this issue: the driver can report the current color temperature while Crestron retains the wrong active tuning mode. The workaround uses the processor console outside the documented driver SDK; review its [risks and limitations](docs/ProcessorBaselineWorkaround.md#risks-and-limitations) before enabling it.
+Polling alone does not correct this issue: the driver can report the current color temperature while Crestron retains the wrong active tuning mode. The workaround uses the processor console outside the documented driver SDK; review its [risks and limitations](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/docs/ProcessorBaselineWorkaround.md#risks-and-limitations) before enabling it.
 
 **Choose a compatible name when adding the managed light.** The workaround finds the native Crestron light by name. Use the full discovered device name or a unique suffix starting after a space: for example, `Demo Tapo L530` matches `Portincaple Demo Tapo L530`, while `Demo Tapo Light` does not. An unrelated renamed light cannot be matched, even with valid SSH credentials. Verify the name after a driver reload; renaming only the generated native load can be undone when its parent recreates it.
 
 Crestron Home's Entity V2 lighting model documents a `lightTunable:mode` property that a driver is supposed to use to tell the processor whether a tunable light is currently in Color (HSV) or White (color temperature) mode. **In practice, this property has no effect** — the processor maintains its own internal, separate "baseline" and "active" tuning-mode state per light load, neither of which is updated by `lightTunable:mode`. This can cause a full-color/tunable-white bulb to briefly flash the wrong color or mode immediately after being turned on, and — because the Crestron Home UI reads the processor's "active" tuning mode when first rendering a light's tile/detail page — it can also cause the **UI itself to initialize with the wrong mode/controls** (e.g. showing color controls for a bulb that is actually in white/CT mode, or vice versa) until the mismatch is corrected.
 
-Crestron has been made aware of this behavior (see [`CRESTRON_HOME_TUNING_MODE_DEFECT.md`](CRESTRON_HOME_TUNING_MODE_DEFECT.md) for the full original defect report, reproduction steps, and processor-level evidence) and has acknowledged awareness of the issue for some time, but **no fix has been released as of this writing**.
+Crestron has been made aware of this behavior (see [`CRESTRON_HOME_TUNING_MODE_DEFECT.md`](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/CRESTRON_HOME_TUNING_MODE_DEFECT.md) for the full original defect report, reproduction steps, and processor-level evidence) and has acknowledged awareness of the issue for some time, but **no fix has been released as of this writing**.
 
 This driver includes an **optional, disabled-by-default** workaround (`ProcessorBaselineCoordinator`) that connects to the Crestron Home processor's own console over SSH and issues the same corrective commands a person would otherwise have to type by hand, to force the processor's internal baseline back in sync with what the driver actually wants to display. It is intentionally an unusual, "outside the documented SDK surface" fix — because the documented SDK surface currently provides no supported way to solve this problem at all. Once Crestron ships a real fix for `lightTunable:mode`, this workaround will be removed and the driver will rely on the documented property instead, as originally designed.
 
-Full details — root cause, exactly how the workaround operates, its configuration, and its risks/limitations — are in [`docs/ProcessorBaselineWorkaround.md`](docs/ProcessorBaselineWorkaround.md).
+Full details — root cause, exactly how the workaround operates, its configuration, and its risks/limitations — are in [`docs/ProcessorBaselineWorkaround.md`](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/docs/ProcessorBaselineWorkaround.md).
 
 ---
 
@@ -145,7 +145,7 @@ A single instance of this driver manages all discovered Kasa/Tapo devices — yo
 
 ### GitHub Release Asset
 
-This repository includes a GitHub Actions workflow ([`.github/workflows/release-package.yml`](.github/workflows/release-package.yml)) that builds the Release package and attaches the generated `.pkg` to a GitHub Release.
+This repository includes a GitHub Actions workflow ([`.github/workflows/release-package.yml`](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/.github/workflows/release-package.yml)) that builds the Release package and attaches the generated `.pkg` to a GitHub Release.
 
 For production `v*` tags, the same release workflow also publishes the `CrestronHomeDriver.TpLink.KasaTapoPlatform` NuGet package, which wraps the final generated `.pkg` artifact.
 
@@ -160,7 +160,7 @@ Typical **production driver** release flow:
 
 ## Release Notes
 
-See [CHANGELOG.md](CHANGELOG.md) for a summary of all release history, or the [GitHub releases](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases) page for full per-version details and build assets.
+See [CHANGELOG.md](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/CHANGELOG.md) for a summary of all release history, or the [GitHub releases](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases) page for full per-version details and build assets.
 
 ## Help and support
 
@@ -173,13 +173,13 @@ Use the [support form](https://oznetmaster.github.io/support/) to contact Neil C
 ## Repository Notes
 
 - The repository includes the driver package/build scripts needed for packaging and deployment.
-- [`docs/ProcessorBaselineWorkaround.md`](docs/ProcessorBaselineWorkaround.md) and [`CRESTRON_HOME_TUNING_MODE_DEFECT.md`](CRESTRON_HOME_TUNING_MODE_DEFECT.md) document a known Crestron Home platform limitation and this driver's optional workaround for it.
+- [`docs/ProcessorBaselineWorkaround.md`](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/docs/ProcessorBaselineWorkaround.md) and [`CRESTRON_HOME_TUNING_MODE_DEFECT.md`](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/CRESTRON_HOME_TUNING_MODE_DEFECT.md) document a known Crestron Home platform limitation and this driver's optional workaround for it.
 
 ---
 
 ## License
 
-MIT + Commons Clause © 2026 Neil Colvin — see [LICENSE](LICENSE).
+MIT + Commons Clause © 2026 Neil Colvin — see [LICENSE](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/LICENSE).
 
 Free to use and modify. You may not sell the Software as a standalone product or sublicense it.
 Commercial system integration work (for example, a Crestron installer commissioning a customer system) is explicitly permitted, even where a fee is charged for that service.
@@ -194,12 +194,12 @@ This driver communicates with TP-Link Kasa and Tapo devices using the independen
 
 > **Note:** This project references [Crestron.DeviceDrivers.DevKit](https://www.nuget.org/packages/Crestron.DeviceDrivers.DevKit),
 > which is subject to Crestron's SDK license agreement. That license governs the SDK libraries only;
-> the source code in this repository is licensed independently under the terms in [LICENSE](LICENSE).
+> the source code in this repository is licensed independently under the terms in [LICENSE](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/LICENSE).
 ## NUnit tests and processor validation
 
-The test projects use NUnit 4.6.1, NUnit3TestAdapter 6.3.0, Microsoft.NET.Test.Sdk 18.10.1 and NUnit.Analyzers 4.15.0. The workflow project uses CrestronHomeNUnit.TestAdapter 1.12.1. See the [test README](KasaTapoCrestronDriver.Tests/README.md) for local commands and live-test configuration. The `net472` project includes 34 ordinary tests and 47 processor lifecycle cases; the desktop lifecycle project runs those 47 cases with the desktop-compatible SDK. The repository `.runsettings` excludes the `Processor` category on Windows.
+The test projects use NUnit 4.6.1, NUnit3TestAdapter 6.3.0, Microsoft.NET.Test.Sdk 18.10.1 and NUnit.Analyzers 4.15.0. The workflow project uses CrestronHomeNUnit.TestAdapter 1.12.1. See the [test README](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.Tests/README.md) for local commands and live-test configuration. The `net472` project includes 34 ordinary tests and 47 processor lifecycle cases; the desktop lifecycle project runs those 47 cases with the desktop-compatible SDK. The repository `.runsettings` excludes the `Processor` category on Windows.
 
-Build **KasaTapoCrestronDriver.ProcessorTests** in the existing solution to create the separate **Utility / KasaTapoCrestronDriver Tests** package. It runs the shared tests against the real driver and SDK on the processor, using simulated responses without operating live devices. Deployment settings and machine paths remain locally excluded. See [processor test instructions](KasaTapoCrestronDriver.ProcessorTests/README.md).
+Build **KasaTapoCrestronDriver.ProcessorTests** in the existing solution to create the separate **Utility / KasaTapoCrestronDriver Tests** package. It runs the shared tests against the real driver and SDK on the processor, using simulated responses without operating live devices. Deployment settings and machine paths remain locally excluded. See [processor test instructions](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.ProcessorTests/README.md).
 
 
 ### Test-package releases
@@ -208,7 +208,7 @@ Download `KasaTapoCrestronDriver.ProcessorTests.pkg` from a release titled **Kas
 
 The **Release processor tests** workflow takes an independent test-package version, for example `1.0.0`, and publishes a `processor-tests-v1.0.0` tag. Its assets include the test `.pkg`, exact source revisions, documentation and SHA-256 checksums. It builds only the processor package and its test dependencies, validates all 34 ordinary tests and the 47 desktop lifecycle tests, and validates merged package discovery. Running the 47 lifecycle tests against the processor SDK requires a processor.
 
-This workflow never packs or publishes to NuGet and does not bump the production driver version. The production release workflow ignores test-package releases, and test releases do not replace the latest production release. NUnit 4.6.1 and NUnit3TestAdapter replace MSTest in both test projects. See [test-package third-party notices](KasaTapoCrestronDriver.ProcessorTests/THIRD-PARTY-NOTICES.md) for redistributed dependencies.
+This workflow never packs or publishes to NuGet and does not bump the production driver version. The production release workflow ignores test-package releases, and test releases do not replace the latest production release. NUnit 4.6.1 and NUnit3TestAdapter replace MSTest in both test projects. See [test-package third-party notices](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.ProcessorTests/THIRD-PARTY-NOTICES.md) for redistributed dependencies.
 
 
 ### Expanded driver behavior tests
@@ -240,7 +240,7 @@ Deployment validation compares the exact built `.pkg` against the imported catal
 
 Run `pwsh -File tools/Test-DriverVersioning.ps1` to check these rules with temporary manifests; this does not change the working driver manifest or deploy anything.
 
-See [versioning details](docs/Versioning.md) for build, release and installed-instance verification rules.
+See [versioning details](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/docs/Versioning.md) for build, release and installed-instance verification rules.
 ### Desktop SDK dependency in CI
 
 The SDK's desktop manifest reader needs its `Newtonsoft.Json.Compact.dll` runtime dependency. Obtain the complete `Crestron.DeviceDrivers.ManifestUtil` 29.0.10 package from NuGet and set the `CompactJsonPath` MSBuild property (or private `DesktopTest.Local.props`) to `tools/net8.0/any/Newtonsoft.Json.Compact.dll` inside that package. CI downloads and verifies this public dependency; no maintainer-only secret is required. The desktop SDK dependency is not included in the processor package.
@@ -250,7 +250,7 @@ For automated local tests, processor tests and gated driver deployment, see the 
 
 ## Visual Studio processor workflow
 
-The solution includes [KasaTapoCrestronDriver.WorkflowTests](KasaTapoCrestronDriver.WorkflowTests/README.md), using the published Crestron Home Test Adapter. It exposes the complete gated workflow in Test Explorer while the ordinary NUnit fixtures remain available for local testing. Configure its private settings before execution; hosted CI verifies discovery without accessing hardware.
+The solution includes [KasaTapoCrestronDriver.WorkflowTests](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.WorkflowTests/README.md), using the published Crestron Home Test Adapter. It exposes the complete gated workflow in Test Explorer while the ordinary NUnit fixtures remain available for local testing. Configure its private settings before execution; hosted CI verifies discovery without accessing hardware.
 
 ## Publishing when local hardware is unavailable
 
@@ -261,6 +261,6 @@ GitHub-hosted validation remains mandatory for the checked-out source, and the n
 
 ## Installed-driver control testing
 
-The [read-only control probe](KasaTapoCrestronDriver.ControlProbe/README.md) supports optional workflow tests that operate a selected installed outlet, verify its physical state independently, and restore it. Private device selection and credentials remain local. These controls are opt-in and are not enabled by the ordinary automatic processor-test plans.
+The [read-only control probe](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.ControlProbe/README.md) supports optional workflow tests that operate a selected installed outlet, verify its physical state independently, and restore it. Private device selection and credentials remain local. These controls are opt-in and are not enabled by the ordinary automatic processor-test plans.
 
-The separate [Android app fixtures](KasaTapoCrestronDriver.AndroidTests/README.md) check sensor displays and explicitly selected outlet/native-light controls through the Crestron Home app. They run on a Windows worker using the public NUnit workflow and restore the selected devices and app afterward.
+The separate [Android app fixtures](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.AndroidTests/README.md) check sensor displays and explicitly selected outlet/native-light controls through the Crestron Home app. They run on a Windows worker using the public NUnit workflow and restore the selected devices and app afterward.
