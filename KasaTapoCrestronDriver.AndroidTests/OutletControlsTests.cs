@@ -86,14 +86,14 @@ public sealed class OutletControlsTests
                 if (matches < 2) await Task.Delay(500, ct);
             }
         }
-        async Task<Activity> Completion(Activity before, CancellationToken ct)
+        async Task<Activity> Completion(Activity before, CancellationToken ct, int commands = 1)
         {
             while (true)
             {
                 var now = await Idle(ct);
-                if (now.Epoch != before.Epoch || now.Completed < before.Completed || now.Completed > before.Completed + 1)
+                if (now.Epoch != before.Epoch || now.Completed < before.Completed || now.Completed > before.Completed + commands)
                     throw new InvalidOperationException("Command attribution changed.");
-                if (now.Completed == before.Completed + 1) return now;
+                if (now.Completed == before.Completed + commands) return now;
                 await Task.Delay(250, ct);
             }
         }
@@ -106,6 +106,7 @@ public sealed class OutletControlsTests
         var originalAt = DateTimeOffset.UtcNow;
         var actionAt = originalAt;
         bool attempted = false;
+        int intendedCommands = 0;
         try
         {
             await RoomNavigation.Open(target.Room, token);
@@ -116,11 +117,7 @@ public sealed class OutletControlsTests
                 var dots = new AndroidSelector(AndroidSelectorKind.ResourceId, RoomNavigation.Prefix + "serviceDots") { SiblingText = target.Name };
                 await session.Device.TapAsync(dots, h => RoomNavigation.RequireVisibleRoomControl(h, target.Room, dots), token);
                 selector = CrestronHomePages.Resource("customdevicetoggle_switch");
-                guard = h => {
-                    CrestronHomePages.RequireExtensionPage(h, title);
-                    if ((string?)RoomNavigation.Node(h, "customdevicetoggle_switch").Attribute("checked") != original.ToString().ToLowerInvariant())
-                        throw new InvalidDataException("App's initial power state differs.");
-                };
+                guard = h => CrestronHomePages.RequireExtensionPage(h, title);
             }
             else
             {
@@ -129,25 +126,67 @@ public sealed class OutletControlsTests
                 guard = h => RoomNavigation.RequireVisibleRoomControl(h, target.Room, selector);
             }
             if (await Idle(token) != baseline) throw new InvalidOperationException("Activity changed before input.");
-            await session.CaptureAsync("outlet." + alias + ".before", guard, token);
+            void RequirePower(AndroidHierarchy h, bool expected)
+            {
+                guard(h);
+                if (target.EnergyPage)
+                    Assert.That((string?)RoomNavigation.Node(h, "customdevicetoggle_switch").Attribute("checked"), Is.EqualTo(expected.ToString().ToLowerInvariant()));
+                else
+                    Assert.That(h.RequireUnique(new(AndroidSelectorKind.ResourceId, RoomNavigation.Prefix + "serviceSubtitle") { SiblingText = target.Name }).Text,
+                        Is.EqualTo(expected ? "ON" : "OFF").IgnoreCase);
+            }
+            await session.CaptureAsync("outlet." + alias + ".before", h => {
+                RequirePower(h, original);
+                if (target.EnergyPage)
+                {
+                    // Verify the complete displayed inventory. Values may change between
+                    // polling and screen capture; this is not an exact telemetry comparison.
+                    foreach (string label in new[] { "Current Power (W)", "Voltage (V)", "Current (A)", "Today (kWh)", "This Month (kWh)", "Total (kWh)" })
+                    {
+                        var row = h.RequireUnique(new(AndroidSelectorKind.ResourceId, RoomNavigation.Prefix + "customdevice_textdisplay_firstlinetext") { SiblingText = label });
+                        Assert.That(double.TryParse(row.Text, System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double value) && double.IsFinite(value), Is.True, label);
+                    }
+                }
+            }, token);
             await Record("ui-intent", new { original, requested = !original, baseline });
             attempted = true; SensorSession.PhysicalRestorationConfirmed = false;
             actionAt = DateTimeOffset.UtcNow;
+            intendedCommands++;
             await session.Device.TapAsync(selector, guard, token);
             var completed = await Completion(baseline, token);
             await VerifyState(!original, completed, token);
-            await session.CaptureAsync("outlet." + alias + ".changed", h => {
-                if (target.EnergyPage)
-                {
-                    CrestronHomePages.RequireExtensionPage(h, title);
-                    Assert.That((string?)RoomNavigation.Node(h, "customdevicetoggle_switch").Attribute("checked"), Is.EqualTo((!original).ToString().ToLowerInvariant()));
-                }
-                else {
-                    CrestronHomePages.RequireRoom(h, target.Room);
-                    Assert.That(h.RequireUnique(new(AndroidSelectorKind.ResourceId, RoomNavigation.Prefix + "serviceSubtitle") { SiblingText = target.Name }).Text,
-                        Is.EqualTo(!original ? "ON" : "OFF").IgnoreCase);
-                }
-            }, token);
+            await session.CaptureAsync("outlet." + alias + ".changed", h => RequirePower(h, !original), token);
+            await Record("ui-return-intent", new { requested = original, completed });
+            intendedCommands++;
+            await session.Device.TapAsync(selector, guard, token);
+            completed = await Completion(baseline, token, intendedCommands);
+            await VerifyState(original, completed, token);
+            await session.CaptureAsync("outlet." + alias + ".returned", h => RequirePower(h, original), token);
+
+            // Guard the stable page once, then use its exact observed coordinates.
+            // A full hierarchy capture between presses takes several seconds and
+            // would turn this into another slow sequence instead of a short burst.
+            var burstPage = await session.Device.CaptureAsync(token);
+            RequirePower(burstPage, original);
+            var burstControl = burstPage.RequireUnique(selector);
+            if (burstControl.Right <= burstControl.Left || burstControl.Bottom <= burstControl.Top || burstControl.Left < 0 || burstControl.Top < 0)
+                throw new InvalidDataException("Unusable observed burst control.");
+            string x = ((burstControl.Left + burstControl.Right) / 2).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            string y = ((burstControl.Top + burstControl.Bottom) / 2).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var profile = session.Context.Profile;
+            var transport = new AdbCommandTransport(profile.AdbExecutable, profile.DeviceSerial, TimeSpan.FromSeconds(25));
+            var burstStarted = DateTimeOffset.UtcNow;
+            for (int index = 0; index < 3; index++)
+            {
+                await Record("burst-intent", new { index, expectedCompleted = baseline.Completed + intendedCommands + 1 });
+                intendedCommands++;
+                await transport.ExecuteAsync(["shell", "input", "tap", x, y], token);
+            }
+            await Record("burst-sent", new { burstStarted, burstFinished = DateTimeOffset.UtcNow, presses = 3 });
+            completed = await Completion(baseline, token, intendedCommands);
+            await VerifyState(!original, completed, token);
+            await session.CaptureAsync("outlet." + alias + ".burst-result", h => RequirePower(h, !original), token);
         }
         finally
         {
@@ -156,10 +195,7 @@ public sealed class OutletControlsTests
             {
                 if (attempted)
                 {
-                    var current = await Idle(cleanup.Token);
-                    if (current == baseline) current = await Completion(baseline, cleanup.Token);
-                    if (current.Epoch != baseline.Epoch || current.Completed < baseline.Completed || current.Completed > baseline.Completed + 1)
-                        throw new InvalidOperationException("Concurrent changes prevent automatic restoration.");
+                    var current = await Completion(baseline, cleanup.Token, intendedCommands);
                     // Wait for the submitted UI operation before issuing the absolute restore.
                     await Record("restore-intent", new { original, current });
                     await SensorSession.Api!.ExecuteDeviceCommandAsync(target.DeviceId, original ? "outletOn" : "outletOff", null, cleanup.Token);
@@ -172,7 +208,7 @@ public sealed class OutletControlsTests
             finally { await RoomNavigation.Restore(target.Room, target.EnergyPage ? title : null, cleanup.Token); }
         }
         AppEvidence.Write("outlet." + alias,
-            "Verified the selected outlet identity, operated its individual app power control, correlated one completed driver command with two independent physical/API observations and app feedback, restored its original physical state and returned Home. No outage or quantified response-time assertion.",
+            "Verified the selected outlet identity and displayed control inventory, operated the individual app power control and its return, then sent three further guarded presses without waiting for acknowledgements. Correlated the exact completed command count with two independent physical/API observations and app feedback after each sequence, restored its original physical state and returned Home. Burst timestamps are retained; no fixed tap rate, outage, telemetry accuracy or quantified response-time assertion.",
             started, originalAt, actionAt,
             Directory.GetFiles(evidence, "*-original.json").Single(), Directory.GetFiles(evidence, "*-restored.json").Single());
     }
