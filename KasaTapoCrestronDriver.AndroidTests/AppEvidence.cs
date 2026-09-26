@@ -44,7 +44,10 @@ internal static class AppEvidence
         Validate(identity, context);
         if (!physicallyRestored)
             throw new InvalidOperationException("Cannot emit passed evidence before physical restoration.");
-        if (scope is not ("sensor.temperature" or "sensor.motion" or "sensor.button" or "outlet.energy" or "outlet.basic" or "native-light" or "configuration.platform" or
+        string[] parts = scope.Split('.');
+        bool sensorDetail = parts.Length == 3 && parts[0] == "sensor" &&
+            parts[1] is "temperature" or "motion" or "button" && parts[2] is "tile" or "navigation" or "close" or "display";
+        if (!sensorDetail && scope is not ("sensor.temperature" or "sensor.motion" or "sensor.button" or "outlet.energy" or "outlet.basic" or "native-light" or "configuration.platform" or
             "configuration.catalogue" or "configuration.connection" or "configuration.attributes" or "configuration.installation"))
             throw new InvalidDataException("Unknown app assertion scope.");
         string root = context.EvidenceDirectory;

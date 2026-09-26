@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Neil Colvin. Licensed under the MIT License with Commons Clause.
 using System.Net;
 using System.Text.Json;
+using System.Xml.Linq;
 using CrestronHomeDevTools;
 using CrestronHomeNUnit.Android;
 using NUnit.Framework;
@@ -110,18 +111,40 @@ public sealed class SensorPagesTests
         string title = device.PropertyValues["deviceLabel"].GetString() ?? throw new InvalidDataException("Sensor label missing.");
         var values = target.DisplayProperties.ToDictionary(p => p, p => device.PropertyValues[p].GetString()!);
         Assert.That(values.Values.All(v => !string.IsNullOrWhiteSpace(v)), Is.True);
-        // These pages only display telemetry. Never use this navigation on a tile that toggles a load.
-        await SensorSession.Navigation!.InspectRoomExtensionAsync("sensor." + alias, target.Room, target.Name, title, hierarchy =>
+        string Label(string property) => property switch
         {
+            "temperatureDisplay" => "Temperature", "humidityDisplay" => "Humidity",
+            "batteryStatusLabel" => "Battery", "motionStatusLabel" => "Motion",
+            "lastGestureLabel" => "Last Press", "lastTriggerTimeDisplay" => "Last Press Time",
+            _ => throw new InvalidDataException("Unsupported sensor row.")
+        };
+        // Verify the selected hardware's conditional rows, not just a caller-selected
+        // subset of its display. Unsupported sensor types need separate hardware.
+        var defined = alias == "button"
+            ? new[] { ("lastGestureLabel", ""), ("lastTriggerTimeDisplay", ""), ("batteryStatusLabel", "hasBattery") }
+            : new[] { ("leakStatusLabel", "hasLeak"), ("motionStatusLabel", "hasMotion"),
+                ("contactStatusLabel", "hasContact"), ("temperatureDisplay", "hasTemperature"),
+                ("humidityDisplay", "hasHumidity"), ("batteryStatusLabel", "hasBattery") };
+        var expectedProperties = defined.Where(p => p.Item2 == "" || device.PropertyValues[p.Item2].GetBoolean())
+            .Select(p => p.Item1).ToArray();
+        Assert.That(target.DisplayProperties, Is.EquivalentTo(expectedProperties), "Complete selected sensor display binding");
+        // These tiles only open telemetry pages. Never use this path for load tiles.
+        await RoomNavigation.Open(target.Room, token);
+        await RoomNavigation.RevealTile(target.Room, target.Name, token);
+        await session.CaptureAsync("sensor." + alias + ".room-tile",
+            h => RoomNavigation.InspectTile(h, target.Room, target.Name, false), token);
+        await session.Device.TapAsync(RoomNavigation.Tile(target.Name),
+            h => RoomNavigation.InspectTile(h, target.Room, target.Name, false), token);
+        await session.CaptureAsync("sensor." + alias + ".controls", hierarchy =>
+        {
+            CrestronHomePages.RequireExtensionPage(hierarchy, title);
+            var rows = XDocument.Parse(hierarchy.MaskedXml).Descendants("node").Where(n =>
+                (string?)n.Attribute("package") == "com.crestron.phoenix.app" &&
+                (string?)n.Attribute("resource-id") == CrestronHomePages.ResourcePrefix + "customdevice_textdisplay_firstlinetext").ToArray();
+            Assert.That(rows, Has.Length.EqualTo(values.Count), "No missing or extra conditional display rows");
             foreach (var pair in values)
             {
-                string label = pair.Key switch
-                {
-                    "temperatureDisplay" => "Temperature", "humidityDisplay" => "Humidity",
-                    "batteryStatusLabel" => "Battery", "motionStatusLabel" => "Motion",
-                    "lastGestureLabel" => "Last Press", "lastTriggerTimeDisplay" => "Last Press Time",
-                    _ => throw new InvalidDataException("Unsupported sensor row.")
-                };
+                string label = Label(pair.Key);
                 var row = hierarchy.RequireUnique(new AndroidSelector(AndroidSelectorKind.ResourceId,
                     CrestronHomePages.ResourcePrefix + "customdevice_textdisplay_firstlinetext") { SiblingText = label });
                 // The app capitalizes status values. Keep the value bound to its
@@ -129,12 +152,21 @@ public sealed class SensorPagesTests
                 Assert.That(row.Text, Is.EqualTo(pair.Value).IgnoreCase, label);
             }
         }, token);
+        await session.Device.TapAsync(CrestronHomePages.Resource("customdevices_toolbarClose"),
+            h => CrestronHomePages.RequireExtensionPage(h, title), token);
+        await session.CaptureAsync("sensor." + alias + ".room-returned", h => CrestronHomePages.RequireRoom(h, target.Room), token);
+        await RoomNavigation.Restore(target.Room, title, token);
         string report = Path.Combine(session.Context.EvidenceDirectory, "sensor-" + alias + "-api.json");
         await using (var file = new FileStream(report, FileMode.CreateNew, FileAccess.Write))
             await JsonSerializer.SerializeAsync(file, new { DeviceId = id, target.Model, target.Name, Values = values, ObservedUtc = DateTimeOffset.UtcNow }, cancellationToken: token);
-        Assert.That(SensorSession.Navigation.HomeRestored, Is.True);
         AppEvidence.Write("sensor." + alias,
-            "Verified the selected installed child's identity and ready state, navigated its Room tile to its read-only page, matched each configured labelled display with the API snapshot, and returned Home. No sensor stimulation, freshness, offline or response-time assertion.",
+            "Verified the selected installed child's identity and ready state, its unobscured Room tile title, icon presence and absence of ellipsis; tapped the tile to open the expected read-only page; checked all conditional display rows for the selected sensor against the API snapshot; closed to the same Room and returned Home. No icon glyph, sensor stimulation, freshness, offline or response-time assertion.",
             started, started, started);
+        foreach (var assertion in new[] {
+            ("tile", "Unobscured Room tile has the expected title, an icon and no ellipsis. Icon glyph correctness is not asserted."),
+            ("navigation", "Pressing the selected read-only Room tile opens its expected default detail page."),
+            ("close", "Closing the detail page returns to the same Room, followed by a verified return Home."),
+            ("display", "All conditional display rows for this selected sensor are present with their labelled API values; no extra display rows. No physical sensor stimulus or unsupported sensor variant asserted.") })
+            AppEvidence.Write("sensor." + alias + "." + assertion.Item1, assertion.Item2, started, started, started);
     }
 }
