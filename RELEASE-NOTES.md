@@ -5,6 +5,7 @@ Adds packaged user help with illustrated installation and operation instructions
 - The package and driver DLL now use the descriptive filename `NeilColvin_Platform_KasaTapo_IP_V2`; the driver identity and existing device controls are unchanged.
 - Cached children register during startup and retain separate parent and child identities after reload, without waiting for fresh network discovery.
 - Outlet transport timeouts report offline status without stopping subsequent polling and recovery attempts.
+- Outlet, sensor and button connection changes now update the standard availability interfaces used by Crestron Home, alongside their existing extension properties.
 - The package includes the matching help PDF and third-party license notices. The support website is also included in the driver metadata.
 - KasaTapoClient remains at 2.0.0 and Crestron.DeviceDrivers.DevKit at 29.0.10. This release does not change the device protocol or require new physical-device settings.
 

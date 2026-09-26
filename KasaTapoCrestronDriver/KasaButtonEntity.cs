@@ -79,6 +79,14 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 		private set => SetAndNotify ("deviceLabel", value, ref field);
 		} = string.Empty;
 
+	// Crestron Home observes these standard interfaces for tile availability.
+	// Keep the original extension properties for existing bindings.
+	[EntityProperty (Id = "onlineIndicator:isOnline")]
+	public bool StandardOnlineIndicatorIsOnline => OnlineIndicatorIsOnline;
+
+	[EntityProperty (Id = "readyIndicator:isReady")]
+	public bool StandardReadyIndicatorIsReady => ReadyIndicatorIsReady;
+
 	[EntityProperty (Id = "onlineIndicatorIsOnline")]
 	[EntityPropertyMetadata (ExtensionUiProperty = true)]
 	public bool OnlineIndicatorIsOnline
@@ -808,6 +816,10 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 	private void PublishProperty (string propertyId, DriverEntityValue value, string context)
 		{
 		NotifyPropertyChanged (propertyId, DriverEntityValueUpdate.Create (value));
+		if (propertyId == "onlineIndicatorIsOnline")
+			NotifyPropertyChanged ("onlineIndicator:isOnline", DriverEntityValueUpdate.Create (value));
+		else if (propertyId == "readyIndicatorIsReady")
+			NotifyPropertyChanged ("readyIndicator:isReady", DriverEntityValueUpdate.Create (value));
 		}
 
 	private void SetAndNotify (string propertyId, bool value, ref bool field)

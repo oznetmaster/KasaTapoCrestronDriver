@@ -39,7 +39,7 @@ public sealed class OutletRefreshFailureTests
         var resources = new DriverImplementationResources { Logger = logger, InitLogger = logger.GetComponentLogger("test", "outlet") };
         var descriptor = new ManagedLightDescriptor("fixture-outlet", "127.0.0.1", device.DeviceType,
             "Fixture plug", "HS100", "fixture-plug", ManagedLightKind.Dimmable);
-        using var outlet = new KasaOutletEntity("fixture-outlet", descriptor, device.Configuration, null, settings, resources, null!, "outlet-failure-test");
+        using var outlet = new KasaOutletEntity("fixture-outlet", descriptor, device.Configuration, null, settings, resources, null!, "outlet-failure-test", DriverTestPaths.DataDirectory);
         Assert.That(outlet.TryAttachConnectedDevice(device, "fixture"), Is.True);
         await outlet.SetConfiguredAsync(true, "fixture", default);
         var changes = new Dictionary<string, DriverEntityValue>();
@@ -50,16 +50,18 @@ public sealed class OutletRefreshFailureTests
         outlet.PublishStateSnapshot();
         Assert.That(outlet.OnlineIndicatorIsOnline, Is.False);
         Assert.That(changes["onlineIndicatorIsOnline"].GetValue<bool>(), Is.False);
+        Assert.That(changes.ContainsKey("onlineIndicator:isOnline"), Is.True, "Crestron Home consumes the standard availability interface.");
+        Assert.That(changes["onlineIndicator:isOnline"].GetValue<bool>(), Is.False);
+        Assert.That(outlet.GetState().PropertyValues["readyIndicator:isReady"].GetValue<bool>(), Is.False);
 
         transport.Failure = null;
         await outlet.RefreshAsync(default);
         outlet.PublishStateSnapshot();
         Assert.That(changes["onlineIndicatorIsOnline"].GetValue<bool>(), Is.True);
+        Assert.That(changes["onlineIndicator:isOnline"].GetValue<bool>(), Is.True);
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
         Assert.That(async () => await outlet.RefreshAsync(cancelled.Token), Throws.InstanceOf<OperationCanceledException>());
         Assert.That(outlet.OnlineIndicatorIsOnline, Is.True, "Caller cancellation must not manufacture an outage.");
     }
 }
-
-
