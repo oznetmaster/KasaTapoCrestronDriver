@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Neil Colvin. See LICENSE in the repository root.
 using System.Text.Json;
+using System.Diagnostics;
 using CrestronHomeDevTools;
 using CrestronHomeNUnit.Android;
 using KasaTapoClient;
@@ -139,13 +140,41 @@ public sealed class OutletControlsTests
                         System.Globalization.CultureInfo.InvariantCulture, out double value) && double.IsFinite(value), Is.True, label);
                 }
             }
+            async Task<Activity> TimedTap(bool expectedOn)
+            {
+                long inputStart = 0;
+                DateTimeOffset inputUtc = default;
+                await session.Device.TapAsync(selector, h =>
+                {
+                    guard(h);
+                    // Exclude the pre-input page capture, while preserving
+                    // the existing guarded input and command attribution.
+                    inputUtc = DateTimeOffset.UtcNow;
+                    inputStart = Stopwatch.GetTimestamp();
+                }, token);
+                long inputReturned = Stopwatch.GetTimestamp();
+                var done = await Completion(baseline, token, intendedCommands);
+                long completionObserved = Stopwatch.GetTimestamp();
+                await Record("command-response", new
+                {
+                    Control = onDetailPage ? "detail-power" : "room-tile",
+                    ExpectedOn = expectedOn,
+                    InputGuardCompletedUtc = inputUtc,
+                    CompletionObservedUtc = DateTimeOffset.UtcNow,
+                    InputTransportMilliseconds = Stopwatch.GetElapsedTime(inputStart, inputReturned).TotalMilliseconds,
+                    CommandCompletionObservedMilliseconds = Stopwatch.GetElapsedTime(inputStart, completionObserved).TotalMilliseconds,
+                    ExpectedCompleted = baseline.Completed + intendedCommands,
+                    Observed = done,
+                    Method = "Monotonic time from validated input guard to attributed command completion observed through the configuration API; includes ADB transport and API polling. Not physical relay or visible UI latency."
+                });
+                return done;
+            }
             await session.CaptureAsync("outlet." + alias + ".before", h => RequirePower(h, original), token);
             await Record("ui-intent", new { original, requested = !original, baseline });
             attempted = true; SensorSession.PhysicalRestorationConfirmed = false;
             actionAt = DateTimeOffset.UtcNow;
             intendedCommands++;
-            await session.Device.TapAsync(selector, guard, token);
-            var completed = await Completion(baseline, token);
+            var completed = await TimedTap(!original);
             await VerifyState(!original, completed, token);
             await session.CaptureAsync("outlet." + alias + ".changed", h => RequirePower(h, !original), token);
             if (target.EnergyPage)
@@ -159,8 +188,7 @@ public sealed class OutletControlsTests
             }
             await Record("ui-return-intent", new { requested = original, completed });
             intendedCommands++;
-            await session.Device.TapAsync(selector, guard, token);
-            completed = await Completion(baseline, token, intendedCommands);
+            completed = await TimedTap(original);
             await VerifyState(original, completed, token);
             await session.CaptureAsync("outlet." + alias + ".returned", h => RequirePower(h, original), token);
 

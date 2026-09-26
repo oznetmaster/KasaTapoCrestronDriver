@@ -6,6 +6,19 @@ Build with the .NET 10 SDK and the public package references in this project. In
 
 Build from the repository checkout: the fixture embeds the adjacent driver JSON as its expected configuration definition. Preserve the repository's build-output exclusions when preparing an isolated checkout; generated `bin`/`obj` files must not become source changes during a run.
 
+Outlet fixtures retain two `command-response` journal records per case: the first
+individual action and its return. A monotonic clock measures from completion of
+the input page guard to observation of the exact attributed command completion.
+The records separate input transport duration from total observed completion
+duration and identify the control, requested state and driver command epoch/count.
+They add no device commands. Compare matching controls and requested states across
+initial and later runs; retain the original records from both phases. These are
+observer upper bounds including ADB transport and API polling, not exact relay
+latency or app-feedback latency. They do not automatically assert unchanged
+response time, establish a numeric acceptance threshold or turn a shortened run
+into a full endurance test. Physical restoration and app-feedback checks remain
+independent of these measurements.
+
 Provide a private `app-fixture-settings.json` beside the stage directory. For DevTools automation, use the documented `InstalledAppFixtureSettings` object; the coordinator freezes and stages that input. Do not commit device IDs, credential files or deployment selections.
 
 The settings contain:
