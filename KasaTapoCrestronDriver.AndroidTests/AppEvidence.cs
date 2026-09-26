@@ -44,7 +44,7 @@ internal static class AppEvidence
         Validate(identity, context);
         if (!physicallyRestored)
             throw new InvalidOperationException("Cannot emit passed evidence before physical restoration.");
-        if (scope is not ("sensor.temperature" or "sensor.motion" or "sensor.button" or "outlet.energy" or "outlet.basic" or "native-light"))
+        if (scope is not ("sensor.temperature" or "sensor.motion" or "sensor.button" or "outlet.energy" or "outlet.basic" or "native-light" or "configuration.platform"))
             throw new InvalidDataException("Unknown app assertion scope.");
         string root = context.EvidenceDirectory;
         string stage = Directory.GetParent(root)!.Name;
@@ -78,7 +78,8 @@ internal static class AppEvidence
             restoration = new(originalAt, actionAt, finished, finished, true, Reference(originalFile), Reference(restoredFile));
         }
         var observation = new SubmissionObservation("kasa.app." + scope, identity, SubmissionEvidenceOutcome.Passed,
-            started, finished, files, rationale, new SubmissionExecutionObservation("$kasa." + scope, "android", Restoration: restoration));
+            started, finished, files, rationale, new SubmissionExecutionObservation("$kasa." + scope,
+                scope.StartsWith("configuration.", StringComparison.Ordinal) ? "configuration" : "android", Restoration: restoration));
         using var output = new FileStream(Path.Combine(root, "kasa-" + scope + "-observations.json"), FileMode.CreateNew);
         JsonSerializer.Serialize(output, new SubmissionEvidenceDocument(1, [observation]), Json);
     }

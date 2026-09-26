@@ -15,7 +15,7 @@ public sealed record LightTarget(int DeviceId, int WrapperId, string Model, stri
     int LocationId, string DiscoveryId, string AuthenticatedId, bool ControlsAuthorized);
 public sealed record FixtureSettings(string ProcessorHost, string CredentialBindings, SensorTarget[] Sensors,
     string? DeviceCredentialsFile = null, OutletTarget[]? Outlets = null, LightTarget? Light = null,
-    SubmissionEvidenceIdentity? EvidenceIdentity = null)
+    SubmissionEvidenceIdentity? EvidenceIdentity = null, bool PlatformConfigurationAuthorized = false)
 {
     public static FixtureSettings Read(AndroidRunContext context)
     {

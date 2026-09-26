@@ -30,8 +30,9 @@ public sealed class AppEvidenceContractTests
         Assert.Throws<InvalidDataException>(() => AppEvidence.Validate(Identity, context with { ReleaseSourceCommit = null }));
     }
 
-    [Test]
-    public void StructuredOutputRetainsFilesAndRejectsUnrestoredOrRepeatedEvidence()
+    [TestCase("outlet.energy", "android")]
+    [TestCase("configuration.platform", "configuration")]
+    public void StructuredOutputRetainsFilesAndRejectsUnrestoredOrRepeatedEvidence(string scope, string method)
     {
         string testRoot = Path.Combine(Path.GetTempPath(), "kasa-evidence-contract-" + Guid.NewGuid().ToString("N"));
         string root = Path.Combine(testRoot, "installed-app", "AndroidUI");
@@ -43,20 +44,21 @@ public sealed class AppEvidenceContractTests
             File.WriteAllText(restored, "{\"synthetic\":true}");
             var time = DateTimeOffset.UtcNow;
             void Write(bool restoredOk, string? originalPath = null) => AppEvidence.WriteForContext(Context(root), Identity,
-                restoredOk, "outlet.energy", "Synthetic contract check only.", time, time, time, originalPath ?? original, restored);
+                restoredOk, scope, "Synthetic contract check only.", time, time, time, originalPath ?? original, restored);
             Assert.Throws<InvalidOperationException>(() => Write(false));
             Assert.That(Directory.GetFiles(root, "*-observations.json"), Is.Empty);
             Assert.Throws<InvalidDataException>(() => Write(true, Path.Combine(testRoot, "missing.json")));
             Write(true);
-            using var output = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "kasa-outlet.energy-observations.json")));
+            using var output = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "kasa-" + scope + "-observations.json")));
             var observation = output.RootElement.GetProperty("observations")[0];
-            Assert.That(observation.GetProperty("requirementId").GetString(), Is.EqualTo("kasa.app.outlet.energy"));
+            Assert.That(observation.GetProperty("requirementId").GetString(), Is.EqualTo("kasa.app." + scope));
+            Assert.That(observation.GetProperty("execution").GetProperty("method").GetString(), Is.EqualTo(method));
             Assert.That(observation.GetProperty("files").GetArrayLength(), Is.EqualTo(2));
             Assert.That(observation.GetProperty("execution").GetProperty("restoration").GetProperty("matchesOriginal").GetBoolean(), Is.True);
             var json = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, Converters = { new JsonStringEnumConverter() } };
             var document = JsonSerializer.Deserialize<SubmissionEvidenceDocument>(output.RootElement.GetRawText(), json)!;
-            SubmissionRequirement[] requirements = [new("kasa.app.outlet.energy", TimeSpan.Zero, Execution:
-                new("$kasa.outlet.energy", "android", SubmissionEvidenceOutcome.Passed, null, true))];
+            SubmissionRequirement[] requirements = [new("kasa.app." + scope, TimeSpan.Zero, Execution:
+                new("$kasa." + scope, method, SubmissionEvidenceOutcome.Passed, null, true))];
             Assert.That(SubmissionEvidence.Evaluate(Identity, requirements, document.Observations, testRoot,
                 DateTimeOffset.UtcNow).EvidenceChecksPassed, Is.True);
             File.AppendAllText(restored, " ");
