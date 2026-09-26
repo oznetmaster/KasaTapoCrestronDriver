@@ -31,7 +31,7 @@ public sealed class LightRefreshPublicationTests
     }
 
     [Test]
-    public async Task ExternalWhiteAndColorChangesNotifyTheHostEvenWhenReturningToRetainedValues()
+    public async Task PollingRefreshAndSnapshotPublishExternalWhiteColorAndPowerState()
     {
         var transport = new Transport();
         using var device = new KasaDevice(new DeviceConfiguration("127.0.0.1"), transport);
@@ -47,26 +47,35 @@ public sealed class LightRefreshPublicationTests
         await light.SetConfiguredAsync(true, "fixture", default);
         var updates = new Dictionary<string, DriverEntityValue>();
         light.ValuesChanged += (_, e) => { foreach (var entry in e.Update.Changes) if (entry.Value.Value is {} value) updates[entry.Key] = value; };
+        async Task Poll()
+        {
+            // The actual polling loop performs both operations. RefreshAsync alone
+            // is not its publication contract and cannot establish an app defect.
+            await light.RefreshAsync(default);
+            light.PublishStateSnapshot();
+        }
 
         transport.Kelvin = 6100;
-        await light.RefreshAsync(default);
+        await Poll();
         Assert.That(light.GetState().PropertyValues["lightEmulatedColorTemperature:level"].GetValue<long>(), Is.EqualTo(6100));
         Assert.That(updates.ContainsKey("lightEmulatedColorTemperature:level"), Is.True, "The host must hear the external colour-to-white change, not only GetState.");
         Assert.That(updates.ContainsKey("lightColor:hue"), Is.False, "Retained HSV must not override active white mode.");
 
         updates.Clear();
         transport.Kelvin = 0;
-        await light.RefreshAsync(default);
+        await Poll();
         Assert.That(updates.ContainsKey("lightColor:hue"), Is.True, "Returning to the same stored hue still changes the active mode.");
         Assert.That(updates.ContainsKey("lightColor:saturation"), Is.True);
         Assert.That(updates.ContainsKey("lightEmulatedColorTemperature:level"), Is.False, "Do not assert white mode with inactive colour temperature.");
+        var publishedHue = updates["lightColor:hue"].GetValue<double>();
 
         updates.Clear();
-        await light.RefreshAsync(default);
-        Assert.That(updates, Is.Empty, "An unchanged poll must not republish colour controls.");
+        await Poll();
+        Assert.That(updates["lightColor:hue"].GetValue<double>(), Is.EqualTo(publishedHue), "An unchanged snapshot must preserve the previously published hue.");
+        Assert.That(updates.ContainsKey("lightEmulatedColorTemperature:level"), Is.False, "The repeated snapshot must keep the active colour mode.");
 
         transport.On = false;
-        await light.RefreshAsync(default);
+        await Poll();
         Assert.That(updates["lightDimmer:level"].GetValue<double>(), Is.Zero, "External power-off must also notify the host.");
     }
 }

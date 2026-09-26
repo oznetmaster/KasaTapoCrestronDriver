@@ -571,7 +571,16 @@ internal partial class KasaLightEntity
 				await device.UpdateAsync (cancellationToken).ConfigureAwait (false);
 				RefreshDescriptorFromConnectedDevice (device, "RefreshAsync.AfterUpdate");
 				LogReportedState ("RefreshAsync.AfterUpdate", device);
-				ApplyRefreshedState (device);
+				bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
+				_suppressPropertyNotifications = true;
+				try
+					{
+					ApplyState (device);
+					}
+				finally
+					{
+					_suppressPropertyNotifications = previousSuppressPropertyNotifications;
+					}
 			}, cancellationToken).ConfigureAwait (false);
 
 		OnlineIndicatorIsOnline = true;
@@ -590,25 +599,17 @@ internal partial class KasaLightEntity
 				RefreshDescriptorFromConnectedDevice (reconnectedDevice, "ReconnectRefresh.AfterConnect");
 				LogReportedState ("ReconnectRefresh.AfterConnect", reconnectedDevice);
 
-				ApplyRefreshedState (reconnectedDevice);
+				bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
+				_suppressPropertyNotifications = true;
+				try
+					{
+					ApplyState (reconnectedDevice);
+					}
+				finally
+					{
+					_suppressPropertyNotifications = previousSuppressPropertyNotifications;
+					}
 			}, cancellationToken).ConfigureAwait (false);
-		}
-
-	private void ApplyRefreshedState (KasaDevice device)
-		{
-		bool previousWhiteMode = IsCurrentColorTemperatureUiMode ();
-		using (PropertyChangeTracker.StartBatchedUpdate (true))
-			{
-			// Polling must notify the host of external changes, not just update GetState.
-			ApplyState (device);
-			if (!_suppressPropertyNotifications && LightIsOn && previousWhiteMode != IsCurrentColorTemperatureUiMode ())
-				{
-				// Returning to the retained hue or Kelvin value changes the active mode
-				// even when that numeric value itself is unchanged. Publish only the
-				// now-active mode; an unchanged refresh does not republish it.
-				PublishColorModeStateProperties ("Refresh.ExternalModeChanged");
-				}
-			}
 		}
 
 	private DesiredLightCommand CreateBrightnessCommand (double relativeLevel)

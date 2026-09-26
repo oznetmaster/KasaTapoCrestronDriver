@@ -35,7 +35,7 @@ The driver talks to TP-Link Kasa and Tapo devices through the independent [`Kasa
 - Supports brightness, full HSV color, and color-temperature capabilities per device, based on the negotiated capabilities each specific device reports supporting (rather than assumptions based on device type alone) — this correctly surfaces dimmable devices such as `P135` (a dimmable smart plug) and `KS240` (a dimmer wall switch/fan controller) as dimmable lights even though they don't classify as a `Dimmer` device type.
 - Persists discovered managed-device metadata to a local cache so previously-installed child devices can be republished quickly after a driver reload, without waiting for a fresh discovery pass.
 - Starts each child device's physical connection in the background, so Crestron Home's child-configuration callbacks return quickly during driver reloads instead of blocking on device I/O.
-- Optional workaround for a known Crestron Home platform defect that causes tunable lights to occasionally flash the wrong color/mode at power-on or at startup — see [Known Issue: Processor Baseline Workaround](#known-issue-processor-baseline-workaround) below.
+- Recommended workaround for affected color/tunable-white lights: a known Crestron Home platform defect can cause the wrong color/mode at power-on or the wrong mode in the app. It remains disabled by default because it requires processor SSH credentials — see [Known Issue: Processor Baseline Workaround](#known-issue-processor-baseline-workaround) below.
 
 ---
 
@@ -50,7 +50,7 @@ The platform driver instance exposes these configuration items in Crestron Home:
 | **Enable Light Polling** | Enables background polling to detect state changes made outside of Crestron Home (for example, from the Kasa/Tapo mobile apps or a physical switch). |
 | **Light Poll Interval (Seconds)** | Polling interval used when light polling is enabled. |
 | **Sensor/Button Poll Interval (Seconds)** | Fallback polling interval for hub sensor/button devices, used only until a connected child device has reported its own interval; once a child reports, the shared hub is instead polled at 50% of the shortest interval currently reported by any of its children (see [Features](#features)). |
-| **Enable Processor Baseline Workaround** | Optional. Enables an SSH-based workaround for a Crestron Home tuning-mode defect. Disabled by default. See [Known Issue](#known-issue-processor-baseline-workaround) below. |
+| **Enable Processor Baseline Workaround** | Recommended for affected color/tunable-white lights until a Crestron firmware fix is verified. Disabled by default because it requires the processor's SSH credentials. See [Known Issue](#known-issue-processor-baseline-workaround) below. |
 | **Processor SSH Host** | Optional. Hostname or IP address of the Crestron Home processor's console/SSH endpoint. Leave blank to have the driver automatically use the processor's own primary IPv4 address. Only used if the workaround above is enabled. |
 | **Processor SSH User Name** / **Processor SSH Password** | Required only if the workaround above is enabled — console/SSH credentials for the Crestron Home processor itself. |
 
@@ -81,6 +81,10 @@ Neither issue is present in the Crestron Home **Setup** program, which correctly
 ---
 
 ## Known Issue: Processor Baseline Workaround
+
+**Recommended for affected color/tunable-white lights until a Crestron firmware fix is verified.** Enable **Enable Processor Baseline Workaround** and supply **Processor SSH User Name** and **Processor SSH Password** in the platform driver's configuration. These are the Crestron processor's console credentials, not the Tapo device credentials. **Processor SSH Host** can remain blank to use the processor's own address. The workaround remains opt-in and disabled by default because these credentials must be supplied and stored in the driver's configuration; it cannot be enabled automatically without them.
+
+Polling alone does not correct this issue: the driver can report the current color temperature while Crestron retains the wrong active tuning mode. The workaround uses the processor console outside the documented driver SDK; review its [risks and limitations](docs/ProcessorBaselineWorkaround.md#risks-and-limitations) before enabling it.
 
 Crestron Home's Entity V2 lighting model documents a `lightTunable:mode` property that a driver is supposed to use to tell the processor whether a tunable light is currently in Color (HSV) or White (color temperature) mode. **In practice, this property has no effect** — the processor maintains its own internal, separate "baseline" and "active" tuning-mode state per light load, neither of which is updated by `lightTunable:mode`. This can cause a full-color/tunable-white bulb to briefly flash the wrong color or mode immediately after being turned on, and — because the Crestron Home UI reads the processor's "active" tuning mode when first rendering a light's tile/detail page — it can also cause the **UI itself to initialize with the wrong mode/controls** (e.g. showing color controls for a bulb that is actually in white/CT mode, or vice versa) until the mismatch is corrected.
 

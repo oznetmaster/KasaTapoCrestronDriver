@@ -2,7 +2,13 @@
 
 ## Status
 
-**Optional, opt-in, and disabled by default.** This workaround exists solely to compensate for a
+**Recommended for affected color/tunable-white lights until a Crestron firmware fix is verified.**
+It remains **opt-in and disabled by default** because it requires the processor's SSH user name
+and password to be supplied and stored in the driver configuration. These are separate from the
+Tapo device credentials. Polling can deliver the correct device state without correcting the
+processor's active tuning mode, so enabling polling is not a substitute for this workaround.
+
+This workaround exists solely to compensate for a
 Crestron Home platform defect in how `lightTunable:mode` is (not) honored during light-load
 initialization. Crestron has been made aware of this issue (see [Root Cause](#root-cause) and the
 original defect report reproduced below) and has acknowledged the underlying behavior, but as of
