@@ -177,6 +177,14 @@ public sealed class OutletControlsTests
             var completed = await TimedTap(!original);
             await VerifyState(!original, completed, token);
             await session.CaptureAsync("outlet." + alias + ".changed", h => RequirePower(h, !original), token);
+            await Record("room-feedback", new
+            {
+                RequestedOn = !original, InputIntentUtc = actionAt,
+                CaptureCompletedUtc = DateTimeOffset.UtcNow,
+                CaptureName = "outlet." + alias + ".changed",
+                Completed = completed,
+                Method = "Unobscured Room subtitle observed after attributed command completion and independent physical verification. Times bound the observation; they do not establish first visible response or physical relay latency."
+            });
             if (target.EnergyPage)
             {
                 var dots = new AndroidSelector(AndroidSelectorKind.ResourceId, RoomNavigation.Prefix + "serviceDots") { SiblingText = target.Name };
@@ -250,6 +258,8 @@ public sealed class OutletControlsTests
         void Evidence(string suffix, string rationale) => AppEvidence.Write("outlet." + alias + "." + suffix, rationale,
             started, originalAt, actionAt, Directory.GetFiles(evidence, "*-original.json").Single(), Directory.GetFiles(evidence, "*-restored.json").Single());
         Evidence("tile-action", "Verified unobscured Room tile title, icon presence and variant-specific ellipsis. Pressing its title changed the selected physical outlet, with exact completed-command attribution and visible Room tile feedback. Original physical state restored. No icon glyph or quantified response-time assertion.");
+        Evidence("tile-inventory", "Verified the selected Room tile's title, icon presence, variant-specific ellipsis and working default power action. Energy detail controls are checked separately. Original physical state restored; icon glyph correctness is not asserted.");
+        Evidence("room-feedback", "Observed the unobscured Room tile subtitle change to the requested ON/OFF state after the exact attributed command and independent physical verification. The retained journal and capture record input intent and UI observation times, not first-visible-response latency. Original physical state restored; no icon glyph or response deadline asserted.");
         if (target.EnergyPage)
         {
             Evidence("navigation", "The selected outlet's ellipsis opens its expected detail page, exposing Power and energy information; physical state restored after controls.");

@@ -35,6 +35,13 @@ public sealed class AppEvidenceContractTests
     [TestCase("sensor.temperature.navigation", "android")]
     [TestCase("outlet.energy.tile-action", "android")]
     [TestCase("native-light.slider", "android")]
+    [TestCase("sensor.temperature.inventory", "android")]
+    [TestCase("sensor.motion.inventory", "android")]
+    [TestCase("sensor.button.inventory", "android")]
+    [TestCase("outlet.energy.tile-inventory", "android")]
+    [TestCase("outlet.basic.tile-inventory", "android")]
+    [TestCase("outlet.energy.room-feedback", "android")]
+    [TestCase("outlet.basic.room-feedback", "android")]
     public void StructuredOutputRetainsFilesAndRejectsUnrestoredOrRepeatedEvidence(string scope, string method)
     {
         string testRoot = Path.Combine(Path.GetTempPath(), "kasa-evidence-contract-" + Guid.NewGuid().ToString("N"));

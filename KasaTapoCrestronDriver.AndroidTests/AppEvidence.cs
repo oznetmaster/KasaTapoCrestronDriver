@@ -46,9 +46,9 @@ internal static class AppEvidence
             throw new InvalidOperationException("Cannot emit passed evidence before physical restoration.");
         string[] parts = scope.Split('.');
         bool sensorDetail = parts.Length == 3 && parts[0] == "sensor" &&
-            parts[1] is "temperature" or "motion" or "button" && parts[2] is "tile" or "navigation" or "close" or "display";
+            parts[1] is "temperature" or "motion" or "button" && parts[2] is "tile" or "inventory" or "navigation" or "close" or "display";
         bool outletDetail = parts.Length == 3 && parts[0] == "outlet" &&
-            (parts[1] is "energy" or "basic" && parts[2] == "tile-action" ||
+            (parts[1] is "energy" or "basic" && parts[2] is "tile-action" or "tile-inventory" or "room-feedback" ||
              parts[1] == "energy" && parts[2] is "navigation" or "display" or "close");
         bool nativeDetail = parts.Length == 2 && parts[0] == "native-light" && parts[1] is "slider" or "buttons" or "selectors" or "subpages";
         if (!sensorDetail && !outletDetail && !nativeDetail && scope is not ("sensor.temperature" or "sensor.motion" or "sensor.button" or "outlet.energy" or "outlet.basic" or "native-light" or "configuration.platform" or

@@ -164,6 +164,7 @@ public sealed class SensorPagesTests
             started, started, started);
         foreach (var assertion in new[] {
             ("tile", "Unobscured Room tile has the expected title, an icon and no ellipsis. Icon glyph correctness is not asserted."),
+            ("inventory", "Verified the selected read-only tile's title, icon presence, absence of ellipsis and default navigation, with every conditional detail row for this hardware. Unsupported sensor types and icon glyph correctness are not asserted."),
             ("navigation", "Pressing the selected read-only Room tile opens its expected default detail page."),
             ("close", "Closing the detail page returns to the same Room, followed by a verified return Home."),
             ("display", "All conditional display rows for this selected sensor are present with their labelled API values; no extra display rows. No physical sensor stimulus or unsupported sensor variant asserted.") })
