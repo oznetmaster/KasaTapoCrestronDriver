@@ -110,45 +110,36 @@ public sealed class OutletControlsTests
         try
         {
             await RoomNavigation.Open(target.Room, token);
-            AndroidSelector selector;
-            Action<AndroidHierarchy> guard;
-            if (target.EnergyPage)
-            {
-                var dots = new AndroidSelector(AndroidSelectorKind.ResourceId, RoomNavigation.Prefix + "serviceDots") { SiblingText = target.Name };
-                await session.Device.TapAsync(dots, h => RoomNavigation.RequireVisibleRoomControl(h, target.Room, dots), token);
-                selector = CrestronHomePages.Resource("customdevicetoggle_switch");
-                guard = h => CrestronHomePages.RequireExtensionPage(h, title);
-            }
-            else
-            {
-                // Select the exact title text, never a nearby room-wide lighting button.
-                selector = new(AndroidSelectorKind.Text, target.Name);
-                guard = h => RoomNavigation.RequireVisibleRoomControl(h, target.Room, selector);
-            }
+            await RoomNavigation.RevealTile(target.Room, target.Name, token);
+            await session.CaptureAsync("outlet." + alias + ".room-tile", h =>
+                RoomNavigation.InspectTile(h, target.Room, target.Name, target.EnergyPage, original ? "ON" : "OFF"), token);
+            // Both variants expose the individual tile's default action. The
+            // energy variant also exposes an ellipsis leading to its controls.
+            AndroidSelector selector = new(AndroidSelectorKind.Text, target.Name);
+            Action<AndroidHierarchy> guard = h => RoomNavigation.RequireVisibleRoomControl(h, target.Room, selector);
+            bool onDetailPage = false;
             if (await Idle(token) != baseline) throw new InvalidOperationException("Activity changed before input.");
             void RequirePower(AndroidHierarchy h, bool expected)
             {
                 guard(h);
-                if (target.EnergyPage)
+                if (onDetailPage)
                     Assert.That((string?)RoomNavigation.Node(h, "customdevicetoggle_switch").Attribute("checked"), Is.EqualTo(expected.ToString().ToLowerInvariant()));
                 else
                     Assert.That(h.RequireUnique(new(AndroidSelectorKind.ResourceId, RoomNavigation.Prefix + "serviceSubtitle") { SiblingText = target.Name }).Text,
                         Is.EqualTo(expected ? "ON" : "OFF").IgnoreCase);
             }
-            await session.CaptureAsync("outlet." + alias + ".before", h => {
-                RequirePower(h, original);
-                if (target.EnergyPage)
+            void RequireEnergyInventory(AndroidHierarchy h)
+            {
+                // Values may change between polling and screen capture; this
+                // checks displayed inventory, not exact telemetry equality.
+                foreach (string label in new[] { "Current Power (W)", "Voltage (V)", "Current (A)", "Today (kWh)", "This Month (kWh)", "Total (kWh)" })
                 {
-                    // Verify the complete displayed inventory. Values may change between
-                    // polling and screen capture; this is not an exact telemetry comparison.
-                    foreach (string label in new[] { "Current Power (W)", "Voltage (V)", "Current (A)", "Today (kWh)", "This Month (kWh)", "Total (kWh)" })
-                    {
-                        var row = h.RequireUnique(new(AndroidSelectorKind.ResourceId, RoomNavigation.Prefix + "customdevice_textdisplay_firstlinetext") { SiblingText = label });
-                        Assert.That(double.TryParse(row.Text, System.Globalization.NumberStyles.Float,
-                            System.Globalization.CultureInfo.InvariantCulture, out double value) && double.IsFinite(value), Is.True, label);
-                    }
+                    var row = h.RequireUnique(new(AndroidSelectorKind.ResourceId, RoomNavigation.Prefix + "customdevice_textdisplay_firstlinetext") { SiblingText = label });
+                    Assert.That(double.TryParse(row.Text, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double value) && double.IsFinite(value), Is.True, label);
                 }
-            }, token);
+            }
+            await session.CaptureAsync("outlet." + alias + ".before", h => RequirePower(h, original), token);
             await Record("ui-intent", new { original, requested = !original, baseline });
             attempted = true; SensorSession.PhysicalRestorationConfirmed = false;
             actionAt = DateTimeOffset.UtcNow;
@@ -157,6 +148,15 @@ public sealed class OutletControlsTests
             var completed = await Completion(baseline, token);
             await VerifyState(!original, completed, token);
             await session.CaptureAsync("outlet." + alias + ".changed", h => RequirePower(h, !original), token);
+            if (target.EnergyPage)
+            {
+                var dots = new AndroidSelector(AndroidSelectorKind.ResourceId, RoomNavigation.Prefix + "serviceDots") { SiblingText = target.Name };
+                await session.Device.TapAsync(dots, h => RoomNavigation.RequireVisibleRoomControl(h, target.Room, dots), token);
+                selector = CrestronHomePages.Resource("customdevicetoggle_switch");
+                guard = h => CrestronHomePages.RequireExtensionPage(h, title);
+                onDetailPage = true;
+                await session.CaptureAsync("outlet." + alias + ".controls", h => { RequirePower(h, !original); RequireEnergyInventory(h); }, token);
+            }
             await Record("ui-return-intent", new { requested = original, completed });
             intendedCommands++;
             await session.Device.TapAsync(selector, guard, token);
@@ -187,6 +187,14 @@ public sealed class OutletControlsTests
             completed = await Completion(baseline, token, intendedCommands);
             await VerifyState(!original, completed, token);
             await session.CaptureAsync("outlet." + alias + ".burst-result", h => RequirePower(h, !original), token);
+            if (target.EnergyPage)
+            {
+                await session.Device.TapAsync(CrestronHomePages.Resource("customdevices_toolbarClose"),
+                    h => CrestronHomePages.RequireExtensionPage(h, title), token);
+                await RoomNavigation.RevealTile(target.Room, target.Name, token);
+                await session.CaptureAsync("outlet." + alias + ".room-returned", h =>
+                    RoomNavigation.InspectTile(h, target.Room, target.Name, true, !original ? "ON" : "OFF"), token);
+            }
         }
         finally
         {
@@ -211,5 +219,14 @@ public sealed class OutletControlsTests
             "Verified the selected outlet identity and displayed control inventory, operated the individual app power control and its return, then sent three further guarded presses without waiting for acknowledgements. Correlated the exact completed command count with two independent physical/API observations and app feedback after each sequence, restored its original physical state and returned Home. Burst timestamps are retained; no fixed tap rate, outage, telemetry accuracy or quantified response-time assertion.",
             started, originalAt, actionAt,
             Directory.GetFiles(evidence, "*-original.json").Single(), Directory.GetFiles(evidence, "*-restored.json").Single());
+        void Evidence(string suffix, string rationale) => AppEvidence.Write("outlet." + alias + "." + suffix, rationale,
+            started, originalAt, actionAt, Directory.GetFiles(evidence, "*-original.json").Single(), Directory.GetFiles(evidence, "*-restored.json").Single());
+        Evidence("tile-action", "Verified unobscured Room tile title, icon presence and variant-specific ellipsis. Pressing its title changed the selected physical outlet, with exact completed-command attribution and visible Room tile feedback. Original physical state restored. No icon glyph or quantified response-time assertion.");
+        if (target.EnergyPage)
+        {
+            Evidence("navigation", "The selected outlet's ellipsis opens its expected detail page, exposing Power and energy information; physical state restored after controls.");
+            Evidence("display", "Verified Power state and all six labelled finite numeric energy readings on the selected outlet's detail page. No unsynchronized telemetry equality assertion.");
+            Evidence("close", "Closing the outlet detail page returns to the same Room with the selected tile visible and its state matching the independently observed outlet; physical state restored and app returned Home.");
+        }
     }
 }

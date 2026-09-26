@@ -33,6 +33,7 @@ public sealed class AppEvidenceContractTests
     [TestCase("outlet.energy", "android")]
     [TestCase("configuration.platform", "configuration")]
     [TestCase("sensor.temperature.navigation", "android")]
+    [TestCase("outlet.energy.tile-action", "android")]
     public void StructuredOutputRetainsFilesAndRejectsUnrestoredOrRepeatedEvidence(string scope, string method)
     {
         string testRoot = Path.Combine(Path.GetTempPath(), "kasa-evidence-contract-" + Guid.NewGuid().ToString("N"));
