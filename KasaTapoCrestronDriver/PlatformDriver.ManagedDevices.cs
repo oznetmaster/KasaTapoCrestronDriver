@@ -105,6 +105,7 @@ public sealed partial class PlatformDriver
 				DiscoveredDeviceType = descriptor.DiscoveredDeviceType,
 				ManagedLightKind = descriptor.Kind,
 				SerialNumber = descriptor.SerialNumber,
+				DiscoveryDeviceId = descriptor.DiscoveryDeviceId,
 				ChildId = descriptor.ChildId,
 				HubChildCategory = descriptor.HubChildCategory
 				},
@@ -604,7 +605,7 @@ public sealed partial class PlatformDriver
 			serialNumber,
 			lightKind,
 			entry.AwaitingConnectedIdentity,
-			serialNumber,
+			ResolveCachedDiscoveryDeviceId (entry, serialNumber, recoveredChildId),
 			childId: recoveredChildId,
 			childKind: childKind,
 			hubChildCategory: entry.HubChildCategory);
@@ -671,6 +672,27 @@ public sealed partial class PlatformDriver
 		return childIdCandidate.StartsWith (parentIdCandidate, StringComparison.OrdinalIgnoreCase)
 			? childIdCandidate
 			: null;
+		}
+
+	private static string? ResolveCachedDiscoveryDeviceId (ManagedDeviceCacheEntry entry, string serialNumber, string? childId)
+		{
+		if (!string.IsNullOrWhiteSpace (entry.DiscoveryDeviceId)) return entry.DiscoveryDeviceId;
+		if (string.IsNullOrWhiteSpace (childId)) return serialNumber;
+
+		// Older caches only saved the child's serial number. Recover the parent from the
+		// stable controller ID only when both IDs survive sanitization without ambiguity.
+		const string prefix = "device_";
+		string suffix = "_" + childId;
+		if (!childId.All (char.IsLetterOrDigit)
+			|| !entry.ControllerId.StartsWith (prefix, StringComparison.OrdinalIgnoreCase)
+			|| !entry.ControllerId.EndsWith (suffix, StringComparison.OrdinalIgnoreCase)) return null;
+		int parentLength = entry.ControllerId.Length - prefix.Length - suffix.Length;
+		if (parentLength <= 0) return null;
+		string parentId = entry.ControllerId.Substring (prefix.Length, parentLength);
+		if (!parentId.All (char.IsLetterOrDigit)) return null;
+		// Strip child IDs include the parent prefix; retain its original casing when available.
+		return serialNumber.StartsWith (parentId, StringComparison.OrdinalIgnoreCase)
+			? serialNumber.Substring (0, parentLength) : parentId;
 		}
 
 	private static string ResolveCachedSerialNumber (ManagedDeviceCacheEntry entry)

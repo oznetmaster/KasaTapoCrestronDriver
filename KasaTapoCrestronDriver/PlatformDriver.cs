@@ -259,6 +259,9 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			set;
 			} = string.Empty;
 
+		[DataMember (Name = "discoveryDeviceId", EmitDefaultValue = false)]
+		public string? DiscoveryDeviceId { get; set; }
+
 		// Strip child outlets/lights must remember which physical child on the strip they are, or a
 		// managed-device cache reload (TryCreateCachedDescriptorAndConfiguration) recreates the
 		// descriptor with ChildId=null, breaking UpdateDescriptorFromConnectedDevice's per-child alias
@@ -493,6 +496,12 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			{
 			get => Immutable.ChildId;
 			set => Immutable.ChildId = value;
+			}
+
+		public string? DiscoveryDeviceId
+			{
+			get => Immutable.DiscoveryDeviceId;
+			set => Immutable.DiscoveryDeviceId = value;
 			}
 
 		public HubChildCategory HubChildCategory

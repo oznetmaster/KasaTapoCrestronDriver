@@ -75,15 +75,17 @@ public sealed class CacheRestorationTests
 			Directory.Delete (Path.GetDirectoryName (_cache)!);
 			}
 		}
-	private void Seed (DeviceUxCategory category, DeviceType type, string model, bool treatAsLight = false, bool configured = false, int port = 80)
+	private void Seed (DeviceUxCategory category, DeviceType type, string model, bool treatAsLight = false, bool configured = false, int port = 80,
+		string? discoveryId = null, string controllerId = "device_testparent_testparent00", string serial = "testparent00", string? childId = "testparent00")
 		{
 		object entry = Activator.CreateInstance (Nested ("ManagedDeviceCacheEntry"), true)!;
-		Set (entry, "ControllerId", "device_testparent_testparent00");
+		Set (entry, "ControllerId", controllerId);
 		Set (entry, "Name", "Office test device");
 		Set (entry, "Manufacturer", "TP-Link");
 		Set (entry, "Model", model);
-		Set (entry, "SerialNumber", "testparent00");
-		Set (entry, "ChildId", "testparent00");
+		Set (entry, "SerialNumber", serial);
+		Set (entry, "ChildId", childId!);
+		Set (entry, "DiscoveryDeviceId", discoveryId!);
 		Set (entry, "UxCategory", category);
 		Set (entry, "DiscoveredDeviceType", type);
 		Set (entry, "HubChildCategory", model == "T310" ? HubChildCategory.TemperatureHumidity : HubChildCategory.None);
@@ -122,6 +124,32 @@ public sealed class CacheRestorationTests
 		Assert.That (descriptor.Name, Is.EqualTo ("Office test device"));
 		if (model == "T310") Assert.That (descriptor.HubChildCategory, Is.EqualTo (HubChildCategory.TemperatureHumidity));
 		}
+	[TestCase ("Parent-Exact", "device_parent_exact_child", "Child", "Child", "Parent-Exact")]
+	[TestCase (null, "device_aabb_aabb01", "AABB01", "AABB01", "AABB")]
+	[TestCase (null, "device_aabb_aabb01", "AABB01", null, "AABB")]
+	[TestCase (null, "device_aabb_ccdd", "CCDD", "CCDD", "aabb")]
+	[TestCase (null, "device_192_0_2_1_ccdd", "CCDD", "CCDD", null)]
+	[TestCase (null, "device_aabb_wrongchild", "CCDD", "CCDD", null)]
+	[TestCase (null, "device_aabb", "AABB", null, "AABB")]
+	public void DiscoveryIdentitySurvivesCacheRewriteAndReload (string? discoveryId, string controllerId, string serial, string? childId, string? expected)
+		{
+		Seed (DeviceUxCategory.Outlet, DeviceType.Strip, "KP303", discoveryId: discoveryId,
+			controllerId: controllerId, serial: serial, childId: childId);
+		for (int reload = 0; reload < 2; reload++)
+			{
+			Call ("LoadManagedDeviceCacheIntoMemory");
+			object entry = Field<IDictionary> ("_managedDeviceCacheMetadata")[controllerId]!;
+			object[] args = { entry, Field<PlatformSharedConfiguration> ("_sharedConfiguration").Snapshot (), null!, null! };
+			Assert.That (Call ("TryCreateCachedDescriptorAndConfiguration", args), Is.True);
+			var descriptor = (ManagedLightDescriptor)args[2];
+			Assert.That (descriptor.DiscoveryDeviceId, Is.EqualTo (expected), $"Reload {reload}");
+			Assert.That (descriptor.SerialNumber, Is.EqualTo (serial));
+			Call ("PersistManagedDeviceCache");
+			_driver.Dispose ();
+			CreateDriver ();
+			}
+		}
+
 	[TestCase (DeviceUxCategory.Outlet, DeviceType.Strip, "KP303")]
 	[TestCase (DeviceUxCategory.Sensor, DeviceType.Hub, "T310")]
 	[TestCase (DeviceUxCategory.Switch, DeviceType.Hub, "S200B")]

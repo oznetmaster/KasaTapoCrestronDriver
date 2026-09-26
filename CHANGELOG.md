@@ -12,6 +12,7 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 
 ## 2.1.2 - Unreleased
 
+- Preserve the parent device identity separately from each child's serial number when saving and restoring managed devices; recover unambiguous parent identities from older caches.
 - Register cached child controllers before advertising their identities during startup, so Crestron Home can restore their configuration without waiting for network discovery.
 
 - Include illustrated user help, an account-free support contact and third-party license notices in the driver package.

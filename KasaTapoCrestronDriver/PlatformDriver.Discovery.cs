@@ -764,6 +764,7 @@ public sealed partial class PlatformDriver
 							DiscoveredDeviceType = metadata.DiscoveredDeviceType,
 							ManagedLightKind = metadata.ManagedLightKind,
 							SerialNumber = metadata.SerialNumber,
+							DiscoveryDeviceId = metadata.DiscoveryDeviceId,
 							// ChildId identifies which physical child on a strip this controllerId
 							// is (see PlatformDriver.cs's ManagedDeviceImmutableCacheFields.ChildId
 							// comment). Omitting it here silently drops it from every persisted

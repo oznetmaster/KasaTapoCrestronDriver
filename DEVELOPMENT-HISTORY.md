@@ -13,6 +13,7 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 ## 2.1.2 preparation - 2026-09-26
 
+- Cover separate discovery/child identities across cache rewrites and driver recreation, including legacy strip entries, unrelated hub child IDs and ambiguous sanitized IDs. All 54 desktop lifecycle tests pass; the Release package builds without warnings. Hardware verification of this identity correction remains separate.
 - Exercise the actual saved-configuration callback with cached lights, outlets, sensors and buttons, both configured and unconfigured. The regression detects a startup publication bypass missed by tests that called the publication helper directly. All 47 desktop lifecycle and 34 portable net472 tests pass after restoring publication before the managed-device snapshot.
 
 - Test the complete polling refresh-and-snapshot sequence using the actual SDK property-notification event, covering external colour/white changes, retained values, repeated snapshots and external power-off. The transport rejects device writes. An earlier isolated-refresh test omitted the snapshot; remove the speculative runtime change it prompted. These checks do not establish how Crestron Home applies the published colour mode.
