@@ -50,7 +50,8 @@ internal static class AppEvidence
         bool outletDetail = parts.Length == 3 && parts[0] == "outlet" &&
             (parts[1] is "energy" or "basic" && parts[2] == "tile-action" ||
              parts[1] == "energy" && parts[2] is "navigation" or "display" or "close");
-        if (!sensorDetail && !outletDetail && scope is not ("sensor.temperature" or "sensor.motion" or "sensor.button" or "outlet.energy" or "outlet.basic" or "native-light" or "configuration.platform" or
+        bool nativeDetail = parts.Length == 2 && parts[0] == "native-light" && parts[1] is "slider" or "buttons" or "selectors" or "subpages";
+        if (!sensorDetail && !outletDetail && !nativeDetail && scope is not ("sensor.temperature" or "sensor.motion" or "sensor.button" or "outlet.energy" or "outlet.basic" or "native-light" or "configuration.platform" or
             "configuration.catalogue" or "configuration.connection" or "configuration.attributes" or "configuration.installation"))
             throw new InvalidDataException("Unknown app assertion scope.");
         string root = context.EvidenceDirectory;

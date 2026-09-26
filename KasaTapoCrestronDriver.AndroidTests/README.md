@@ -26,6 +26,21 @@ Additional outlet observation suffixes are `outlet.<alias>.tile-action` and `out
 
 The native-light case uses only the selected load's controls, never room-wide controls or scenes. Independent physical reads verify power, brightness, tunable-white temperature, hue and saturation changes. The tuning check currently targets a full-color bulb with a 2500–6500 K white range; select matching hardware. Direct Kasa calls are used only to restore the captured light state; they do not count as evidence that driver controls worked. Native tuning-page captures retain the displayed white and color controls alongside the physical observations.
 
+The native sequence also checks the displayed power state and brightness, moves
+brightness upward and downward, then sends three consecutive drags without waiting
+for device acknowledgements between them. It retains their actual input times and
+checks the final physical, driver and displayed brightness. White/color selectors
+must report the selected tab; the corresponding page titles and values are checked.
+Tuning gestures require settled observed control geometry and a target separated
+from the current displayed value, followed by visible movement and independent
+physical feedback. Each tuning adjustment retains before/after captures. Returning
+from tuning must reach the Lights list, then the selected Room and finally Home.
+
+Optional native observation suffixes are `native-light.slider`, `.buttons`,
+`.selectors` and `.subpages`. They are emitted only when the whole native sequence
+passes and restores the original physical state. They do not assert room-wide
+controls, selector-icon artwork or a quantified response deadline.
+
 The fixtures return the app to Home. On failure, inspect the original NUnit result, capture and restoration journal before recovery. Do not release retained reservations or repeat uncertain inputs automatically.
 
 Sensor cases first scroll the selected Room tile fully into view and capture its title, icon presence and absence of an ellipsis. They press that read-only tile, verify the expected detail page and every conditional display row for the selected hardware, then explicitly close to the same Room and return Home. Separate observation suffixes `sensor.<alias>.tile`, `.navigation`, `.display` and `.close` allow policies to use those actual assertions independently while sharing the retained captures. Icon glyph correctness, Home-page absence, physical sensor stimulation and sensor types absent from the selected hardware are not asserted by these checks.
