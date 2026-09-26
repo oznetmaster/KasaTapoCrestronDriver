@@ -974,8 +974,8 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 					_managedDeviceCacheMetadata.Clear ();
 						_resolvedDeviceNames.Clear ();
 						LoadManagedDeviceCacheIntoMemory ();
-						// Ordered startup experiment: keep cache/assignments; discovery publishes children.
-						LogInfo ("ORDERED-PUBLICATION-EXPERIMENT: eager publication bypassed; readiness waits for child publication.");
+						// Register cached controllers before advertising their identities to the host.
+						PublishCachedChildControllers (currentConfiguration);
 
 						// PublishCachedChildControllers only materializes/configures controllers that are
 					// not already registered in _childControllers - it silently skips (via `continue`)

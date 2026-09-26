@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Runtime.Serialization.Json;
 
 using Crestron.DeviceDrivers.EntityModel;
+using Crestron.DeviceDrivers.EntityModel.Data;
 using Crestron.DeviceDrivers.SDK;
 using Crestron.DeviceDrivers.SDK.EntityModel;
 using KasaTapoClient;
@@ -149,6 +150,26 @@ public sealed class CacheRestorationTests
 		Call ("LoadManagedDeviceCacheIntoMemory");
 		var devices = Field<System.Collections.Concurrent.ConcurrentDictionary<string, PlatformManagedDevice>> ("_managedDevices");
 		Assert.That (devices.Values.Single ().UxCategory, Is.EqualTo (category));
+		}
+	[TestCase (DeviceUxCategory.Light, DeviceType.Bulb, "L530", false)]
+	[TestCase (DeviceUxCategory.Light, DeviceType.Bulb, "L530", true)]
+	[TestCase (DeviceUxCategory.Outlet, DeviceType.Strip, "KP303", false)]
+	[TestCase (DeviceUxCategory.Outlet, DeviceType.Strip, "KP303", true)]
+	[TestCase (DeviceUxCategory.Sensor, DeviceType.Hub, "T310", false)]
+	[TestCase (DeviceUxCategory.Sensor, DeviceType.Hub, "T310", true)]
+	[TestCase (DeviceUxCategory.Switch, DeviceType.Hub, "S200B", false)]
+	[TestCase (DeviceUxCategory.Switch, DeviceType.Hub, "S200B", true)]
+	public void SavedConfigurationRegistersCachedChildrenBeforeReturningToHost (DeviceUxCategory category, DeviceType type, string model, bool configured)
+		{
+		Seed (category, type, model, configured: configured);
+		_driver.Stop (); // Cancel network work: cached SDK registration must not depend on discovery.
+		var args = new DriverControllerCreationArgs ("cache-test", DriverTestPaths.DataDirectory, _logger.AppLogger, null!);
+		using var registry = new RegistrationTracingController (new ConfigurableDriverEntity ("root", _driver), args, _ => { });
+		Call ("ApplyConfigurationItems", DataDrivenConfigurationController.ApplyConfigurationAction.ApplyAll, "",
+			new Dictionary<string, DriverEntityValue?> ());
+		Assert.That (registry.ControllerIds, Does.Contain ("device_testparent_testparent00"),
+			"The host must be able to instantiate a cached child before asynchronous hub discovery completes.");
+		Assert.That (registry.GetState ("device_testparent_testparent00").Definition.Properties, Is.Not.Empty);
 		}
 	[Test]
 	public void ConfiguredChildMarkerSurvivesDriverReload ()

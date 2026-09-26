@@ -12,6 +12,8 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 
 ## 2.1.2 - Unreleased
 
+- Register cached child controllers before advertising their identities during startup, so Crestron Home can restore their configuration without waiting for network discovery.
+
 - Include illustrated user help, an account-free support contact and third-party license notices in the driver package.
 - Use the descriptive `NeilColvin_Platform_KasaTapo_IP_V2` package and DLL filename while preserving the existing driver identity and controls.
 

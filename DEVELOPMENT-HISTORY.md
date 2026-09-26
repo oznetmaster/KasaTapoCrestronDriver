@@ -13,6 +13,8 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 ## 2.1.2 preparation - 2026-09-26
 
+- Exercise the actual saved-configuration callback with cached lights, outlets, sensors and buttons, both configured and unconfigured. The regression detects a startup publication bypass missed by tests that called the publication helper directly. All 47 desktop lifecycle and 34 portable net472 tests pass after restoring publication before the managed-device snapshot.
+
 - Test the complete polling refresh-and-snapshot sequence using the actual SDK property-notification event, covering external colour/white changes, retained values, repeated snapshots and external power-off. The transport rejects device writes. An earlier isolated-refresh test omitted the snapshot; remove the speculative runtime change it prompted. These checks do not establish how Crestron Home applies the published colour mode.
 - Allow Android fixtures to resolve selected child IDs from exact installed driver, room, model and physical-device identities. Native wrappers must identify the selected physical device; ambiguous matches fail. This option does not provision or move devices, or grant control permission.
 - Add opt-in Android fixtures for temperature, motion and button displays, energy-capable and basic outlet controls, and individual native lighting controls. Private bindings select exact devices; shared processor/emulator reservations, independent device reads and verified restoration protect the configured installation. Hosted CI compiles these fixtures without operating hardware.
