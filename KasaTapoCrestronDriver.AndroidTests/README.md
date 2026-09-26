@@ -38,7 +38,7 @@ Outlet cases capture the unobscured Room tile and press its title to exercise th
 
 Additional outlet observation suffixes are `outlet.<alias>.tile-action` and `outlet.energy.navigation`, `.display` and `.close`, with the original and restored physical observations attached. These are separate assertions from the same controlled sequence, not extra device operations. No quantified response deadline is asserted.
 
-`outlet.<alias>.icon` and `sensor.<alias>.icon` separately verify the glyph and state colour in the initial unobscured tile capture against [reviewed icon references](IconReferences/README.md). The outlet expectation comes from independently observed power; the sensor expectation comes from its advertised icon property. Unknown icon states and changed geometry fail for review. These checks use the already captured screenshot, add no device commands, and preserve the older presence-only observation scopes. They do not establish every conditional icon state or sensor feedback timing.
+`outlet.<alias>.presentation` and `sensor.<alias>.presentation` verify the title, variant-specific ellipsis, glyph and state colour in the initial unobscured tile capture against [reviewed icon references](IconReferences/README.md). The outlet icon expectation comes from independently observed power; the sensor expectation comes from its advertised icon property. Unknown icon states and changed geometry fail for review. These checks use the already captured screenshot, add no device commands, and preserve the older presence-only observation scopes. They do not establish every conditional icon state or sensor feedback timing.
 
 `outlet.<alias>.tile-inventory` and `.room-feedback` expose the tile inventory and
 unobscured Room subtitle change separately. The feedback journal records the input
@@ -47,7 +47,7 @@ verification. This is an observation interval, not a measurement of the first
 visible response. Sensor cases similarly expose `sensor.<alias>.inventory` for
 the selected tile and its conditional display rows. These outputs reuse the same
 tested sequence and add no physical commands. Unsupported sensor types and icon
-glyph correctness are not asserted by those inventory outputs; use the separate `.icon` output for the reviewed captured state.
+glyph correctness are not asserted by those inventory outputs; use the separate `.presentation` output for the reviewed captured state.
 
 The native-light case uses only the selected load's controls, never room-wide controls or scenes. Independent physical reads verify power, brightness, tunable-white temperature, hue and saturation changes. The tuning check currently targets a full-color bulb with a 2500–6500 K white range; select matching hardware. Direct Kasa calls are used only to restore the captured light state; they do not count as evidence that driver controls worked. Native tuning-page captures retain the displayed white and color controls alongside the physical observations.
 

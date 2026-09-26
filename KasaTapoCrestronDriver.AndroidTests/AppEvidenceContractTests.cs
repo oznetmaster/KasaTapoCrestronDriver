@@ -31,11 +31,11 @@ public sealed class AppEvidenceContractTests
     }
 
     [TestCase("outlet.energy", "android")]
-    [TestCase("outlet.basic.icon", "android")]
-    [TestCase("outlet.energy.icon", "android")]
-    [TestCase("sensor.temperature.icon", "android")]
-    [TestCase("sensor.motion.icon", "android")]
-    [TestCase("sensor.button.icon", "android")]
+    [TestCase("outlet.basic.presentation", "android")]
+    [TestCase("outlet.energy.presentation", "android")]
+    [TestCase("sensor.temperature.presentation", "android")]
+    [TestCase("sensor.motion.presentation", "android")]
+    [TestCase("sensor.button.presentation", "android")]
     [TestCase("configuration.platform", "configuration")]
     [TestCase("sensor.temperature.navigation", "android")]
     [TestCase("outlet.energy.tile-action", "android")]
