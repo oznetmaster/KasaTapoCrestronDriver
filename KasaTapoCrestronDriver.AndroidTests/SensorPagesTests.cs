@@ -143,6 +143,8 @@ public sealed class SensorPagesTests
             await RoomNavigation.RevealTile(target.Room, target.Name, token);
             await session.CaptureAsync("sensor." + alias + ".room-tile",
                 h => RoomNavigation.InspectTile(h, target.Room, target.Name, false), token);
+            TileIconVerification.Verify(Path.Combine(session.Context.EvidenceDirectory, "sensor." + alias + ".room-tile"),
+                target.Name, device.PropertyValues[alias == "button" ? "buttonIcon" : "sensorIcon"].GetString()!);
             await session.Device.TapAsync(RoomNavigation.Tile(target.Name),
                 h => RoomNavigation.InspectTile(h, target.Room, target.Name, false), token);
             await session.CaptureAsync("sensor." + alias + ".controls", hierarchy =>
@@ -183,6 +185,7 @@ public sealed class SensorPagesTests
             "Verified the selected installed child's identity and ready state, its unobscured Room tile title, icon presence and absence of ellipsis; tapped the tile to open the expected read-only page; checked all conditional display rows for the selected sensor against the API snapshot; closed to the same Room and returned Home. No icon glyph, sensor stimulation, freshness, offline or response-time assertion.",
             started, started, started);
         foreach (var assertion in new[] {
+            ("icon", "The fully visible Room tile's glyph and state colour match the reviewed native-size screenshot reference for its driver-reported icon. Unknown icons or changed geometry fail; this does not cover unsupported sensor types or every possible icon state."),
             ("tile", "Unobscured Room tile has the expected title, an icon and no ellipsis. Icon glyph correctness is not asserted."),
             ("inventory", "Verified the selected read-only tile's title, icon presence, absence of ellipsis and default navigation, with every conditional detail row for this hardware. Unsupported sensor types and icon glyph correctness are not asserted."),
             ("navigation", "Pressing the selected read-only Room tile opens its expected default detail page."),

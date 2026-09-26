@@ -36,7 +36,9 @@ Missing control bindings skip the corresponding cases; a run containing skips is
 
 Outlet cases capture the unobscured Room tile and press its title to exercise the default action, verifying the physical change and Room-tile feedback. For the energy variant, the ellipsis then opens the detail page, where the Power control returns the outlet to its original state; the basic variant uses its tile again. Both send three consecutive presses without waiting for device acknowledgements between them. The burst uses the exact control coordinates from a guarded page and retains its actual start/end times; it does not claim a fixed tap rate. Cases compare app feedback, driver properties and fresh independent device observations, require the exact completed-command count and restore the original state with an absolute driver command. The energy page requires all six labelled numeric readings and explicitly closes back to the Room; it does not compare unsynchronized telemetry for exact equality. A retained journal records the original state before input. Unconfirmed restoration keeps the workflow reservations for review.
 
-Additional outlet observation suffixes are `outlet.<alias>.tile-action` and `outlet.energy.navigation`, `.display` and `.close`, with the original and restored physical observations attached. These are separate assertions from the same controlled sequence, not extra device operations. Tile checks verify icon presence, not the glyph's correctness; no quantified response deadline is asserted.
+Additional outlet observation suffixes are `outlet.<alias>.tile-action` and `outlet.energy.navigation`, `.display` and `.close`, with the original and restored physical observations attached. These are separate assertions from the same controlled sequence, not extra device operations. No quantified response deadline is asserted.
+
+`outlet.<alias>.icon` and `sensor.<alias>.icon` separately verify the glyph and state colour in the initial unobscured tile capture against [reviewed icon references](IconReferences/README.md). The outlet expectation comes from independently observed power; the sensor expectation comes from its advertised icon property. Unknown icon states and changed geometry fail for review. These checks use the already captured screenshot, add no device commands, and preserve the older presence-only observation scopes. They do not establish every conditional icon state or sensor feedback timing.
 
 `outlet.<alias>.tile-inventory` and `.room-feedback` expose the tile inventory and
 unobscured Room subtitle change separately. The feedback journal records the input
@@ -45,7 +47,7 @@ verification. This is an observation interval, not a measurement of the first
 visible response. Sensor cases similarly expose `sensor.<alias>.inventory` for
 the selected tile and its conditional display rows. These outputs reuse the same
 tested sequence and add no physical commands. Unsupported sensor types and icon
-glyph correctness still require separate evidence.
+glyph correctness are not asserted by those inventory outputs; use the separate `.icon` output for the reviewed captured state.
 
 The native-light case uses only the selected load's controls, never room-wide controls or scenes. Independent physical reads verify power, brightness, tunable-white temperature, hue and saturation changes. The tuning check currently targets a full-color bulb with a 2500–6500 K white range; select matching hardware. Direct Kasa calls are used only to restore the captured light state; they do not count as evidence that driver controls worked. Native tuning-page captures retain the displayed white and color controls alongside the physical observations.
 

@@ -119,6 +119,8 @@ public sealed class OutletControlsTests
             await RoomNavigation.RevealTile(target.Room, target.Name, token);
             await session.CaptureAsync("outlet." + alias + ".room-tile", h =>
                 RoomNavigation.InspectTile(h, target.Room, target.Name, target.EnergyPage, original ? "ON" : "OFF"), token);
+            TileIconVerification.Verify(Path.Combine(session.Context.EvidenceDirectory, "outlet." + alias + ".room-tile"),
+                target.Name, original ? "icGenericDeviceOn" : "icGenericDeviceOff");
             // Both variants expose the individual tile's default action. The
             // energy variant also exposes an ellipsis leading to its controls.
             AndroidSelector selector = new(AndroidSelectorKind.Text, target.Name);
@@ -276,6 +278,7 @@ public sealed class OutletControlsTests
             started, originalAt, actionAt, Directory.GetFiles(evidence, "*-original.json").Single(), Directory.GetFiles(evidence, "*-restored.json").Single());
         Evidence("tile-action", "Verified unobscured Room tile title, icon presence and variant-specific ellipsis. Pressing its title changed the selected physical outlet, with exact completed-command attribution and visible Room tile feedback. Original physical state restored. No icon glyph or quantified response-time assertion.");
         Evidence("tile-inventory", "Verified the selected Room tile's title, icon presence, variant-specific ellipsis and working default power action. Energy detail controls are checked separately. Original physical state restored; icon glyph correctness is not asserted.");
+        Evidence("icon", "The fully visible Room tile's glyph and state colour match the reviewed native-size reference for the independently verified original power state. Original physical state restored. This checks the captured state, not every transition frame.");
         Evidence("room-feedback", "Observed the unobscured Room tile subtitle change to the requested ON/OFF state after the exact attributed command and independent physical verification. The retained journal and capture record input intent and UI observation times, not first-visible-response latency. Original physical state restored; no icon glyph or response deadline asserted.");
         if (target.EnergyPage)
         {

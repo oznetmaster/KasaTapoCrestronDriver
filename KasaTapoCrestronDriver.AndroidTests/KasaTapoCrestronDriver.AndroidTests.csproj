@@ -8,6 +8,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Windows screenshot verification only; never merged into the driver. -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.12" PrivateAssets="all" />
+    <EmbeddedResource Include="IconReferences/*.png" />
     <EmbeddedResource Include="../KasaTapoCrestronDriver/KasaTapoCrestronDriver.json" LogicalName="Kasa.ExpectedDefinition.json" />
     <PackageReference Include="NUnit" Version="4.6.1" PrivateAssets="all" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.0" PrivateAssets="all" />
