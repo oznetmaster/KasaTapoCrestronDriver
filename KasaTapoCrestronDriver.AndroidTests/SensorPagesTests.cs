@@ -36,9 +36,10 @@ public sealed record FixtureSettings(string ProcessorHost, string CredentialBind
             RespectRequiredConstructorParameters = true, RespectNullableAnnotations = true, AllowDuplicateProperties = false
         }) ?? throw new InvalidDataException("Missing fixture settings.");
         if (settings.ProcessorHost != context.ProcessorAddress || !Path.IsPathFullyQualified(settings.CredentialBindings) ||
-            settings.Sensors.Length != 3 || settings.Sensors.Select(s => s.Alias).Distinct(StringComparer.Ordinal).Count() != 3 ||
-            settings.Sensors.Any(s => s.Alias is not ("temperature" or "motion" or "button") || s.DisplayProperties.Length == 0 ||
-                s.DisplayProperties.Any(p => p is not ("temperatureDisplay" or "humidityDisplay" or "batteryStatusLabel" or "motionStatusLabel" or "lastGestureLabel" or "lastTriggerTimeDisplay"))))
+            settings.Sensors.Length is < 3 or > 5 || settings.Sensors.Select(s => s.Alias).Distinct(StringComparer.Ordinal).Count() != settings.Sensors.Length ||
+            new[] { "temperature", "motion", "button" }.Except(settings.Sensors.Select(s => s.Alias)).Any() ||
+            settings.Sensors.Any(s => s.Alias is not ("temperature" or "motion" or "button" or "contact" or "leak") || s.DisplayProperties.Length == 0 ||
+                s.DisplayProperties.Any(p => p is not ("temperatureDisplay" or "humidityDisplay" or "batteryStatusLabel" or "motionStatusLabel" or "lastGestureLabel" or "lastTriggerTimeDisplay" or "contactStatusLabel" or "leakStatusLabel"))))
             throw new InvalidDataException("Sensor bindings do not match this fixture's read-only scope.");
         if (settings.EvidenceIdentity != null) AppEvidence.Validate(settings.EvidenceIdentity, context);
         return settings;

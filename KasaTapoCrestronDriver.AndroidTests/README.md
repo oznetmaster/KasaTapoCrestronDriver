@@ -6,6 +6,36 @@ Build with the .NET 10 SDK and the public package references in this project. In
 
 Build from the repository checkout: the fixture embeds the adjacent driver JSON as its expected configuration definition. Preserve the repository's build-output exclusions when preparing an isolated checkout; generated `bin`/`obj` files must not become source changes during a run.
 
+## Physical sensor feedback recordings
+
+`SensorEventTests.PhysicalEventReachesVisibleDetailPage` has four **explicit**
+cases: `button`, `motion`, `contact` and `leak`. Select one exact case through the
+same public installed-driver Android workflow, with a person available. Ordinary
+unattended suites do not run these cases. The existing three sensor bindings stay
+required; optional `contact` and `leak` bindings identify additional selected
+children. They must match the verified candidate, model, name and room. This
+fixture only reads sensor state and navigates its telemetry page; it sends no
+device commands and does not add sensors or alter polling.
+
+Begin with the contact closed, leak sensor dry, or no motion. Wait for
+`sensor-event.<alias>/ready.json` (also announced in NUnit progress), then trigger
+the selected sensor once without navigating the app. After `restore-request.json`,
+close the contact, dry the sensor or leave the detection area. Each physical wait
+is bounded to five minutes. The app has a separate 30-second observation timeout;
+this is a recorder limit, **not a certification timing requirement**. Button events
+require an increasing driver event timestamp and a distinguishable display value;
+old gestures alone cannot pass. Buttons have no persistent state to restore.
+
+Evidence retains baseline/event/recovery screenshots and hierarchies, selected API
+values, timestamps, final state, and candidate/test-assembly provenance. Intermediate
+polls stay in memory. Failures retain a failure record and attempt Home restoration;
+they never produce `complete.json`. Timing starts after the driver API observation,
+so it cannot establish physical-event-to-app latency or Room-tile feedback. Raw
+recordings are limited to the assertions above; review their scope before using
+them as evidence for any broader checklist. Use a fresh
+workflow evidence directory for every attempt. Pin the later fixture separately
+from the unchanged driver package, and never edit an active endurance run to add it.
+
 Outlet fixtures retain two `command-response` journal records per case: the first
 individual action and its return. A monotonic clock measures from completion of
 the input page guard to observation of the exact attributed command completion.
