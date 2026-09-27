@@ -8,29 +8,33 @@ Build from the repository checkout: the fixture embeds the adjacent driver JSON 
 
 ## Physical sensor feedback recordings
 
-`SensorEventTests.PhysicalEventReachesVisibleDetailPage` has four **explicit**
-cases: `button`, `motion`, `contact` and `leak`. Select one exact case through the
+`SensorEventTests.PhysicalEventReachesVisibleDetailPage` and
+`PhysicalEventReachesVisibleRoomTile` each have four **explicit** cases:
+`button`, `motion`, `contact` and `leak`. Select one exact case through the
 same public installed-driver Android workflow, with a person available. Ordinary
 unattended suites do not run these cases. The existing three sensor bindings stay
 required; optional `contact` and `leak` bindings identify additional selected
 children. They must match the verified candidate, model, name and room. This
-fixture only reads sensor state and navigates its telemetry page; it sends no
+fixture only reads sensor state and navigates the app; it sends no
 device commands and does not add sensors or alter polling.
 
 Begin with the contact closed, leak sensor dry, or no motion. Wait for
-`sensor-event.<alias>/ready.json` (also announced in NUnit progress), then trigger
+`sensor-event.<alias>.<page|tile>/ready.json` (also announced in NUnit progress), then trigger
 the selected sensor once without navigating the app. After `restore-request.json`,
 close the contact, dry the sensor or leave the detection area. Each physical wait
 is bounded to five minutes. The app has a separate 30-second observation timeout;
 this is a recorder limit, **not a certification timing requirement**. Button events
-require an increasing driver event timestamp and a distinguishable display value;
+require an increasing driver event timestamp and a distinguishable display value
+in the selected view (choose a different gesture from the baseline);
 old gestures alone cannot pass. Buttons have no persistent state to restore.
 
 Evidence retains baseline/event/recovery screenshots and hierarchies, selected API
 values, timestamps, final state, and candidate/test-assembly provenance. Intermediate
 polls stay in memory. Failures retain a failure record and attempt Home restoration;
 they never produce `complete.json`. Timing starts after the driver API observation,
-so it cannot establish physical-event-to-app latency or Room-tile feedback. Raw
+so it cannot establish physical-event-to-app latency. The tile mode keeps the
+unobscured Room tile visible throughout; page results cannot substitute for tile
+feedback. Neither mode proves icon glyph correctness. Raw
 recordings are limited to the assertions above; review their scope before using
 them as evidence for any broader checklist. Use a fresh
 workflow evidence directory for every attempt. Pin the later fixture separately

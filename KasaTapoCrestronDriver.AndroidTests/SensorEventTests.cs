@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Xml.Linq;
 using CrestronHomeDevTools;
 using CrestronHomeNUnit.Android;
 using NUnit.Framework;
@@ -44,6 +45,26 @@ internal static class SensorEventReading
         current.Rows.Any(p => !baseline.Rows.TryGetValue(p.Key, out var old) ||
             !string.Equals(old, p.Value, StringComparison.OrdinalIgnoreCase));
 
+    internal static SensorEventSnapshot ReadTile(string alias, DeviceInfo device)
+    {
+        var reading = Read(alias, device);
+        string property = alias == "button" ? "lastTriggerDisplay" : "sensorStatus";
+        string text = device.PropertyValues[property].GetString() ?? "";
+        if (string.IsNullOrWhiteSpace(text)) throw new InvalidDataException("Tile status missing.");
+        return reading with { Rows = new() { ["Room tile"] = text } };
+    }
+
+    internal static bool TileMatches(AndroidHierarchy hierarchy, string room, string name, SensorEventSnapshot snapshot)
+    {
+        // Check visibility/title/icon/affordances before comparing the subtitle.
+        // A wrong page or obscured tile is an error, not a pending status update.
+        RoomNavigation.InspectTile(hierarchy, room, name, false);
+        var rows = RoomNavigation.TileNode(hierarchy, name).Descendants("node").Where(n =>
+            (string?)n.Attribute("resource-id") == CrestronHomePages.ResourcePrefix + "serviceSubtitle").ToArray();
+        if (rows.Length != 1) throw new InvalidDataException("Ambiguous or missing Room tile subtitle.");
+        return string.Equals((string?)rows[0].Attribute("text"), snapshot.Rows["Room tile"], StringComparison.OrdinalIgnoreCase);
+    }
+
     internal static bool Matches(AndroidHierarchy hierarchy, string title, SensorEventSnapshot snapshot)
     {
         CrestronHomePages.RequireExtensionPage(hierarchy, title);
@@ -61,14 +82,22 @@ public sealed class SensorEventTests
     [TestCase("motion", Explicit = true)]
     [TestCase("contact", Explicit = true)]
     [TestCase("leak", Explicit = true)]
-    public async Task PhysicalEventReachesVisibleDetailPage(string alias)
+    public Task PhysicalEventReachesVisibleDetailPage(string alias) => Record(alias, false);
+
+    [TestCase("button", Explicit = true)]
+    [TestCase("motion", Explicit = true)]
+    [TestCase("contact", Explicit = true)]
+    [TestCase("leak", Explicit = true)]
+    public Task PhysicalEventReachesVisibleRoomTile(string alias) => Record(alias, true);
+
+    private static async Task Record(string alias, bool roomTile)
     {
         if (!SensorSession.PhysicalRestorationConfirmed)
             throw new InvalidOperationException("Resolve the preceding test's physical restoration before recording another event.");
         var session = SensorSession.Current!;
         var target = SensorSession.Settings!.Sensors.Single(s => s.Alias == alias);
         int id = target.DeviceId > 0 ? target.DeviceId : session.Context.RequireManagedDevice(alias).DeviceId;
-        string prefix = "sensor-event." + alias;
+        string prefix = "sensor-event." + alias + (roomTile ? ".tile" : ".page");
         string folder = Path.Combine(session.Context.EvidenceDirectory, prefix);
         if (Directory.Exists(folder)) throw new IOException("Event evidence already exists; use a new workflow invocation.");
         Directory.CreateDirectory(folder);
@@ -90,6 +119,10 @@ public sealed class SensorEventTests
         }
         var first = await ReadDevice(token);
         string title = first.PropertyValues["deviceLabel"].GetString() ?? throw new InvalidDataException("Sensor title missing.");
+        SensorEventSnapshot Reading(DeviceInfo device) => roomTile
+            ? SensorEventReading.ReadTile(alias, device) : SensorEventReading.Read(alias, device);
+        bool Matches(AndroidHierarchy h, SensorEventSnapshot s) => roomTile
+            ? SensorEventReading.TileMatches(h, target.Room, target.Name, s) : SensorEventReading.Matches(h, title, s);
         SensorEventSnapshot? baseline = null;
         bool armed = false;
         Exception? failure = null;
@@ -99,7 +132,7 @@ public sealed class SensorEventTests
             wait.CancelAfter(TimeSpan.FromMinutes(5));
             while (true)
             {
-                var reading = SensorEventReading.Read(alias, await ReadDevice(wait.Token));
+                var reading = Reading(await ReadDevice(wait.Token));
                 if (predicate(reading)) return reading;
                 await Task.Delay(TimeSpan.FromSeconds(1), wait.Token);
             }
@@ -111,11 +144,11 @@ public sealed class SensorEventTests
             var clock = Stopwatch.StartNew();
             using var wait = CancellationTokenSource.CreateLinkedTokenSource(token);
             wait.CancelAfter(TimeSpan.FromSeconds(30));
-            while (!SensorEventReading.Matches(await session.Device.CaptureAsync(wait.Token), title, reading))
+            while (!Matches(await session.Device.CaptureAsync(wait.Token), reading))
                 await Task.Delay(250, wait.Token);
             await session.CaptureAsync(prefix + "." + phase, h =>
             {
-                if (!SensorEventReading.Matches(h, title, reading)) throw new InvalidDataException("App changed during capture.");
+                if (!Matches(h, reading)) throw new InvalidDataException("App changed during capture.");
             }, wait.Token);
             await Save(phase, new { Reading = reading, AppRecordedUtc = DateTimeOffset.UtcNow,
                 ObservationAndCaptureMilliseconds = clock.Elapsed.TotalMilliseconds });
@@ -124,16 +157,18 @@ public sealed class SensorEventTests
         {
             await RoomNavigation.Open(target.Room, token);
             await RoomNavigation.RevealTile(target.Room, target.Name, token);
-            await session.Device.TapAsync(RoomNavigation.Tile(target.Name),
-                h => RoomNavigation.InspectTile(h, target.Room, target.Name, false), token);
-            baseline = SensorEventReading.Read(alias, await ReadDevice(token));
+            if (!roomTile)
+                await session.Device.TapAsync(RoomNavigation.Tile(target.Name),
+                    h => RoomNavigation.InspectTile(h, target.Room, target.Name, false), token);
+            baseline = Reading(await ReadDevice(token));
             if (alias != "button" && baseline.Marker != 0)
                 throw new InvalidDataException("Start with no motion, contact closed or leak sensor dry, then retry in a new invocation.");
             await ObserveUi("baseline", baseline);
             armed = true;
             if (alias != "button") SensorSession.PhysicalRestorationConfirmed = false;
             await Save("ready", new { Alias = alias, DeviceId = id, ReadyUtc = DateTimeOffset.UtcNow,
-                Instruction = "Trigger this physical sensor once; do not navigate the app. Restore after restore-request appears." });
+                Baseline = baseline,
+                Instruction = "Trigger this physical sensor once; for a button use a different gesture from the baseline. Do not navigate the app. Restore after restore-request appears." });
             TestContext.Progress.WriteLine($"READY: {alias}; trigger the selected sensor once.");
             var changed = await WaitFor(s => SensorEventReading.IsNew(alias, baseline, s));
             if (!SensorEventReading.DisplayChanged(baseline, changed))
@@ -182,6 +217,8 @@ public sealed class SensorEventTests
         await Save("complete", new { Outcome = "Passed", CompletedUtc = DateTimeOffset.UtcNow,
             session.Context.PackageSha256, session.Context.ReleaseSourceCommit, Target = target,
             FixtureAssemblySha256 = Convert.ToHexStringLower(SHA256.HashData(await File.ReadAllBytesAsync(assembly))),
-            Scope = "Physical sensor event reflected in visible detail rows; stateful sensor recovery. No Room-tile or physical-to-app timing assertion." });
+            Scope = roomTile
+                ? "Physical sensor event reflected in unobscured Room tile text; stateful sensor recovery. No detail-page, icon-glyph or physical-to-app timing assertion."
+                : "Physical sensor event reflected in visible detail rows; stateful sensor recovery. No Room-tile or physical-to-app timing assertion." });
     }
 }

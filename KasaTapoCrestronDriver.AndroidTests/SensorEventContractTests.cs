@@ -57,12 +57,29 @@ public sealed class SensorEventContractTests
         Assert.Throws<InvalidDataException>(() => SensorEventReading.Read("button", device));
     }
 
-    [Test] public void PhysicalCasesCannotRunAsOrdinaryUnattendedTests()
+    [TestCase(nameof(SensorEventTests.PhysicalEventReachesVisibleDetailPage))]
+    [TestCase(nameof(SensorEventTests.PhysicalEventReachesVisibleRoomTile))]
+    public void PhysicalCasesCannotRunAsOrdinaryUnattendedTests(string method)
     {
-        var cases = typeof(SensorEventTests).GetMethod(nameof(SensorEventTests.PhysicalEventReachesVisibleDetailPage))!
+        var cases = typeof(SensorEventTests).GetMethod(method)!
             .GetCustomAttributes(typeof(TestCaseAttribute), false).Cast<TestCaseAttribute>().ToArray();
         Assert.That(cases, Has.Length.EqualTo(4));
         Assert.That(cases.All(c => c.Explicit), Is.True);
+    }
+
+    [Test] public void RoomTileUsesItsOwnValueAndRequiresDistinguishableFeedback()
+    {
+        var device = Device(("lastTriggerTime", 100), ("lastGestureLabel", "Single Press"),
+            ("lastTriggerTimeDisplay", "10:00:00"), ("lastTriggerDisplay", "Single Press - 10:00 AM"));
+        var baseline = SensorEventReading.ReadTile("button", device);
+        device.PropertyValues["lastTriggerTime"] = JsonSerializer.SerializeToElement(101);
+        device.PropertyValues["lastTriggerTimeDisplay"] = JsonSerializer.SerializeToElement("10:00:01");
+        var repeated = SensorEventReading.ReadTile("button", device);
+        Assert.That(SensorEventReading.IsNew("button", baseline, repeated), Is.True);
+        Assert.That(SensorEventReading.DisplayChanged(baseline, repeated), Is.False,
+            "A detail-page timestamp change cannot establish Room-tile feedback.");
+        device.PropertyValues["lastTriggerDisplay"] = JsonSerializer.SerializeToElement("Double Press - 10:00 AM");
+        Assert.That(SensorEventReading.DisplayChanged(baseline, SensorEventReading.ReadTile("button", device)), Is.True);
     }
 
     [Test] public void AppComparisonUsesTheLabelledRowAndRejectsWrongPage()
@@ -78,5 +95,23 @@ public sealed class SensorEventContractTests
         Assert.That(SensorEventReading.Matches(hierarchy, "Demo Sensor",
             current with { Rows = new() { ["Motion"] = "No Motion" } }), Is.False);
         Assert.Throws<InvalidOperationException>(() => SensorEventReading.Matches(hierarchy, "Wrong Sensor", current));
+    }
+
+    [Test] public void RoomFeedbackRequiresVisibleMatchingTileNotUnrelatedText()
+    {
+        string Node(string id, string text, string bounds) => $"<node package='com.crestron.phoenix.app' resource-id='{CrestronHomePages.ResourcePrefix}{id}' text='{text}' enabled='true' bounds='{bounds}'/>";
+        string xml = "<hierarchy>" + Node("room_name", "Lab", "[0,0][100,50]") +
+            Node("room_back", "Back", "[0,0][100,50]") + Node("bottomNavigationView", "", "[0,900][500,1000]") +
+            "<node package='com.crestron.phoenix.app' content-desc='room_service_Demo Sensor' enabled='true' bounds='[0,100][400,250]'>" +
+            Node("serviceTitle", "Demo Sensor", "[0,100][400,150]") + Node("serviceIcon", "", "[0,150][50,200]") +
+            Node("serviceSubtitle", "No Motion", "[50,150][400,200]") + "</node>" +
+            Node("other", "Motion Detected", "[0,300][400,350]") + "</hierarchy>";
+        var current = new SensorEventSnapshot(DateTimeOffset.UtcNow, 0, new() { ["Room tile"] = "No Motion" });
+        var hierarchy = new AndroidHierarchy(xml, "com.crestron.phoenix.app");
+        Assert.That(SensorEventReading.TileMatches(hierarchy, "Lab", "Demo Sensor", current), Is.True);
+        Assert.That(SensorEventReading.TileMatches(hierarchy, "Lab", "Demo Sensor",
+            current with { Rows = new() { ["Room tile"] = "Motion Detected" } }), Is.False);
+        var hidden = new AndroidHierarchy(xml.Replace("[0,100][400,250]", "[0,950][400,1100]"), "com.crestron.phoenix.app");
+        Assert.Throws<InvalidDataException>(() => SensorEventReading.TileMatches(hidden, "Lab", "Demo Sensor", current));
     }
 }
