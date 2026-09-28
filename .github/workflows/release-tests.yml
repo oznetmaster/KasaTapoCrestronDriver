@@ -104,21 +104,13 @@ jobs:
       - name: Install packaging tools
         shell: pwsh
         run: '& "$env:PROCESSOR_SDK/tools/InstallCiTools.ps1"'
-      - name: Restore private desktop SDK dependency
-        env:
-          COMPACT_1: ${{ secrets.CI_COMPACT_JSON_1 }}
-          COMPACT_2: ${{ secrets.CI_COMPACT_JSON_2 }}
-          COMPACT_3: ${{ secrets.CI_COMPACT_JSON_3 }}
-          COMPACT_4: ${{ secrets.CI_COMPACT_JSON_4 }}
-          COMPACT_5: ${{ secrets.CI_COMPACT_JSON_5 }}
+      - name: Restore public desktop SDK dependency
+        shell: pwsh
         run: |
-          $encoded = $env:COMPACT_1 + $env:COMPACT_2 + $env:COMPACT_3 + $env:COMPACT_4 + $env:COMPACT_5
-          if ([string]::IsNullOrEmpty($encoded)) { throw 'Desktop SDK dependency unavailable. Fork PRs require a trusted maintainer CI run.' }
-          $inputStream = [IO.MemoryStream]::new([Convert]::FromBase64String($encoded))
-          $gzip = [IO.Compression.GZipStream]::new($inputStream, [IO.Compression.CompressionMode]::Decompress)
-          $path = Join-Path $env:RUNNER_TEMP 'Newtonsoft.Json.Compact.dll'
-          $output = [IO.File]::Create($path)
-          try { $gzip.CopyTo($output) } finally { $output.Dispose(); $gzip.Dispose(); $inputStream.Dispose() }
+          $tools = Join-Path $env:RUNNER_TEMP 'desktop-sdk-tools'
+          nuget install Crestron.DeviceDrivers.ManifestUtil -Version 29.0.10 -OutputDirectory $tools -NonInteractive -Source https://api.nuget.org/v3/index.json
+          if ($LASTEXITCODE -ne 0) { throw 'Public desktop SDK dependency restore failed.' }
+          $path = Join-Path $tools 'Crestron.DeviceDrivers.ManifestUtil.29.0.10/tools/net8.0/any/Newtonsoft.Json.Compact.dll'
           if ((Get-FileHash $path -Algorithm SHA256).Hash -ne '8b9567057419e97b20702a4364283b0b5c34d5e00e006e329e1c92b74638ef90') { throw 'Unexpected desktop SDK dependency checksum.' }
           "CompactJsonPath=$path" >> $env:GITHUB_ENV
       - name: Build and validate test release

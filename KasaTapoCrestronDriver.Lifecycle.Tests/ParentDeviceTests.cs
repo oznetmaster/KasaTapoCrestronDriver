@@ -205,7 +205,7 @@ public sealed class ParentDeviceTests
 		var pending = poller.ExecuteCommandAsync (async (_, t) => { started.TrySetResult (true); await Task.Delay (Timeout.Infinite, t); }, default);
 		await started.Task.WaitForTestAsync (TimeSpan.FromSeconds (5));
 		poller.Dispose ();
-		Assert.CatchAsync<OperationCanceledException> (() => pending);
+		await Assert.CatchAsync<OperationCanceledException> (() => pending);
 		Assert.That (a.Pushes, Is.EqualTo (2));
 		Assert.That (device.IsDisposed, Is.False);
 		}
@@ -324,7 +324,7 @@ public sealed class ParentDeviceTests
 		using var cancellation = new CancellationTokenSource ();
 		var canceled = poller.ExecuteCommandAsync ((_, _) => { ran = true; return Task.CompletedTask; }, cancellation.Token);
 		cancellation.Cancel ();
-		Assert.CatchAsync<OperationCanceledException> (() => canceled);
+		await Assert.CatchAsync<OperationCanceledException> (() => canceled);
 		Assert.That (ran, Is.False);
 		Assert.That (refresh.IsCompleted, Is.False);
 		Assert.That (transport.Updates, Is.EqualTo (updatesBefore));
@@ -447,7 +447,7 @@ public sealed class ParentDeviceTests
 		poller.RegisterChild (new CallbackChild ("a", () => throw new InvalidOperationException ("subscriber"), () => throw new InvalidOperationException ("subscriber")));
 		var healthy = new Child ("b");
 		poller.RegisterChild (healthy);
-		Assert.ThrowsAsync<InvalidOperationException> (() => poller.ExecuteCommandAsync ((_, _) => Task.FromException (new InvalidOperationException ("command")), default));
+		await Assert.ThrowsAsync<InvalidOperationException> (() => poller.ExecuteCommandAsync ((_, _) => Task.FromException (new InvalidOperationException ("command")), default));
 		Assert.That (healthy.Offline, Is.EqualTo (1));
 		await poller.RefreshAsync (default).WaitForTestAsync (TimeSpan.FromSeconds (5));
 		Assert.That (healthy.Pushes, Is.EqualTo (1));
@@ -463,7 +463,7 @@ public sealed class ParentDeviceTests
 		var removed = new Child ("b");
 		poller.RegisterChild (new CallbackChild ("a", () => { }, () => poller.UnregisterChild (removed)));
 		poller.RegisterChild (removed);
-		Assert.ThrowsAsync<InvalidOperationException> (() => poller.ExecuteCommandAsync ((_, _) => Task.FromException (new InvalidOperationException ("command")), default));
+		await Assert.ThrowsAsync<InvalidOperationException> (() => poller.ExecuteCommandAsync ((_, _) => Task.FromException (new InvalidOperationException ("command")), default));
 		Assert.That (removed.Offline, Is.Zero, "A removed entity must not receive a later callback from a captured subscriber list.");
 		await poller.RefreshAsync (default);
 		Assert.That (removed.Pushes, Is.Zero);
@@ -487,7 +487,7 @@ public sealed class ParentDeviceTests
 			poller.Dispose ();
 			}
 		finally { release.TrySetResult (true); }
-		Assert.CatchAsync<OperationCanceledException> (() => refresh.WaitForTestAsync (TimeSpan.FromSeconds (5)));
+		await Assert.CatchAsync<OperationCanceledException> (() => refresh.WaitForTestAsync (TimeSpan.FromSeconds (5)));
 		Assert.That (child.Pushes, Is.Zero);
 		Assert.That (child.Offline, Is.Zero);
 		Assert.That (device.IsDisposed, Is.False);

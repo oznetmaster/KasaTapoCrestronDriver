@@ -1,9 +1,9 @@
 # Driver tests
 
-Both test projects use NUnit 4.6.1, NUnit3TestAdapter 6.3.0, Microsoft.NET.Test.Sdk 18.10.1 and NUnit.Analyzers 4.15.0. The workflow project uses CrestronHomeNUnit.TestAdapter 1.12.1.
+Both test projects use NUnit 5.0.0, NUnit3TestAdapter 6.3.0, Microsoft.NET.Test.Sdk 18.10.1 and NUnit.Analyzers 4.15.0. The workflow project uses CrestronHomeNUnit.TestAdapter 2.0.0.
 
 - The production build and 34 ordinary tests target .NET Framework 4.7.2.
-- The desktop lifecycle project runs 47 offline cases and targets .NET 10 and compiles the same driver sources against the desktop SDK. The shared lifecycle fixtures also run against the production SDK on the net472 processor.
+- The desktop lifecycle project runs 58 offline cases and targets .NET 10 and compiles the same driver sources against the desktop SDK. The shared lifecycle fixtures also run against the production SDK on the net472 processor.
 - The processor package contains the ordinary, lifecycle and opt-in live suites. Desktop adapters and runners are excluded from the merged package.
 
 ```powershell
