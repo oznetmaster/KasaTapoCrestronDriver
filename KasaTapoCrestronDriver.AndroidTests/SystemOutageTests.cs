@@ -12,10 +12,14 @@ using NUnit.Framework;
 namespace KasaTapoCrestronDriver.AndroidTests;
 
 public sealed record OutageEndpoint(string Component, string Host, int[] Ports, PhysicalPowerTarget? Physical);
-public sealed record OutagePlanInput(string Path, string Sha256);
+// Scope is part of the workflow's pinned fixture JSON. Release expansion supplies the
+// actual candidate identity separately; no per-release plan file must be hand-edited.
+public sealed record OutagePlanScope(string RequirementId, string[] RequiredComponents, string[] RequiredFunctions,
+    TimeSpan MinimumInterruption, TimeSpan RecoveryLimit, SubmissionOutageRecoveryClock RecoveryClock,
+    string? ProgramComponent = null);
 public sealed record SystemOutageSettings(string AuthorizedProcessorHost, string[] NeverInterruptHosts,
     string OutletAlias, OutageEndpoint[] Endpoints, SubmissionManualOutageSettings Manual,
-    OutagePlanInput[] Plans, string PolicyFile);
+    OutagePlanScope[] Plans, string PolicyFile);
 
 // Explicitly selected only in a separately reserved initial stage. Private bindings carry the
 // operator instructions, forbidden hosts and exact candidate. No automatic processor reset exists.
@@ -48,7 +52,7 @@ public sealed class SystemOutageTests
             settings.ResolveDeviceIds || settings.OperatorInbox != plan.Manual.Inbox || settings.DeviceCredentialsFile == null ||
             !Path.IsPathFullyQualified(settings.DeviceCredentialsFile) || settings.EvidenceIdentity == null ||
             !Path.IsPathFullyQualified(plan.PolicyFile) || plan.Plans.Length is < 1 or > 2 ||
-            plan.Plans.Any(p => !Path.IsPathFullyQualified(p.Path) || p.Sha256.Length != 64 || !p.Sha256.All(char.IsAsciiHexDigit)) ||
+            plan.Plans.Any(p => p == null) ||
             plan.Endpoints.Length is < 2 or > 6 || plan.Endpoints.Count(e => e.Component == "processor") != 1 ||
             plan.Endpoints.Select(e => e.Component).Distinct(StringComparer.Ordinal).Count() != plan.Endpoints.Length ||
             plan.Endpoints.Select(e => e.Host).Distinct(StringComparer.Ordinal).Count() != plan.Endpoints.Length ||
@@ -63,6 +67,29 @@ public sealed class SystemOutageTests
             throw new InvalidDataException("Select an authorized standalone outlet contained in the interruption scope.");
     }
 
+    internal static readonly JsonSerializerOptions PlanJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        RespectRequiredConstructorParameters = true, RespectNullableAnnotations = true, AllowDuplicateProperties = false,
+        WriteIndented = true, Converters = { new JsonStringEnumConverter(allowIntegerValues: false) } };
+
+    internal static SubmissionOutageMeasurementPlan[] PreparePlans(SystemOutageSettings scope, FixtureSettings settings, byte[] policy)
+    {
+        var identity = settings.EvidenceIdentity ?? throw new InvalidDataException("Missing candidate evidence identity.");
+        if (scope.Plans.Length is < 1 or > 2 || !string.Equals(Hash(policy), identity.PolicySha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Outage scope or pinned policy is invalid.");
+        var parsedPolicy = JsonSerializer.Deserialize<SubmissionEvidencePolicy>(policy, PlanJson) ?? throw new InvalidDataException("Empty outage policy.");
+        var plans = scope.Plans.Select(p => new SubmissionOutageMeasurementPlan(identity, p.RequirementId,
+            [.. p.RequiredComponents], [.. p.RequiredFunctions], p.MinimumInterruption, p.RecoveryLimit, p.RecoveryClock, p.ProgramComponent)).ToArray();
+        if (plans.Select(p => p.RequirementId).Distinct(StringComparer.Ordinal).Count() != plans.Length ||
+            plans.Any(p => !p.RequiredComponents.Order().SequenceEqual(scope.Endpoints.Select(e => e.Component).Order()) ||
+                !p.RequiredFunctions.SequenceEqual(Functions) || p.MinimumInterruption < TimeSpan.FromSeconds(60) ||
+                p.RecoveryLimit != TimeSpan.FromSeconds(60) ||
+                p.RecoveryClock == SubmissionOutageRecoveryClock.ProgramLoaded && p.ProgramComponent != "processor"))
+            throw new InvalidDataException("Outage plans differ from the pinned scope or required timing.");
+        foreach (var plan in plans) SubmissionOutageEvidence.ValidatePlanPolicy(plan, parsedPolicy);
+        return plans;
+    }
+
     [Test, Explicit("Requires coordinated physical interruption of the separately authorized processor and demo equipment.")]
     public async Task ManualProcessorAndDeviceInterruptionRecoversControlAndApp()
     {
@@ -71,25 +98,21 @@ public sealed class SystemOutageTests
         var plan = settings.SystemOutage ?? throw new InvalidDataException("Explicit outage settings required.");
         Validate(plan, settings, session.Context.InstalledDriverId);
         if (!SensorSession.PhysicalRestorationConfirmed) throw new InvalidOperationException("Earlier restoration is unresolved.");
-        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true,
-            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectRequiredConstructorParameters = true,
-            RespectNullableAnnotations = true, AllowDuplicateProperties = false, Converters = { new JsonStringEnumConverter(allowIntegerValues: false) } };
         byte[] ReadBounded(string path) => new FileInfo(path).Length <= 1024 * 1024 ? File.ReadAllBytes(path) : throw new InvalidDataException("Oversized outage input.");
-        var plans = plan.Plans.Select(p => {
-            byte[] bytes = ReadBounded(p.Path);
-            if (!string.Equals(Hash(bytes), p.Sha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Outage plan changed.");
-            return JsonSerializer.Deserialize<SubmissionOutageMeasurementPlan>(bytes, options) ?? throw new InvalidDataException("Empty outage plan.");
-        }).ToArray();
         byte[] policy = ReadBounded(plan.PolicyFile);
-        if (plans.Select(p => p.RequirementId).Distinct(StringComparer.Ordinal).Count() != plans.Length ||
-            plans.Any(p => p.Identity != settings.EvidenceIdentity || !string.Equals(Hash(policy), p.Identity.PolicySha256, StringComparison.OrdinalIgnoreCase) ||
-                !p.RequiredComponents.Order().SequenceEqual(plan.Endpoints.Select(e => e.Component).Order()) ||
-                !p.RequiredFunctions.SequenceEqual(Functions) || p.MinimumInterruption < TimeSpan.FromSeconds(60) ||
-                p.RecoveryLimit != TimeSpan.FromSeconds(60) ||
-                p.RecoveryClock == SubmissionOutageRecoveryClock.ProgramLoaded && p.ProgramComponent != "processor"))
-            throw new InvalidDataException("Outage plans differ from the pinned identity, scope or required timing.");
-        var parsedPolicy = JsonSerializer.Deserialize<SubmissionEvidencePolicy>(policy, options) ?? throw new InvalidDataException("Empty outage policy.");
-        foreach(var reviewedPlan in plans) SubmissionOutageEvidence.ValidatePlanPolicy(reviewedPlan, parsedPolicy);
+        var plans = PreparePlans(plan, settings, policy);
+        var planBytes = plans.Select(p => JsonSerializer.SerializeToUtf8Bytes(p, PlanJson)).ToArray();
+        var planHashes = planBytes.Select(Hash).ToArray();
+        string inputFolder = Path.Combine(session.Context.EvidenceDirectory, "system-outage-inputs");
+        if (Directory.Exists(inputFolder)) throw new IOException("Outage inputs already exist; inspect without replaying.");
+        Directory.CreateDirectory(inputFolder);
+        void Save(string name, byte[] bytes) {
+            using var output = new FileStream(Path.Combine(inputFolder, name), FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            output.Write(bytes); output.Flush(flushToDisk: true);
+        }
+        Save("policy.json", policy);
+        for (int i = 0; i < planBytes.Length; i++) Save("reviewed-plan-" + i + ".json", planBytes[i]);
+        Save("manifest.json", JsonSerializer.SerializeToUtf8Bytes(new { Identity = settings.EvidenceIdentity, PlanHashes = planHashes }, PlanJson));
         // One physical episode may supply both separately assessed clocks; never ask twice merely
         // because the checklist has two rows. Missing program-load timing remains Partial.
         var capturePlan = (plans.FirstOrDefault(p => p.RecoveryClock == SubmissionOutageRecoveryClock.ProgramLoaded) ?? plans[0])
@@ -108,13 +131,13 @@ public sealed class SystemOutageTests
             for (int i = 0; i < plans.Length; i++)
             {
                 string name = "reviewed-plan-" + i + ".json";
-                byte[] bytes = ReadBounded(plan.Plans[i].Path);
+                byte[] bytes = planBytes[i];
                 File.WriteAllBytes(Path.Combine(folder, name), bytes);
-                var imported = SubmissionOutageEvidence.ImportFiles(folder, name, plan.Plans[i].Sha256,
+                var imported = SubmissionOutageEvidence.ImportFiles(folder, name, planHashes[i],
                     result.RecordRelativePath, recordHash, "policy.json", DateTimeOffset.UtcNow);
                 // The normal producer inventory is rooted at the stage, not this subdirectory.
                 // Retain partial raw imports too; only complete app captures can feed the gate.
-                File.WriteAllText(Path.Combine(folder, "raw-observations-" + i + ".json"), JsonSerializer.Serialize(imported.Observations,options));
+                File.WriteAllText(Path.Combine(folder, "raw-observations-" + i + ".json"), JsonSerializer.Serialize(imported.Observations,PlanJson));
                 var exported=AppEvidence.OutageForContext(session.Context,imported.Observations);
                 File.WriteAllText(Path.Combine(folder, "observations-" + i + ".json"), JsonSerializer.Serialize(exported,
                     new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true, Converters = { new JsonStringEnumConverter() } }));

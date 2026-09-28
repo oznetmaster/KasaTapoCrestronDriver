@@ -35,7 +35,8 @@ public sealed record FixtureSettings(string ProcessorHost, string CredentialBind
         {
             PropertyNameCaseInsensitive = true,
             UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow,
-            RespectRequiredConstructorParameters = true, RespectNullableAnnotations = true, AllowDuplicateProperties = false
+            RespectRequiredConstructorParameters = true, RespectNullableAnnotations = true, AllowDuplicateProperties = false,
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(allowIntegerValues: false) }
         }) ?? throw new InvalidDataException("Missing fixture settings.");
         if (settings.ProcessorHost != context.ProcessorAddress || !Path.IsPathFullyQualified(settings.CredentialBindings) ||
             settings.Sensors.Length is < 3 or > 5 || settings.Sensors.Select(s => s.Alias).Distinct(StringComparer.Ordinal).Count() != settings.Sensors.Length ||

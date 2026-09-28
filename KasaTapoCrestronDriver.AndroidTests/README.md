@@ -18,15 +18,46 @@ children. They must match the verified candidate, model, name and room. This
 fixture only reads sensor state and navigates the app; it sends no
 device commands and does not add sensors or alter polling.
 
-Begin with the contact closed, leak sensor dry, or no motion. Wait for
-`sensor-event.<alias>.<page|tile>/ready.json` (also announced in NUnit progress), then trigger
-the selected sensor once without navigating the app. After `restore-request.json`,
-close the contact, dry the sensor or leave the detection area. Each physical wait
+Provide the workflow's shared `OperatorInbox` in the private fixture settings. Begin
+with the contact closed, leak sensor dry, or no motion. The operator window names
+the target and requests the physical action only after observation is armed. Perform
+that action and choose Done without navigating the app. A separate restoration
+request asks you to close the contact, dry the sensor or leave the detection area.
+Done is an acknowledgement, not a passing observation. Each physical wait
 is bounded to five minutes. The app has a separate 30-second observation timeout;
 this is a recorder limit, **not a certification timing requirement**. Button events
 require an increasing driver event timestamp and a distinguishable display value
 in the selected view (choose a different gesture from the baseline);
 old gestures alone cannot pass. Buttons have no persistent state to restore.
+
+`ButtonGestureReachesVisibleRoomTile("Single")` and `("Double")` are explicit
+cases for fresh, exact gestures. Include both in the required test inventory when
+those gestures are in scope; neither is implied by the generic button case.
+
+## Coordinated interruption test (unreleased)
+
+`SystemOutageTests.ManualProcessorAndDeviceInterruptionRecoversControlAndApp`
+is an explicit case for a separately authorized test processor and selected equipment.
+Private `SystemOutage` settings must name the permitted processor, protected hosts,
+literal endpoint addresses, authenticated physical identities, shared operator inbox,
+and exact test scope. Matching candidate bytes must already be installed there; main
+processor deployment IDs cannot be reused for a separate processor.
+
+`Plans` contains one or two reviewed scopes: requirement ID, component and function
+lists, interruption duration, recovery deadline, recovery clock and optional program
+component. These scopes live inside the frozen fixture settings, not separately
+edited per-release files. The fixture binds them to the current `EvidenceIdentity`,
+checks the pinned policy, and retains concrete plan bytes and hashes under
+`system-outage-inputs` before any action request. It rejects an altered policy,
+incomplete scope or weakened timing criterion. One coordinated physical episode
+may supply separate power and network measurements; each must pass its own clock.
+
+The operator is asked to disconnect and later reconnect only the named equipment.
+Independent observations, not Done acknowledgements alone, establish interruption
+and recovery. The fixture checks configuration, physical outlet control and visible
+app feedback, then restores original state. Recordings identify the actual processor
+and equipment; they do not claim coverage of untested devices or a house-wide outage.
+The new orchestration has offline coverage; live validation remains pending.
 
 Evidence retains baseline/event/recovery screenshots and hierarchies, selected API
 values, timestamps, final state, and candidate/test-assembly provenance. Intermediate
