@@ -82,6 +82,14 @@ public sealed class SensorEventContractTests
         Assert.That(SensorEventReading.DisplayChanged(baseline, SensorEventReading.ReadTile("button", device)), Is.True);
     }
 
+    [Test] public void OptionalSensorPagesRequireExplicitSelectionWithoutChangingExistingCases()
+    {
+        var cases = typeof(SensorPagesTests).GetMethod(nameof(SensorPagesTests.RoomSensorValuesMatchInstalledDriver))!
+            .GetCustomAttributes(typeof(TestCaseAttribute), false).Cast<TestCaseAttribute>().ToArray();
+        Assert.That(cases.Where(c => c.Explicit).Select(c => c.Arguments[0]), Is.EquivalentTo(new[] { "contact", "leak" }));
+        Assert.That(cases.Where(c => !c.Explicit).Select(c => c.Arguments[0]), Is.EquivalentTo(new[] { "temperature", "motion", "button" }));
+    }
+
     [Test] public void AppComparisonUsesTheLabelledRowAndRejectsWrongPage()
     {
         string Node(string resource, string text) => $"<node package='com.crestron.phoenix.app' resource-id='{CrestronHomePages.ResourcePrefix}{resource}' text='{text}' enabled='true' bounds='[0,0][100,100]'/>";

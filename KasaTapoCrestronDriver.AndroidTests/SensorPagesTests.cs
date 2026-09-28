@@ -101,6 +101,8 @@ public sealed class SensorPagesTests
     [TestCase("temperature")]
     [TestCase("motion")]
     [TestCase("button")]
+    [TestCase("contact", Explicit = true)]
+    [TestCase("leak", Explicit = true)]
     public async Task RoomSensorValuesMatchInstalledDriver(string alias)
     {
         var started = DateTimeOffset.UtcNow;
@@ -117,6 +119,9 @@ public sealed class SensorPagesTests
         Assert.That(Version.Parse(device.PropertyValues["cp.driverInformation:version"].GetString()!), Is.EqualTo(Version.Parse(session.Context.DriverVersion)));
         Assert.That(device.PropertyValues["onlineIndicator:isOnline"].GetBoolean(), Is.True);
         Assert.That(device.PropertyValues["readyIndicator:isReady"].GetBoolean(), Is.True);
+        if (alias is "contact" or "leak")
+            Assert.That(device.PropertyValues[alias == "contact" ? "hasContact" : "hasLeak"].GetBoolean(), Is.True,
+                "Selected child must expose the requested sensor capability");
         string title = device.PropertyValues["deviceLabel"].GetString() ?? throw new InvalidDataException("Sensor label missing.");
         var values = target.DisplayProperties.ToDictionary(p => p, p => device.PropertyValues[p].GetString()!);
         Assert.That(values.Values.All(v => !string.IsNullOrWhiteSpace(v)), Is.True);
@@ -124,6 +129,7 @@ public sealed class SensorPagesTests
         {
             "temperatureDisplay" => "Temperature", "humidityDisplay" => "Humidity",
             "batteryStatusLabel" => "Battery", "motionStatusLabel" => "Motion",
+            "contactStatusLabel" => "Contact", "leakStatusLabel" => "Leak",
             "lastGestureLabel" => "Last Press", "lastTriggerTimeDisplay" => "Last Press Time",
             _ => throw new InvalidDataException("Unsupported sensor row.")
         };

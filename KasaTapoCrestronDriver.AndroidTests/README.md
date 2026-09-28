@@ -58,7 +58,7 @@ Provide a private `app-fixture-settings.json` beside the stage directory. For De
 The settings contain:
 
 - `ProcessorHost` and an absolute `CredentialBindings` path for the public encrypted processor credential store.
-- `Sensors`: exactly three selected display bindings, with aliases `temperature`, `motion` and `button`. Each supplies `DeviceId`, `Model`, `Name`, `Room`, `LocationId` and `DisplayProperties`. Use the properties named in `SensorPagesTests.cs`. These cases only read displayed telemetry.
+- `Sensors`: the three required display bindings `temperature`, `motion` and `button`, plus optional `contact` and `leak` bindings. Each supplies `DeviceId`, `Model`, `Name`, `Room`, `LocationId` and `DisplayProperties`. Use the properties named in `SensorPagesTests.cs`. These cases only read displayed telemetry.
 - Optional `DeviceCredentialsFile`: the restricted Kasa live-test JSON containing `credentials.userName` and `credentials.password`. The fixture uses these only for independent physical observations and explicitly documented light restoration.
 - Optional `Outlets`: bindings with aliases `energy` and `basic`, selected IDs/model/name/room, `DiscoveryId`, `AuthenticatedId`, optional `ChildId`, `EnergyPage` and `ControlsAuthorized: true`. Authorization applies only to those selected devices. Discovery IDs and authenticated IDs can differ on Tapo devices.
 - Optional `Light`: the selected native load's `DeviceId`, its platform child `WrapperId`, model/name/room/location, discovery and authenticated IDs, and `ControlsAuthorized: true`.
@@ -67,6 +67,15 @@ The settings contain:
 - Optional `EvidenceIdentity`: `packageSha256`, `sourceCommit`, `policySha256` and `templateSha256` for a consuming evidence policy. The package and commit must match the workflow's release context. Without this field the normal NUnit results and captures are still produced.
 
 Missing control bindings skip the corresponding cases; a run containing skips is not evidence that all app controls passed. Include only devices whose operation is authorized, and require the complete expected test inventory for a full control run. Device names alone do not grant permission.
+
+`SensorPagesTests.RoomSensorValuesMatchInstalledDriver("contact")` and `("leak")`
+are explicit optional cases. Select their exact names when the corresponding
+hardware is installed. They require the advertised contact/leak capability and
+check every conditional row, including Battery when supported. Supply the complete
+`DisplayProperties` list; a subset cannot pass. Tile, icon, navigation and Home
+restoration checks remain the same as for existing sensor cases. Unknown icon
+states still require visual reference review. A static page check does not prove
+a new physical event; use the separate physical-event cases for that.
 
 Outlet cases capture the unobscured Room tile and press its title to exercise the default action, verifying the physical change and Room-tile feedback. For the energy variant, the ellipsis then opens the detail page, where the Power control returns the outlet to its original state; the basic variant uses its tile again. Both send three consecutive presses without waiting for device acknowledgements between them. The burst uses the exact control coordinates from a guarded page and retains its actual start/end times; it does not claim a fixed tap rate. Cases compare app feedback, driver properties and fresh independent device observations, require the exact completed-command count and restore the original state with an absolute driver command. The energy page requires all six labelled numeric readings and explicitly closes back to the Room; it does not compare unsynchronized telemetry for exact equality. A retained journal records the original state before input. Unconfirmed restoration keeps the workflow reservations for review.
 
