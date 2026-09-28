@@ -21,6 +21,11 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+function Resolve-CoveragePath([string]$Path) {
+    # Scheduled tasks can retain System32 as the process directory after Set-Location.
+    return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+
 function Assert-SameTests($Expected, $Actual, [string]$Context) {
     $left = @($Expected | Sort-Object -CaseSensitive)
     $right = @($Actual | Sort-Object -CaseSensitive)
@@ -30,7 +35,7 @@ function Assert-SameTests($Expected, $Actual, [string]$Context) {
     }
 }
 function Read-TestTree([string]$Path, [switch]$AdapterDump) {
-    $text = [IO.File]::ReadAllText($Path)
+    $text = [IO.File]::ReadAllText((Resolve-CoveragePath $Path))
     if ($AdapterDump) {
         # The adapter's diagnostic wrapper is not XML; its NUnit test-run element is.
         $matches = [regex]::Matches($text, '(?s)<test-run\b.*?</test-run>')
@@ -58,13 +63,13 @@ function Assert-TestOutcome($Case, [bool]$AllowSkip) {
 }
 
 if ($MyInvocation.InvocationName -eq '.') { return }
-$results = [IO.Path]::GetFullPath($ResultsDirectory)
+$results = Resolve-CoveragePath $ResultsDirectory
 [IO.Directory]::CreateDirectory($results) | Out-Null
 if ($Stage -eq 'Desktop') {
-    $projectPath = [IO.Path]::GetFullPath($Project)
+    $projectPath = Resolve-CoveragePath $Project
     $name = [IO.Path]::GetFileNameWithoutExtension($projectPath)
     $properties = @(& dotnet msbuild $projectPath -nologo "-p:Configuration=$Configuration" "-p:TargetFramework=$Framework" '-getProperty:TargetPath,AssemblyName') -join "`n"
-    if ($LASTEXITCODE) { throw 'Cannot resolve test assembly output.' }
+    if ($LASTEXITCODE) { throw "Cannot resolve test assembly output: $properties" }
     $properties = ($properties | ConvertFrom-Json).Properties
     $output = Split-Path $properties.TargetPath
     $assemblyName = $properties.AssemblyName

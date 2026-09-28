@@ -3,6 +3,18 @@
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/Test-DiscoveredCoverage.ps1"
 $checks = 0
+$processDirectory = [Environment]::CurrentDirectory
+Push-Location $PSScriptRoot
+try {
+    [Environment]::CurrentDirectory = [IO.Path]::GetTempPath()
+    $expected = Join-Path $PSScriptRoot 'not-created/results'
+    if ((Resolve-CoveragePath 'not-created/results') -ne $expected) { throw 'Relative path used the process directory.' }
+    if ((Resolve-CoveragePath $expected) -ne $expected) { throw 'Absolute path changed.' }
+    $checks += 2
+} finally {
+    [Environment]::CurrentDirectory = $processDirectory
+    Pop-Location
+}
 function Reject([scriptblock]$Action) {
     $rejected = $false
     try { & $Action } catch { $rejected = $true }
