@@ -11,6 +11,12 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## NUnit 5 test tooling - 2026-09-28
+
+- Move the Windows, lifecycle and Android fixtures to NUnit 5.0.0 and the workflow adapter to CrestronHomeNUnit.TestAdapter 2.0.0. Pin the processor host to the released CrestronHomeNUnit 2.0.0 source revision. Await asynchronous assertions using NUnit 5's API.
+- Local validation passed 34 ordinary tests, 58 lifecycle tests and 70 offline Android evidence contracts. The merged processor package builds and discovers 95 cases, including three live cases that were not executed by these local checks. Processor execution and integrated Android validation remain separate checks.
+- Restore the test-release desktop SDK dependency from the public Crestron ManifestUtil NuGet package with its existing checksum, removing the private secret requirement. No product version or driver runtime code changes.
+
 ## Published client recovery dependency - 2026-09-26
 
 - Update the driver and its test/support projects to the published KasaTapoClient 2.0.1 package. Refresh the exact dependency DLL digest, license reference and packaged third-party notices.

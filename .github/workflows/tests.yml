@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: oznetmaster/CrestronHomeNUnit
-          ref: 708931e2ac0cbc05dd4411d402a07da7accf7f39
+          ref: 5a2d8080b2bbf7221bc8fc4cc53b35ac5bec4d1c
           path: CrestronHomeNUnit
       - uses: actions/setup-dotnet@v4
         with:

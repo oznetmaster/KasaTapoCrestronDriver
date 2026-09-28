@@ -88,31 +88,31 @@ public sealed class PowerInterruptionContractTests
     }
 
     [Test]
-    public void ConflictingHostsAreRejectedWithoutRetry()
+    public async Task ConflictingHostsAreRejectedWithoutRetry()
     {
         int calls = 0;
-        Assert.ThrowsAsync<InvalidDataException>(async () => await PowerInterruptionTests.DiscoverUnique<string>(_ =>
+        await Assert.ThrowsAsync<InvalidDataException>(async () => await PowerInterruptionTests.DiscoverUnique<string>(_ =>
         { calls++; return Task.FromResult<IReadOnlyList<string>>(["host-one", "host-two"]); },
             h => h, (_, _, _) => Task.CompletedTask, CancellationToken.None));
         Assert.That(calls, Is.EqualTo(1));
     }
 
     [Test]
-    public void MissingResponsesStopAfterThreeAttempts()
+    public async Task MissingResponsesStopAfterThreeAttempts()
     {
         int calls = 0;
-        Assert.ThrowsAsync<InvalidDataException>(async () => await PowerInterruptionTests.DiscoverUnique<string>(_ =>
+        await Assert.ThrowsAsync<InvalidDataException>(async () => await PowerInterruptionTests.DiscoverUnique<string>(_ =>
         { calls++; return Task.FromResult<IReadOnlyList<string>>([]); },
             h => h, (_, _, _) => Task.CompletedTask, CancellationToken.None));
         Assert.That(calls, Is.EqualTo(3));
     }
 
     [Test]
-    public void CancellationStopsBeforeAnotherDiscovery()
+    public async Task CancellationStopsBeforeAnotherDiscovery()
     {
         using var cancel = new CancellationTokenSource();
         int calls = 0;
-        Assert.ThrowsAsync<OperationCanceledException>(async () => await PowerInterruptionTests.DiscoverUnique<string>(_ =>
+        await Assert.ThrowsAsync<OperationCanceledException>(async () => await PowerInterruptionTests.DiscoverUnique<string>(_ =>
         { calls++; cancel.Cancel(); return Task.FromResult<IReadOnlyList<string>>([]); },
             h => h, (_, _, _) => Task.CompletedTask, cancel.Token));
         Assert.That(calls, Is.EqualTo(1));

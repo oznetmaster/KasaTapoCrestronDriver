@@ -1,5 +1,11 @@
 # KasaTapoCrestronDriver Tests
 
+## Unreleased test tooling
+
+- Build current fixtures with NUnit 5.0.0 and the released CrestronHomeNUnit 2.0.0 host. Current source contains 34 ordinary, 58 lifecycle and three optional live cases.
+- Local Windows execution passed all 34 ordinary and 58 lifecycle cases; package discovery matches all 95 source identities. These checks do not claim a new processor execution or replace the historical results below.
+- Workflow discovery uses CrestronHomeNUnit.TestAdapter 2.0.0. The test-release workflow obtains its desktop SDK dependency from public NuGet without private secrets.
+
 ## 1.2.0
 
 - Include the shared outlet command-activity and SDK dispatch regressions. All 34 portable and 37 lifecycle cases passed both on Windows and the processor; three optional read-only live checks also passed.
@@ -22,6 +28,6 @@
 
 Install `KasaTapoCrestronDriver.ProcessorTests.pkg`, then add **Utility → Neil Colvin → KasaTapoCrestronDriver Tests** in Crestron Home Configure. All processor test packages use the Utility category. The standalone Home tile runs automatic suites; the [Windows runner](https://github.com/oznetmaster/CrestronHomeNUnit/releases) provides discovery, selection and detailed results. Each package includes its own host; the NUnit self-test package is optional.
 
-The `.sources.json` asset records the exact source revisions. The documentation ZIP includes license notices; SHA256SUMS.txt covers every other asset. Private settings, deployment credentials and live results are excluded. NUnit 4.6.1 is the official NuGet framework, not a private fork.
+The `.sources.json` asset records the exact source revisions. The documentation ZIP includes license notices; SHA256SUMS.txt covers every other asset. Private settings, deployment credentials and live results are excluded. The framework is restored from official NUnit NuGet packages, not a private fork; versions are recorded above.
 
-CI validates desktop tests and discovery from the packaged assembly. Processor runs are a separate hardware validation; the unit and lifecycle suites have passed during local processor testing.
+CI validates desktop tests and discovery from the packaged assembly. Processor runs are a separate hardware validation. The historical release entries identify earlier processor results; current local package discovery alone does not prove processor execution.

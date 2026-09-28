@@ -18,7 +18,7 @@ The host uses an automatically assigned TCP port and advertises itself through m
 | Suite | Cases | Coverage |
 | --- | ---: | --- |
 | Unit Tests | 34 | Light tuning, dimmable plugs, device classification and simulated light/energy responses |
-| Processor lifecycle | 47 | Real `net472` driver entities and Crestron SDK: sensor definitions, child registration, shared parent state, polling, cancellation, disposal and recovery |
+| Processor lifecycle | 58 | Real `net472` driver entities and Crestron SDK: sensor definitions, child registration, shared parent state, polling, cancellation, disposal and recovery |
 
 Both suites use simulated device responses and do not require live network devices or test credentials. The lifecycle suite exercises the actual driver assembly on the processor. Its sources are shared with the existing desktop lifecycle project, which retains its desktop-compatible SDK target for local validation.
 
@@ -36,7 +36,7 @@ Building the test reference uses an unmerged production driver with deployment d
 
 ## Desktop tests
 
-Both existing test projects now use NUnit 4.6.1 and NUnit3TestAdapter for Visual Studio. Select the repository's `.runsettings` in Test Explorer to exclude the `Processor` category on Windows. The test projects also declare this settings file.
+Both existing test projects now use NUnit 5.0.0 and NUnit3TestAdapter for Visual Studio. Select the repository's `.runsettings` in Test Explorer to exclude the `Processor` category on Windows. The test projects also declare this settings file.
 
 ```powershell
 dotnet test KasaTapoCrestronDriver.Tests/KasaTapoCrestronDriver.Tests.csproj --framework net472 --filter "TestCategory!=Processor" -p:DeployAfterBuild=false
@@ -55,7 +55,7 @@ The processor's embedded NUnit runner uses the suite filters in `ProcessorTests.
 
 A failed command releases the operation queue; a failing subscriber cannot stop healthy siblings receiving state; unregistering during offline notification prevents later delivery to that registration; disposal discards late refresh results even when the refresh ignores cancellation.
 
-The package contains 34 offline cases and 47 lifecycle cases. Lifecycle tests exercise newly constructed test entities, not the installed production driver. Both suites are selectable in the Windows runner and through the standalone Utility tile. Processor hardware validation remains required.
+The package contains 34 offline cases and 58 lifecycle cases. Lifecycle tests exercise newly constructed test entities, not the installed production driver. Both suites are selectable in the Windows runner and through the standalone Utility tile. Processor hardware validation remains required.
 
 
 ## Read-only live driver entities
@@ -64,6 +64,6 @@ The **Live device state** suite adds three opt-in tests: a light's observed powe
 
 Supply the same private `LiveTestSettings.json` format as KasaTapoClient tests. Roles `light`, `plug` and `strip` must each select one device by `deviceId` or unique discovery `alias`; a role may use the direct object or a single-entry `hosts` array. `strip.childDeviceId` selects its socket. Credentials are in `credentials.userName` and `credentials.password`; `timeoutSeconds` controls discovery/connection. One discovery scan is reused for the fixture. Missing, ambiguous or unreadable configured devices fail an enabled run.
 
-The runner supplies `EnableLiveTests=true` when this manual suite is explicitly requested, together with its private test inputs. Desktop `.runsettings` excludes it through the Processor category. Never commit or package the real settings file. The test package contains 34 unit, 47 lifecycle and 3 live cases; its standalone tile remains in Configure's Utility category.
+The runner supplies `EnableLiveTests=true` when this manual suite is explicitly requested, together with its private test inputs. Desktop `.runsettings` excludes it through the Processor category. Never commit or package the real settings file. The test package contains 34 unit, 58 lifecycle and 3 live cases; its standalone tile remains in Configure's Utility category.
 
 CI and release validation compare the discovered test identities with desktop results and the merged package. The separate desktop lifecycle harness must cover the processor-only fixture identities; adding tests does not require updating duplicated count constants. Live device tests remain excluded from hosted execution.

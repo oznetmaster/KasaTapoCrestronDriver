@@ -12,10 +12,11 @@
     <PackageReference Include="System.Drawing.Common" Version="10.0.12" PrivateAssets="all" />
     <EmbeddedResource Include="IconReferences/*.png" />
     <EmbeddedResource Include="../KasaTapoCrestronDriver/KasaTapoCrestronDriver.json" LogicalName="Kasa.ExpectedDefinition.json" />
-    <PackageReference Include="NUnit" Version="4.6.1" PrivateAssets="all" />
+    <PackageReference Include="NUnit" Version="5.0.0" PrivateAssets="all" />
+    <PackageReference Include="NUnit.Analyzers" Version="4.15.0" PrivateAssets="all" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" PrivateAssets="all" />
-    <PackageReference Include="CrestronHomeNUnit.TestAdapter" Version="1.12.2" PrivateAssets="all" />
+    <PackageReference Include="CrestronHomeNUnit.TestAdapter" Version="2.0.0" PrivateAssets="all" />
     <PackageReference Include="CrestronHomeDevTools" Version="1.19.0" PrivateAssets="all" />
     <PackageReference Include="KasaTapoClient" Version="2.0.1" PrivateAssets="all" />
   </ItemGroup>

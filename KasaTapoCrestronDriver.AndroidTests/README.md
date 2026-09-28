@@ -1,8 +1,8 @@
 # Crestron Home app tests
 
-These optional .NET 10 NUnit fixtures exercise the installed Kasa/Tapo driver through an Android emulator. They are separate from the processor's net472 test assembly and do not run against household devices during ordinary hosted tests.
+These optional .NET 10 NUnit 5.0.0 fixtures exercise the installed Kasa/Tapo driver through an Android emulator. They are separate from the processor's net472 test assembly and do not run against household devices during ordinary hosted tests.
 
-Build with the .NET 10 SDK and the public package references in this project. Invoke through `InstalledDriverTests.RunAsync` in `CrestronHomeNUnit.Workflow`, or the public DevTools automation workflow's installed-app stage. Those callers verify the installed package and reserve both the processor and emulator. The fixture refuses ordinary standalone execution without that context.
+Build with the .NET 10 SDK and the public package references in this project, including CrestronHomeNUnit.TestAdapter 2.0.0. Invoke through `InstalledDriverTests.RunAsync` in `CrestronHomeNUnit.Workflow`, or the public DevTools automation workflow's installed-app stage. Those callers verify the installed package and reserve both the processor and emulator. The fixture refuses ordinary standalone execution without that context.
 
 Build from the repository checkout: the fixture embeds the adjacent driver JSON as its expected configuration definition. Preserve the repository's build-output exclusions when preparing an isolated checkout; generated `bin`/`obj` files must not become source changes during a run.
 
