@@ -12,6 +12,47 @@ namespace KasaAppEvidenceContracts;
 [TestFixture, Category("unit")]
 public sealed class AppEvidenceContractTests
 {
+    [Test]
+    public void ImportedOutageAndAppCapturesPassNormalStageEvidenceValidationAndRejectTampering()
+    {
+        string stageRoot=Path.Combine(Path.GetTempPath(),"kasa-outage-evidence-"+Guid.NewGuid().ToString("N"));
+        string appRoot=Path.Combine(stageRoot,"installed-app","AndroidUI"),outageRoot=Path.Combine(appRoot,"system-outage");
+        Directory.CreateDirectory(outageRoot);
+        try {
+            var context=Context(appRoot);
+            string Hash(byte[] bytes)=>Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));
+            var json=new JsonSerializerOptions {PropertyNamingPolicy=JsonNamingPolicy.CamelCase,Converters={new JsonStringEnumConverter()}};
+            string Write(string name,object value) {byte[] bytes=JsonSerializer.SerializeToUtf8Bytes(value,json);File.WriteAllBytes(Path.Combine(outageRoot,name),bytes);return Hash(bytes);}
+            var policy=new SubmissionEvidencePolicy(1,[new("system.power",TimeSpan.FromSeconds(60),false,new("system","outage",SubmissionEvidenceOutcome.Passed,60,true))]);
+            string policyHash=Write("policy.json",policy);var identity=Identity with {PolicySha256=policyHash};
+            var plan=new SubmissionOutageMeasurementPlan(identity,"system.power",["processor","device"],["control"],TimeSpan.FromSeconds(60),TimeSpan.FromSeconds(60),SubmissionOutageRecoveryClock.ProgramLoaded,"processor");
+            string planHash=Write("plan.json",plan),rawHash=Write("capture.json",new {Synthetic=true});
+            DateTimeOffset start=DateTimeOffset.UtcNow.AddMinutes(-5);
+            SubmissionOutageCapture Capture(int second)=>new(start.AddSeconds(second),start.AddSeconds(second),new("capture.json",rawHash));
+            var record=new SubmissionOutageMeasurementRecord(1,identity,[new("processor",Capture(10),Capture(75)),new("device",Capture(10),Capture(76))],
+                Capture(80),[new("control",SubmissionEvidenceOutcome.Passed,Capture(81))],Capture(0),Capture(85),true);
+            string recordHash=Write("record.json",record);
+            foreach(string check in new[]{"system-outage.before","system-outage.on","system-outage.off"}) {
+                string folder=Path.Combine(appRoot,check);Directory.CreateDirectory(folder);
+                byte[] hierarchy="<synthetic/>"u8.ToArray(),screen="synthetic image bytes, not a live app screenshot"u8.ToArray();
+                File.WriteAllBytes(Path.Combine(folder,"hierarchy.xml"),hierarchy);File.WriteAllBytes(Path.Combine(folder,"screen.png"),screen);
+                File.WriteAllText(Path.Combine(folder,"observation.json"),JsonSerializer.Serialize(new {context.RunId,context.PackageSha256,context.ReleaseSourceCommit,
+                    context.InstalledDriverId,CheckId=check,Outcome="Passed",HierarchySha256=Hash(hierarchy),ScreenshotSha256=Hash(screen)}));
+            }
+            var imported=SubmissionOutageEvidence.ImportFiles(outageRoot,"plan.json",planHash,"record.json",recordHash,"policy.json",DateTimeOffset.UtcNow);
+            Assert.That(imported.Measurements.MeasurementChecksPassed,Is.True);
+            var exported=AppEvidence.OutageForContext(context,imported.Observations);
+            var observation=exported.Observations.Single();
+            Assert.That(observation.Files.Count(f=>f.RelativePath.EndsWith("screen.png",StringComparison.Ordinal)),Is.EqualTo(3));
+            Assert.That(observation.Execution!.Response!.TriggerEvidence,Does.StartWith("installed-app/AndroidUI/system-outage/"));
+            Assert.That(observation.Execution.Restoration!.VerificationEvidence,Does.StartWith("installed-app/AndroidUI/system-outage/"));
+            var result=SubmissionEvidence.Evaluate(identity,policy.Requirements,exported.Observations,stageRoot,DateTimeOffset.UtcNow);
+            Assert.That(result.EvidenceChecksPassed,Is.True,JsonSerializer.Serialize(result.Issues));
+            File.AppendAllText(Path.Combine(appRoot,"system-outage.on","screen.png"),"changed");
+            Assert.That(SubmissionEvidence.Evaluate(identity,policy.Requirements,exported.Observations,stageRoot,DateTimeOffset.UtcNow).Issues.Any(i=>i.Code=="evidence-digest"),Is.True);
+            Assert.Throws<InvalidDataException>(()=>AppEvidence.OutageForContext(context,imported.Observations));
+        } finally {Directory.Delete(stageRoot,true);}
+    }
     static readonly string Digest = new('a', 64);
     static readonly string Commit = new('b', 40);
     static SubmissionEvidenceIdentity Identity => new(Digest, Commit, Digest, Digest);

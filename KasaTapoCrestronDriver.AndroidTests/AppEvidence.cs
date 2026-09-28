@@ -11,6 +11,55 @@ namespace KasaTapoCrestronDriver.AndroidTests;
 // Each ID describes only assertions made by its fixture, never an entire checklist.
 internal static class AppEvidence
 {
+    internal static SubmissionEvidenceFile[] OutageAppCaptures(AndroidRunContext context)
+    {
+        string root=context.EvidenceDirectory;
+        string stage=Directory.GetParent(root)!.Name;
+        if(Path.GetFileName(root)!="AndroidUI" || stage is not ("installed-app" or "nunit"))
+            throw new InvalidDataException("Use the workflow-owned Android evidence directory.");
+        var result=new List<SubmissionEvidenceFile>();
+        foreach(string check in new[]{"system-outage.before","system-outage.on","system-outage.off"})
+        {
+            var files=new Dictionary<string,string>();
+            foreach(string name in new[]{"hierarchy.xml","screen.png","observation.json"})
+            {
+                string relative=check+"/"+name;
+                if(!SubmissionEvidence.SafeEvidencePath(root,relative,out var path))throw new InvalidDataException("Missing outage app capture.");
+                using var stream=File.OpenRead(path);
+                string digest=Convert.ToHexStringLower(SHA256.HashData(stream));
+                files.Add(name,digest);result.Add(new(stage+"/AndroidUI/"+relative,digest));
+            }
+            using var manifest=JsonDocument.Parse(File.ReadAllText(Path.Combine(root,check,"observation.json")));
+            var record=manifest.RootElement;
+            if(record.GetProperty("RunId").GetString()!=context.RunId || record.GetProperty("CheckId").GetString()!=check ||
+                record.GetProperty("InstalledDriverId").GetInt32()!=context.InstalledDriverId ||
+                record.GetProperty("PackageSha256").GetString()!=context.PackageSha256 ||
+                record.GetProperty("ReleaseSourceCommit").GetString()!=context.ReleaseSourceCommit || record.GetProperty("Outcome").GetString()!="Passed" ||
+                !string.Equals(record.GetProperty("HierarchySha256").GetString(),files["hierarchy.xml"],StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(record.GetProperty("ScreenshotSha256").GetString(),files["screen.png"],StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Outage app capture identity, outcome or digest differs.");
+        }
+        return result.ToArray();
+    }
+
+    internal static SubmissionEvidenceDocument OutageForContext(AndroidRunContext context,SubmissionEvidenceDocument document)
+    {
+        var captures=OutageAppCaptures(context);
+        string prefix=Directory.GetParent(context.EvidenceDirectory)!.Name+"/AndroidUI/system-outage/";
+        string root=Path.Combine(context.EvidenceDirectory,"system-outage");
+        string Reference(string relative) {
+            if(!SubmissionEvidence.SafeEvidencePath(root,relative,out _))throw new InvalidDataException("Outage evidence is outside its retained directory.");
+            return prefix+relative.Replace('\\','/');
+        }
+        return document with {Observations=document.Observations.Select(o=> {
+            Validate(o.Identity,context);
+            return o with {Files=o.Files.Select(f=>f with {RelativePath=Reference(f.RelativePath)}).Concat(captures).ToArray(),
+                Execution=o.Execution==null?null:o.Execution with {
+                    Response=o.Execution.Response is not {} response?null:response with {TriggerEvidence=Reference(response.TriggerEvidence),ResponseEvidence=Reference(response.ResponseEvidence)},
+                    Restoration=o.Execution.Restoration is not {} restoration?null:restoration with {OriginalEvidence=Reference(restoration.OriginalEvidence),VerificationEvidence=Reference(restoration.VerificationEvidence)},
+                    Samples=o.Execution.Samples?.Select(s=>s with {Evidence=Reference(s.Evidence)}).ToArray()}};
+        }).ToArray()};
+    }
     private static readonly JsonSerializerOptions Json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true,

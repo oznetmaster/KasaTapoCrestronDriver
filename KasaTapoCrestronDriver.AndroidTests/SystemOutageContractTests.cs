@@ -37,4 +37,24 @@ public sealed class SystemOutageContractTests
         SystemOutageTests.Validate(Plan with {AuthorizedProcessorHost=host,Endpoints=[Plan.Endpoints[0] with {Host=host},Plan.Endpoints[1]]},Settings with {ProcessorHost=host},7));
     [Test] public void BlankExclusionPolicyIsRejected()=>Assert.Throws<InvalidDataException>(()=>
         SystemOutageTests.Validate(Plan with {NeverInterruptHosts=[]},Settings,7));
+    private static readonly DateTimeOffset Epoch=DateTimeOffset.Parse("2026-09-28T10:00:00Z");
+    private static ProcessorUptimeSnapshot Boot(int start)=>new(TimeSpan.FromSeconds(10),DateTime.MinValue,Epoch.AddSeconds(start+10),Epoch.AddSeconds(start+10).AddMilliseconds(10));
+    private static ProcessorProgramUptimeSnapshot Program(int start)=>new(new("/simpl/app00","Crestron.Seawolf","Crestron.Seawolf.dll"),
+        TimeSpan.FromSeconds(5),"diagnostic only",Epoch.AddSeconds(start+5),Epoch.AddSeconds(start+5).AddMilliseconds(10),"synthetic");
+    [Test] public void FreshBootFollowedBySameHomeProgramIsRequired()=>Assert.DoesNotThrow(()=>
+        SystemOutageTests.ValidateNewEpoch(Boot(0),Program(2),Boot(100),Program(105),Epoch.AddSeconds(95)));
+    [TestCase(0,105)][TestCase(100,2)][TestCase(90,105)][TestCase(100,99)]
+    public void OldOrOutOfOrderEpochCannotProveOutage(int boot,int program)=>Assert.Throws<InvalidDataException>(()=>
+        SystemOutageTests.ValidateNewEpoch(Boot(0),Program(2),Boot(boot),Program(program),Epoch.AddSeconds(95)));
+    [Test] public void LaterObservationMayNotMoveTheRecoveryBaseline() {
+        var boot=Boot(100);var program=Program(105);
+        Assert.DoesNotThrow(()=>SystemOutageTests.ValidateSameEpoch(boot,program,
+            boot with {Uptime=boot.Uptime+TimeSpan.FromSeconds(20),RequestSentUtc=boot.RequestSentUtc.AddSeconds(20),ObservedUtc=boot.ObservedUtc.AddSeconds(20)},
+            program with {Uptime=program.Uptime+TimeSpan.FromSeconds(20),RequestSentUtc=program.RequestSentUtc.AddSeconds(20),ObservedUtc=program.ObservedUtc.AddSeconds(20)}));
+    }
+    [TestCase(101,105)][TestCase(100,106)][TestCase(99,105)][TestCase(100,104)]
+    public void ProcessorOrProgramResetOrClockJumpInvalidatesRecovery(int boot,int program)=>Assert.Throws<InvalidDataException>(()=>
+        SystemOutageTests.ValidateSameEpoch(Boot(100),Program(105),Boot(boot),Program(program)));
+    [Test] public void ChangedProgramIdentityCannotProveRecovery()=>Assert.Throws<InvalidDataException>(()=>
+        SystemOutageTests.ValidateSameEpoch(Boot(100),Program(105),Boot(100),Program(105) with {Program=new("/simpl/app00","Other","Other.dll")}));
 }

@@ -17,7 +17,7 @@
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" PrivateAssets="all" />
     <PackageReference Include="CrestronHomeNUnit.TestAdapter" Version="2.0.0" PrivateAssets="all" />
-    <PackageReference Include="CrestronHomeDevTools" Version="1.22.0-preview.operator4" PrivateAssets="all" />
+    <PackageReference Include="CrestronHomeDevTools" Version="1.22.0-preview.operator5" PrivateAssets="all" />
     <PackageReference Include="KasaTapoClient" Version="2.0.1" PrivateAssets="all" />
   </ItemGroup>
 </Project>

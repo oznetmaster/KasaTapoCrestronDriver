@@ -23,6 +23,22 @@ public sealed record SystemOutageSettings(string AuthorizedProcessorHost, string
 public sealed class SystemOutageTests
 {
     internal static readonly string[] Functions = ["configuration-preserved", "control-and-app-feedback"];
+    internal static void ValidateNewEpoch(ProcessorUptimeSnapshot beforeBoot, ProcessorProgramUptimeSnapshot beforeProgram,
+        ProcessorUptimeSnapshot boot, ProcessorProgramUptimeSnapshot program, DateTimeOffset recoveryStarted)
+    {
+        if (boot.EarliestStartUtc <= beforeBoot.LatestStartUtc || boot.EarliestStartUtc < recoveryStarted ||
+            program.Program != beforeProgram.Program || program.EarliestStartUtc <= beforeProgram.LatestStartUtc ||
+            program.EarliestStartUtc < boot.LatestStartUtc)
+            throw new InvalidDataException("A new processor boot followed by the expected Home program start has not been established.");
+    }
+    internal static void ValidateSameEpoch(ProcessorUptimeSnapshot originalBoot, ProcessorProgramUptimeSnapshot originalProgram,
+        ProcessorUptimeSnapshot boot, ProcessorProgramUptimeSnapshot program)
+    {
+        if (boot.EarliestStartUtc > originalBoot.LatestStartUtc || boot.LatestStartUtc < originalBoot.EarliestStartUtc ||
+            program.Program != originalProgram.Program || program.EarliestStartUtc > originalProgram.LatestStartUtc ||
+            program.LatestStartUtc < originalProgram.EarliestStartUtc)
+            throw new InvalidDataException("Processor or Home program restarted during recovery verification, or the timing clock is inconsistent.");
+    }
     internal static void Validate(SystemOutageSettings plan, FixtureSettings settings, int rootId)
     {
         static bool Literal(string host) => IPAddress.TryParse(host, out var ip) && ip.ToString() == host;
@@ -96,7 +112,11 @@ public sealed class SystemOutageTests
                 File.WriteAllBytes(Path.Combine(folder, name), bytes);
                 var imported = SubmissionOutageEvidence.ImportFiles(folder, name, plan.Plans[i].Sha256,
                     result.RecordRelativePath, recordHash, "policy.json", DateTimeOffset.UtcNow);
-                File.WriteAllText(Path.Combine(folder, "observations-" + i + ".json"), JsonSerializer.Serialize(imported.Observations,
+                // The normal producer inventory is rooted at the stage, not this subdirectory.
+                // Retain partial raw imports too; only complete app captures can feed the gate.
+                File.WriteAllText(Path.Combine(folder, "raw-observations-" + i + ".json"), JsonSerializer.Serialize(imported.Observations,options));
+                var exported=AppEvidence.OutageForContext(session.Context,imported.Observations);
+                File.WriteAllText(Path.Combine(folder, "observations-" + i + ".json"), JsonSerializer.Serialize(exported,
                     new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true, Converters = { new JsonStringEnumConverter() } }));
                 assessments.Add(imported.Measurements);
             }
@@ -113,7 +133,7 @@ public sealed class SystemOutageTests
     private sealed record PlatformState(string IdentitySha256, string ConfigurationSha256, DriverReadinessReport Readiness);
 
     private sealed class Observer(SystemOutageSettings plan, FixtureSettings settings, AndroidWorkflowSession session)
-        : ISubmissionManualOutageObserver, IAsyncDisposable
+        : ISubmissionManualOutageObserver, ISubmissionManualRestorationBounds, IAsyncDisposable
     {
         public IReadOnlyList<string> Components => plan.Endpoints.Select(e => e.Component).ToArray();
         public IReadOnlyList<string> Functions => SystemOutageTests.Functions;
@@ -123,17 +143,25 @@ public sealed class SystemOutageTests
         private PlatformState? _platform;
         private DateTimeOffset _baselineStarted;
         private ProcessorUptimeSnapshot? _boot;
+        private ProcessorProgramUptimeSnapshot? _program;
+        private ProcessorUptimeSnapshot? _recoveryBoot;
+        private ProcessorProgramUptimeSnapshot? _recoveryProgram;
+        private DateTimeOffset _recoveryStarted;
+        private SubmissionOutageCapture? _programLoaded;
+        private static readonly ProcessorProgramIdentity HomeProgram = new("/simpl/app00", "Crestron.Seawolf", "Crestron.Seawolf.dll");
         private DevToolsStoredCredential _saved = null!;
         private ConfigurationClient? _api;
         private ProcessorOperationLease? _lease;
         private OutletTarget Target => settings.Outlets!.Single(t => t.Alias == plan.OutletAlias);
         private NetworkCredential Login => new(_saved.UserName, _saved.Password);
         private SubmissionOutageCapture Save(string phase, DateTimeOffset first, object value)
+            => SaveBounded(phase, first, DateTimeOffset.UtcNow, value);
+        private SubmissionOutageCapture SaveBounded(string phase, DateTimeOffset first, DateTimeOffset last, object value)
         {
             string name = $"capture-{Interlocked.Increment(ref _sequence):D4}-{phase}.json";
-            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(new { EarliestUtc = first, LatestUtc = DateTimeOffset.UtcNow, Value = value });
+            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(new { EarliestUtc = first, LatestUtc = last, CapturedUtc = DateTimeOffset.UtcNow, Value = value });
             using(var output = new FileStream(Path.Combine(_root, name), FileMode.CreateNew)) { output.Write(bytes); output.Flush(true); }
-            return new(first, DateTimeOffset.UtcNow, new(name, Hash(bytes)));
+            return new(first, last, new(name, Hash(bytes)));
         }
         public async Task PreflightAsync(SubmissionOutageRecordingContext context, CancellationToken token)
         {
@@ -160,13 +188,15 @@ public sealed class SystemOutageTests
                 !new[]{"outletOn","outletOff"}.All(outlet.Commands.Contains)) throw new InvalidDataException("Control target differs from the approved installed outlet.");
             _boot = await ProcessorUptime.ReadAsync(_saved.Host, Login, _saved.SshFingerprint, TimeSpan.FromSeconds(20), token);
             Save("boot-before", _boot.RequestSentUtc, _boot);
+            _program = await ProcessorProgramUptime.ReadAsync(_saved.Host, Login, _saved.SshFingerprint, HomeProgram, TimeSpan.FromSeconds(20), token);
+            Save("program-before", _program.RequestSentUtc, _program);
             await SensorSession.Navigation!.RestoreHomeAsync(token);
             await RoomNavigation.Open(Target.Room, token); await RoomNavigation.RevealTile(Target.Room, Target.Name, token);
             await session.CaptureAsync("system-outage.before", h => RoomNavigation.InspectTile(h, Target.Room, Target.Name, Target.EnergyPage), token);
         }
         public Task<SubmissionOutageCapture> CaptureOriginalAsync(CancellationToken token) => Task.FromResult(Save("original", _baselineStarted,
             new { Processor = settings.ProcessorHost, RootDeviceId = session.Context.InstalledDriverId, Platform = _platform, Physical = _original,
-                session.Context.PackageSha256, session.Context.ReleaseSourceCommit, Components = plan.Endpoints.Select(e => new { e.Component,e.Host,e.Ports }) }));
+                Boot = _boot, Program = _program, session.Context.PackageSha256, session.Context.ReleaseSourceCommit, Components = plan.Endpoints.Select(e => new { e.Component,e.Host,e.Ports }) }));
         private async Task<Dictionary<int,bool>> Ports(OutageEndpoint endpoint, CancellationToken token)
         {
             var result = new Dictionary<int,bool>();
@@ -182,7 +212,10 @@ public sealed class SystemOutageTests
             SensorSession.PhysicalRestorationConfirmed=false;
             return ObserveEndpoints(false,token);
         }
-        public Task<IReadOnlyDictionary<string,SubmissionOutageCapture>> ObserveRestoredAsync(CancellationToken token) => ObserveEndpoints(true,token);
+        public Task<IReadOnlyDictionary<string,SubmissionOutageCapture>> ObserveRestoredAsync(CancellationToken token) {
+            _recoveryStarted=DateTimeOffset.UtcNow;
+            return ObserveEndpoints(true,token);
+        }
         private async Task<IReadOnlyDictionary<string,SubmissionOutageCapture>> ObserveEndpoints(bool online,CancellationToken token)
         {
             while(true) {
@@ -207,9 +240,28 @@ public sealed class SystemOutageTests
                 await Task.Delay(2000,token);
             }
         }
-        public Task<SubmissionOutageCapture?> ObserveProgramLoadedAsync(string component,CancellationToken token) => Task.FromResult<SubmissionOutageCapture?>(null);
-        // No port or ready API response is fabricated into a program-load marker. The power
-        // clock remains explicitly unverified until a validated firmware-specific marker exists.
+        public async Task<IReadOnlyDictionary<string,SubmissionOutageCapture>> CaptureRestoredByAsync(CancellationToken token)
+        {
+            var boot=await ProcessorUptime.ReadAsync(_saved.Host,Login,_saved.SshFingerprint!,TimeSpan.FromSeconds(20),token);
+            var program=await ProcessorProgramUptime.ReadAsync(_saved.Host,Login,_saved.SshFingerprint!,HomeProgram,TimeSpan.FromSeconds(20),token);
+            // Preserve replies even if they contradict the expected interruption.
+            var proof=SaveBounded("power-restored-by-new-boot",boot.EarliestStartUtc,boot.LatestStartUtc,
+                new { BeforeBoot=_boot, BeforeProgram=_program, Boot=boot, Program=program, RecoveryObservationStartedUtc=_recoveryStarted,
+                    Meaning="New boot establishes power was restored no later than LatestStartUtc; the operator request supplies the lower bound." });
+            ValidateNewEpoch(_boot!,_program!,boot,program,_recoveryStarted);
+            _recoveryBoot=boot;_recoveryProgram=program;
+            _programLoaded=SaveBounded("program-start",program.EarliestStartUtc,program.LatestStartUtc,program);
+            return new Dictionary<string,SubmissionOutageCapture>{{"processor",proof}};
+        }
+        public Task<SubmissionOutageCapture?> ObserveProgramLoadedAsync(string component,CancellationToken token)
+            => Task.FromResult(component=="processor"?_programLoaded:throw new InvalidDataException("Unknown program component."));
+        private async Task VerifyRecoveryEpoch(CancellationToken token)
+        {
+            var boot=await ProcessorUptime.ReadAsync(_saved.Host,Login,_saved.SshFingerprint!,TimeSpan.FromSeconds(20),token);
+            var program=await ProcessorProgramUptime.ReadAsync(_saved.Host,Login,_saved.SshFingerprint!,HomeProgram,TimeSpan.FromSeconds(20),token);
+            Save("recovery-epoch",boot.RequestSentUtc,new { Boot=boot,Program=program,OriginalBoot=_recoveryBoot,OriginalProgram=_recoveryProgram });
+            ValidateSameEpoch(_recoveryBoot!,_recoveryProgram!,boot,program);
+        }
         private async Task ReconnectApi(CancellationToken token)
         {
             if(_api!=null) {await _api.DisposeAsync();_api=null;}
@@ -244,9 +296,9 @@ public sealed class SystemOutageTests
                 await ReconnectApi(token);
                 PlatformState current;
                 while(true) {current=await Platform(token);if(current.Readiness.Ready)break;Save("not-ready",DateTimeOffset.UtcNow,current.Readiness);await Task.Delay(1000,token);}
-                var boot=await ProcessorUptime.ReadAsync(_saved.Host,Login,_saved.SshFingerprint!,TimeSpan.FromSeconds(20),token);
-                bool matches=current.IdentitySha256==_platform!.IdentitySha256 && current.ConfigurationSha256==_platform.ConfigurationSha256 && boot.EarliestStartUtc>_boot!.LatestStartUtc;
-                var capture=Save(function,first,new{Platform=current,Boot=boot,Matches=matches});
+                await VerifyRecoveryEpoch(token);
+                bool matches=current.IdentitySha256==_platform!.IdentitySha256 && current.ConfigurationSha256==_platform.ConfigurationSha256;
+                var capture=Save(function,first,new{Platform=current,Boot=_recoveryBoot,Program=_recoveryProgram,Matches=matches});
                 if(!matches)throw new InvalidDataException("Configuration/identity or processor reboot verification failed; no outlet command will be sent.");
                 return new(function,SubmissionEvidenceOutcome.Passed,capture);
             }
@@ -269,8 +321,9 @@ public sealed class SystemOutageTests
                 }
                 await session.CaptureAsync("system-outage."+(expected?"on":"off"),h=>RoomNavigation.InspectTile(h,Target.Room,Target.Name,Target.EnergyPage,expected?"ON":"OFF"),token);
             }
+            await VerifyRecoveryEpoch(token);
             return new(function,SubmissionEvidenceOutcome.Passed,Save(function,first,new{Target.DeviceId,RestoredPower=original,
-                AppCaptures=new[]{"system-outage.on","system-outage.off"},Method="Driver API commands, authenticated physical state and visible unobscured Room tile."}));
+                AppCaptures=AppEvidence.OutageAppCaptures(session.Context),Method="Driver API commands, authenticated physical state and visible unobscured Room tile."}));
         }
         private async Task<KasaDevice> Connect(OutageEndpoint endpoint,CancellationToken token)
         {
