@@ -19,6 +19,18 @@ public sealed class SensorEventContractTests
         return device;
     }
 
+    [TestCase("Single", "Single", 101, true)]
+    [TestCase("Double", "Double", 101, true)]
+    [TestCase("Double", "Single", 101, false)]
+    [TestCase("Double", "Double", 100, false)]
+    [TestCase("Unknown", "Unknown", 101, false)]
+    public void GestureTestRequiresExactFreshGesture(string expected,string observed,double marker,bool accepted)
+    {
+        var baseline = new SensorEventSnapshot(DateTimeOffset.UtcNow,100,new(),"Single");
+        var current = new SensorEventSnapshot(DateTimeOffset.UtcNow,marker,new(),observed);
+        Assert.That(SensorEventReading.IsNewGesture(expected,baseline,current),Is.EqualTo(accepted));
+    }
+
     [TestCase("motion", "hasMotion", "motionDetected", "motionStatusLabel")]
     [TestCase("contact", "hasContact", "contactIsOpen", "contactStatusLabel")]
     [TestCase("leak", "hasLeak", "leakDetected", "leakStatusLabel")]

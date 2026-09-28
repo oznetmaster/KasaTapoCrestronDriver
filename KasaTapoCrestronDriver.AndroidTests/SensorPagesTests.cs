@@ -19,6 +19,8 @@ public sealed record FixtureSettings(string ProcessorHost, string CredentialBind
     SubmissionEvidenceIdentity? EvidenceIdentity = null, bool PlatformConfigurationAuthorized = false)
 {
     public bool ResolveDeviceIds { get; init; }
+    public SubmissionOperatorInbox? OperatorInbox { get; init; }
+    public SystemOutageSettings? SystemOutage { get; init; }
     public PowerInterruptionSettings? PowerInterruption { get; init; }
     public static FixtureSettings Read(AndroidRunContext context)
     {

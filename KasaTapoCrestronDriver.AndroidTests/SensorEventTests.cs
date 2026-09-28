@@ -9,7 +9,7 @@ using NUnit.Framework;
 
 namespace KasaTapoCrestronDriver.AndroidTests;
 
-internal sealed record SensorEventSnapshot(DateTimeOffset ObservedUtc, double Marker, Dictionary<string, string> Rows);
+internal sealed record SensorEventSnapshot(DateTimeOffset ObservedUtc, double Marker, Dictionary<string, string> Rows, string? Gesture = null);
 
 internal static class SensorEventReading
 {
@@ -25,7 +25,7 @@ internal static class SensorEventReading
             double time = p["lastTriggerTime"].GetDouble();
             if (!double.IsFinite(time) || time < 0) throw new InvalidDataException("Invalid button event timestamp.");
             return new(DateTimeOffset.UtcNow, time, new() { ["Last Press"] = Text("lastGestureLabel"),
-                ["Last Press Time"] = Text("lastTriggerTimeDisplay") });
+                ["Last Press Time"] = Text("lastTriggerTimeDisplay") }, Text("lastGestureLabel"));
         }
         var (capability, raw, display, label) = alias switch
         {
@@ -40,6 +40,8 @@ internal static class SensorEventReading
 
     internal static bool IsNew(string alias, SensorEventSnapshot baseline, SensorEventSnapshot current) =>
         alias == "button" ? current.Marker > baseline.Marker : baseline.Marker == 0 && current.Marker == 1;
+    internal static bool IsNewGesture(string expected, SensorEventSnapshot baseline, SensorEventSnapshot current) =>
+        expected is "Single" or "Double" && IsNew("button", baseline, current) && current.Gesture == expected;
 
     internal static bool DisplayChanged(SensorEventSnapshot baseline, SensorEventSnapshot current) =>
         current.Rows.Any(p => !baseline.Rows.TryGetValue(p.Key, out var old) ||
@@ -74,7 +76,7 @@ internal static class SensorEventReading
     }
 }
 
-// Explicit selection is mandatory: an unattended suite must never wait for a person.
+// Explicit selection is mandatory: physical tests require a provisioned operator inbox.
 [TestFixture, NonParallelizable]
 public sealed class SensorEventTests
 {
@@ -90,14 +92,20 @@ public sealed class SensorEventTests
     [TestCase("leak", Explicit = true)]
     public Task PhysicalEventReachesVisibleRoomTile(string alias) => Record(alias, true);
 
-    private static async Task Record(string alias, bool roomTile)
+    [TestCase("Single", Explicit = true)]
+    [TestCase("Double", Explicit = true)]
+    public Task ButtonGestureReachesVisibleRoomTile(string gesture) => Record("button", true, gesture);
+
+    private static async Task Record(string alias, bool roomTile, string? gesture = null)
     {
         if (!SensorSession.PhysicalRestorationConfirmed)
             throw new InvalidOperationException("Resolve the preceding test's physical restoration before recording another event.");
         var session = SensorSession.Current!;
+        var settings = SensorSession.Settings!;
+        var inbox = settings.OperatorInbox ?? throw new InvalidDataException("Physical tests require a planned operator inbox before starting.");
         var target = SensorSession.Settings!.Sensors.Single(s => s.Alias == alias);
         int id = target.DeviceId > 0 ? target.DeviceId : session.Context.RequireManagedDevice(alias).DeviceId;
-        string prefix = "sensor-event." + alias + (roomTile ? ".tile" : ".page");
+        string prefix = "sensor-event." + alias + (roomTile ? ".tile" : ".page") + (gesture == null ? "" : "." + gesture.ToLowerInvariant());
         string folder = Path.Combine(session.Context.EvidenceDirectory, prefix);
         if (Directory.Exists(folder)) throw new IOException("Event evidence already exists; use a new workflow invocation.");
         Directory.CreateDirectory(folder);
@@ -126,9 +134,9 @@ public sealed class SensorEventTests
         SensorEventSnapshot? baseline = null;
         bool armed = false;
         Exception? failure = null;
-        async Task<SensorEventSnapshot> WaitFor(Func<SensorEventSnapshot, bool> predicate)
+        async Task<SensorEventSnapshot> WaitFor(Func<SensorEventSnapshot, bool> predicate, CancellationToken observationToken)
         {
-            using var wait = CancellationTokenSource.CreateLinkedTokenSource(token);
+            using var wait = CancellationTokenSource.CreateLinkedTokenSource(observationToken);
             wait.CancelAfter(TimeSpan.FromMinutes(5));
             while (true)
             {
@@ -137,12 +145,27 @@ public sealed class SensorEventTests
                 await Task.Delay(TimeSpan.FromSeconds(1), wait.Token);
             }
         }
-        async Task ObserveUi(string phase, SensorEventSnapshot reading)
+        async Task<SensorEventSnapshot> Ask(string phase, string instructions, Func<SensorEventSnapshot,bool> predicate,
+            CancellationToken actionToken, bool captureUi)
+        {
+            SubmissionOperatorHandle? handle = null;
+            try {
+            var result = await SubmissionPhysicalAction.ObserveAsync(inbox, prefix + "." + phase,
+                $"{settings.ProcessorHost}: {target.Name} ({target.Model}, device {id})", instructions,
+                TimeSpan.FromMinutes(5), async ct => {
+                    var reading = await WaitFor(predicate, ct);
+                    if(captureUi) await ObserveUi(phase, reading, ct);
+                    return reading;
+                }, actionToken, published => handle = published);
+            return result.Observation;
+            } finally { if(handle != null) await Save(phase + "-operator", SubmissionOperatorStep.Read(handle)); }
+        }
+        async Task ObserveUi(string phase, SensorEventSnapshot reading, CancellationToken observationToken)
         {
             // This is an observer interval from the API observation, NOT the physical
             // event time or exact first-visible app latency. No checklist timing claim.
             var clock = Stopwatch.StartNew();
-            using var wait = CancellationTokenSource.CreateLinkedTokenSource(token);
+            using var wait = CancellationTokenSource.CreateLinkedTokenSource(observationToken);
             wait.CancelAfter(TimeSpan.FromSeconds(30));
             while (!Matches(await session.Device.CaptureAsync(wait.Token), reading))
                 await Task.Delay(250, wait.Token);
@@ -163,24 +186,25 @@ public sealed class SensorEventTests
             baseline = Reading(await ReadDevice(token));
             if (alias != "button" && baseline.Marker != 0)
                 throw new InvalidDataException("Start with no motion, contact closed or leak sensor dry, then retry in a new invocation.");
-            await ObserveUi("baseline", baseline);
+            await ObserveUi("baseline", baseline, token);
             armed = true;
             if (alias != "button") SensorSession.PhysicalRestorationConfirmed = false;
             await Save("ready", new { Alias = alias, DeviceId = id, ReadyUtc = DateTimeOffset.UtcNow,
                 Baseline = baseline,
                 Instruction = "Trigger this physical sensor once; for a button use a different gesture from the baseline. Do not navigate the app. Restore after restore-request appears." });
-            TestContext.Progress.WriteLine($"READY: {alias}; trigger the selected sensor once.");
-            var changed = await WaitFor(s => SensorEventReading.IsNew(alias, baseline, s));
+            string instruction = gesture == "Double" ? "Double-press this button, then choose Done. Do not navigate the app." :
+                gesture == "Single" ? "Press this button once, then choose Done. Do not navigate the app." :
+                "Trigger this sensor once, then choose Done. For a button use a different gesture from its displayed baseline. Do not navigate the app. Wait for the restoration request before restoring a stateful sensor.";
+            var changed = await Ask("event", instruction,
+                s => gesture == null ? SensorEventReading.IsNew(alias, baseline, s) : SensorEventReading.IsNewGesture(gesture, baseline, s), token, true);
             if (!SensorEventReading.DisplayChanged(baseline, changed))
                 throw new InvalidDataException("Fresh event has no distinguishable display change; app feedback cannot be proved.");
-            await ObserveUi("event", changed);
             if (alias != "button")
             {
                 await Save("restore-request", new { RequestedUtc = DateTimeOffset.UtcNow,
                     Instruction = "Close contact, dry leak sensor or leave motion detection area." });
-                TestContext.Progress.WriteLine($"RESTORE: {alias}; return it to its original inactive state.");
-                var restored = await WaitFor(s => s.Marker == baseline.Marker);
-                await ObserveUi("recovery", restored);
+                await Ask("recovery", "Restore this sensor: close the contact, dry the leak sensor, or leave the motion detection area. Then choose Done.",
+                    s => s.Marker == baseline.Marker, token, true);
                 SensorSession.PhysicalRestorationConfirmed = true;
             }
         }
@@ -200,6 +224,9 @@ public sealed class SensorEventTests
                     if (!File.Exists(Path.Combine(folder, "restore-request.json")))
                         await Save("restore-request", new { RequestedUtc = DateTimeOffset.UtcNow,
                             Instruction = "Return this sensor to its original inactive state, even if recording failed." });
+                    if(!SensorSession.PhysicalRestorationConfirmed)
+                        await Ask("cleanup", "The test has ended or failed. Restore this sensor to its original inactive state now, then choose Done. This is restoration, not a request to trigger it again.",
+                            s => baseline != null && s.Marker == baseline.Marker, cleanup.Token, false);
                     var final = SensorEventReading.Read(alias, await ReadDevice(cleanup.Token));
                     SensorSession.PhysicalRestorationConfirmed = baseline != null && final.Marker == baseline.Marker;
                     await Save("final-physical-state", final);
