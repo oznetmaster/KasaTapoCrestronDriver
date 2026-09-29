@@ -189,14 +189,16 @@ public sealed class SensorEventTests
             await ObserveUi("baseline", baseline, token);
             armed = true;
             if (alias != "button") SensorSession.PhysicalRestorationConfirmed = false;
+            string? expectedGesture = alias == "button"
+                ? gesture ?? (baseline.Gesture == "Single" ? "Double" : "Single") : null;
+            string instruction = expectedGesture == "Double" ? $"DOUBLE-PRESS {target.Name}, then choose Done. Do not navigate the app." :
+                expectedGesture == "Single" ? $"Press {target.Name} ONCE, then choose Done. Do not navigate the app." :
+                "Trigger this sensor once, then choose Done. Do not navigate the app. Wait for the restoration request before restoring this sensor.";
             await Save("ready", new { Alias = alias, DeviceId = id, ReadyUtc = DateTimeOffset.UtcNow,
                 Baseline = baseline,
-                Instruction = "Trigger this physical sensor once; for a button use a different gesture from the baseline. Do not navigate the app. Restore after restore-request appears." });
-            string instruction = gesture == "Double" ? "Double-press this button, then choose Done. Do not navigate the app." :
-                gesture == "Single" ? "Press this button once, then choose Done. Do not navigate the app." :
-                "Trigger this sensor once, then choose Done. For a button use a different gesture from its displayed baseline. Do not navigate the app. Wait for the restoration request before restoring a stateful sensor.";
+                Instruction = instruction });
             var changed = await Ask("event", instruction,
-                s => gesture == null ? SensorEventReading.IsNew(alias, baseline, s) : SensorEventReading.IsNewGesture(gesture, baseline, s), token, true);
+                s => expectedGesture == null ? SensorEventReading.IsNew(alias, baseline, s) : SensorEventReading.IsNewGesture(expectedGesture, baseline, s), token, true);
             if (!SensorEventReading.DisplayChanged(baseline, changed))
                 throw new InvalidDataException("Fresh event has no distinguishable display change; app feedback cannot be proved.");
             if (alias != "button")
