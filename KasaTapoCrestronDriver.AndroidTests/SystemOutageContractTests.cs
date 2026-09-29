@@ -4,6 +4,7 @@ using KasaTapoCrestronDriver.AndroidTests;
 using NUnit.Framework;
 using System.Security.Cryptography;
 using System.Text.Json;
+using CrestronHomeNUnit.Android;
 
 namespace KasaAppEvidenceContracts;
 
@@ -105,5 +106,24 @@ public sealed class SystemOutageContractTests
         var parsed=JsonSerializer.Deserialize<SubmissionOutageMeasurementPlan>(json,SystemOutageTests.PlanJson)!;
         Assert.That(parsed.Identity,Is.EqualTo(input.Settings.EvidenceIdentity));
         Assert.DoesNotThrow(()=>SubmissionOutageEvidence.ValidatePlanPolicy(parsed,JsonSerializer.Deserialize<SubmissionEvidencePolicy>(input.Policy,SystemOutageTests.PlanJson)!));
+    }
+    [Test] public void ActualFixtureSettingsReaderAcceptsNamedClockFromExpandedTemplate() {
+        string root=Path.Combine(Path.GetTempPath(),"outage-settings-"+Guid.NewGuid().ToString("N"));
+        string evidence=Path.Combine(root,"installed-app","AndroidUI");Directory.CreateDirectory(evidence);
+        try {
+            var input=Inputs();
+            var settings=input.Settings with {SystemOutage=Plan,Sensors=[
+                new("temperature",10,"T310","Temperature","Room",1,["temperatureDisplay"]),
+                new("motion",11,"T100","Motion","Room",1,["motionStatusLabel"]),
+                new("button",12,"S200B","Button","Room",1,["lastGestureLabel"])]};
+            File.WriteAllBytes(Path.Combine(root,"app-fixture-settings.json"),JsonSerializer.SerializeToUtf8Bytes(settings,SystemOutageTests.PlanJson));
+            var identity=settings.EvidenceIdentity!;
+            var context=new AndroidRunContext(1,"synthetic","synthetic",1,1,settings.ProcessorHost,7,Guid.NewGuid().ToString(),"2.1.2.0",
+                identity.PackageSha256,new('b',64),new("unused","unused","unused","unused","unused"),evidence) {ReleaseSourceCommit=identity.SourceCommit};
+            var read=FixtureSettings.Read(context);
+            Assert.That(read.SystemOutage!.Plans.Single().RecoveryClock,Is.EqualTo(SubmissionOutageRecoveryClock.ProgramLoaded));
+            Assert.DoesNotThrow(()=>SystemOutageTests.Validate(read.SystemOutage,read,7));
+            Assert.That(SystemOutageTests.PreparePlans(read.SystemOutage,read,input.Policy).Single().Identity,Is.EqualTo(identity));
+        } finally {Directory.Delete(root,recursive:true);}
     }
 }
