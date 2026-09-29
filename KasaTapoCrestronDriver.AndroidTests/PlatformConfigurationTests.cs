@@ -48,12 +48,14 @@ public sealed class PlatformConfigurationTests
                 return item.CurrentValue.Value.ValueKind == JsonValueKind.String ? item.CurrentValue.Value.GetString()! : item.CurrentValue.Value.GetRawText();
             });
         }
-        async Task Write(string value, CancellationToken ct)
+        async Task Write(Dictionary<string, string> values, CancellationToken ct)
         {
             await Read(ct);
-            await Record("write-intent", new { Setting, Value = value });
+            // Home marks omitted editable settings as requiring review. Submit the complete
+            // non-secret settings group, retaining every value except the tested timeout.
+            await Record("write-intent", new { Settings = values });
             var result = await SensorSession.Api!.ExecuteDeviceCommandAsync(id, apply,
-                new { configurationItemValues = new Dictionary<string, string> { [Setting] = value }, isoCulture = "en-GB" }, ct);
+                new { configurationItemValues = values, isoCulture = "en-GB" }, ct);
             if (result is { ValueKind: not JsonValueKind.Null } && (result.Value.ValueKind != JsonValueKind.Array || result.Value.GetArrayLength() != 0))
                 throw new InvalidOperationException("Platform configuration rejected the change; no request was retried.");
         }
@@ -89,14 +91,24 @@ public sealed class PlatformConfigurationTests
         SensorSession.PhysicalRestorationConfirmed = false;
         try
         {
-            await Write(changed[Setting], token);
+            await Write(changed, token);
             await ReopenAndVerify(changed, token);
         }
         finally
         {
             using var restore = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-            await Write(original[Setting], restore.Token);
+            await Write(original, restore.Token);
             await ReopenAndVerify(original, restore.Token);
+            var readiness = await DriverReadiness.InspectAsync(SensorSession.Api!, id, "KasaTapoPlatform", session.Context.DriverVersion,
+                cancellationToken: restore.Token);
+            await Record("restoration-readiness-start", readiness);
+            while (!readiness.Ready)
+            {
+                await Task.Delay(500, restore.Token);
+                readiness = await DriverReadiness.InspectAsync(SensorSession.Api!, id, "KasaTapoPlatform", session.Context.DriverVersion,
+                    cancellationToken: restore.Token);
+            }
+            await Record("restored-readiness", readiness);
             restoredFile = await Record("restored", original);
             SensorSession.PhysicalRestorationConfirmed = true;
         }
