@@ -221,6 +221,11 @@ public sealed class SystemOutageTests
             if(!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(SubmissionPreparedReadiness.EnvironmentVariable))) {
                 // Readiness may have waited overnight. Refresh physical/configuration/boot baselines
                 // without repeating compilation, app selection, or UI navigation after Ready.
+                var previous = _api;
+                _api = null;
+                _api = await PreparedProcessorSession.RenewAsync(previous,
+                    ct => ConfigurationClient.ConnectAsync(new() { Host = _saved.Host,
+                        CertificateSha256 = _saved.CertificateSha256 }, Login, ct), token);
                 _baselineStarted=DateTimeOffset.UtcNow;
                 _platform=await Platform(token);
                 if(!_platform.Readiness.Ready)throw new InvalidDataException("Driver readiness changed while waiting for the operator.");

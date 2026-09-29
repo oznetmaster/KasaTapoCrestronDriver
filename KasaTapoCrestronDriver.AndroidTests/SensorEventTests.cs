@@ -195,6 +195,7 @@ public sealed class SensorEventTests
             deadline.CancelAfter(TimeSpan.FromMinutes(12));
             var handoff = Stopwatch.StartNew();
             if(readiness != null) await Save("prepared-readiness", readiness);
+            if(readiness != null) await SensorSession.RenewApiAsync(token);
             // Events during an overnight readiness wait must never satisfy the upcoming test.
             baseline = Reading(await ReadDevice(token));
             if(alias != "button" && baseline.Marker != 0)

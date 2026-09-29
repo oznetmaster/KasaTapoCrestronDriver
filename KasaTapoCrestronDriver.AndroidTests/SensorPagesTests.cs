@@ -58,6 +58,22 @@ public sealed class SensorSession
     internal static FixtureSettings? Settings;
     internal static bool PhysicalRestorationConfirmed = true;
 
+    internal static async Task RenewApiAsync(CancellationToken token)
+    {
+        var previous = Api;
+        Api = null;
+        Api = await PreparedProcessorSession.RenewAsync(previous, async ct =>
+        {
+            if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Saved bindings require Windows.");
+            var settings = Settings ?? throw new InvalidOperationException("Sensor settings are not loaded.");
+            var credential = DevToolsCredentialBindings.Read(settings.CredentialBindings)
+                .Resolve(DevToolsCredentialPurpose.Processor, settings.ProcessorHost);
+            return await ConfigurationClient.ConnectAsync(new() { Host = settings.ProcessorHost,
+                CertificateSha256 = credential.CertificateSha256 },
+                new NetworkCredential(credential.UserName, credential.Password), ct);
+        }, token);
+    }
+
     [OneTimeSetUp]
     public async Task Open()
     {
@@ -67,14 +83,11 @@ public sealed class SensorSession
         Navigation = new(Current);
         Settings = FixtureSettings.Read(Current.Context);
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Saved bindings require Windows.");
-        var credential = DevToolsCredentialBindings.Read(Settings.CredentialBindings)
-            .Resolve(DevToolsCredentialPurpose.Processor, Settings.ProcessorHost);
-        Api = await ConfigurationClient.ConnectAsync(new() { Host = Settings.ProcessorHost, CertificateSha256 = credential.CertificateSha256 },
-            new NetworkCredential(credential.UserName, credential.Password));
+        await RenewApiAsync(CancellationToken.None);
         if (Settings.ResolveDeviceIds)
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(1));
-            Settings = FixtureTargetResolution.Resolve(Settings, Current.Context, await Api.GetDevicesAsync(timeout.Token));
+            Settings = FixtureTargetResolution.Resolve(Settings, Current.Context, await Api!.GetDevicesAsync(timeout.Token));
             FixtureTargetResolution.Write(Path.Combine(Current.Context.EvidenceDirectory, "resolved-targets.json"), Settings, Current.Context.InstalledDriverId);
         }
         await Navigation.VerifySavedEndpointAsync("sensor.endpoint", Current.Context.Profile.LocalPort);
