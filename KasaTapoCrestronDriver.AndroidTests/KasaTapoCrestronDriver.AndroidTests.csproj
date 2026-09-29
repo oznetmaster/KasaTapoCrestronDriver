@@ -16,8 +16,9 @@
     <PackageReference Include="NUnit.Analyzers" Version="4.15.0" PrivateAssets="all" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" PrivateAssets="all" />
-    <PackageReference Include="CrestronHomeNUnit.TestAdapter" Version="2.1.0" PrivateAssets="all" />
-    <PackageReference Include="CrestronHomeDevTools" Version="1.22.0" PrivateAssets="all" />
+    <PackageReference Include="CrestronHomeNUnit.TestAdapter" Version="2.2.0" PrivateAssets="all" />
+    <PackageReference Include="CrestronHomeDevTools" Version="1.24.0" PrivateAssets="all" Condition="'$(DevToolsProject)' == ''" />
+    <ProjectReference Include="$(DevToolsProject)" Condition="'$(DevToolsProject)' != ''" />
     <PackageReference Include="KasaTapoClient" Version="2.0.1" PrivateAssets="all" />
   </ItemGroup>
 </Project>

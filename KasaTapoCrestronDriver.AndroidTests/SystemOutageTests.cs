@@ -217,9 +217,25 @@ public sealed class SystemOutageTests
             await RoomNavigation.Open(Target.Room, token); await RoomNavigation.RevealTile(Target.Room, Target.Name, token);
             await session.CaptureAsync("system-outage.before", h => RoomNavigation.InspectTile(h, Target.Room, Target.Name, Target.EnergyPage), token);
         }
-        public Task<SubmissionOutageCapture> CaptureOriginalAsync(CancellationToken token) => Task.FromResult(Save("original", _baselineStarted,
+        public async Task<SubmissionOutageCapture> CaptureOriginalAsync(CancellationToken token) {
+            if(!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(SubmissionPreparedReadiness.EnvironmentVariable))) {
+                // Readiness may have waited overnight. Refresh physical/configuration/boot baselines
+                // without repeating compilation, app selection, or UI navigation after Ready.
+                _baselineStarted=DateTimeOffset.UtcNow;
+                _platform=await Platform(token);
+                if(!_platform.Readiness.Ready)throw new InvalidDataException("Driver readiness changed while waiting for the operator.");
+                _original.Clear();
+                foreach(var endpoint in plan.Endpoints) {
+                    if(!(await Ports(endpoint,token)).Values.All(v=>v))throw new InvalidDataException("Outage endpoint changed while waiting.");
+                    if(endpoint.Physical!=null)_original.Add(endpoint.Component,await Physical(endpoint,token));
+                }
+                _boot=await ProcessorUptime.ReadAsync(_saved.Host,Login,_saved.SshFingerprint!,TimeSpan.FromSeconds(20),token);
+                _program=await ProcessorProgramUptime.ReadAsync(_saved.Host,Login,_saved.SshFingerprint!,HomeProgram,TimeSpan.FromSeconds(20),token);
+            }
+            return Save("original", _baselineStarted,
             new { Processor = settings.ProcessorHost, RootDeviceId = session.Context.InstalledDriverId, Platform = _platform, Physical = _original,
-                Boot = _boot, Program = _program, session.Context.PackageSha256, session.Context.ReleaseSourceCommit, Components = plan.Endpoints.Select(e => new { e.Component,e.Host,e.Ports }) }));
+                Boot = _boot, Program = _program, session.Context.PackageSha256, session.Context.ReleaseSourceCommit, Components = plan.Endpoints.Select(e => new { e.Component,e.Host,e.Ports }) });
+        }
         private async Task<Dictionary<int,bool>> Ports(OutageEndpoint endpoint, CancellationToken token)
         {
             var result = new Dictionary<int,bool>();

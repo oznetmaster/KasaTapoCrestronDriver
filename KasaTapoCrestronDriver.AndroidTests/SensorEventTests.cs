@@ -187,6 +187,18 @@ public sealed class SensorEventTests
             if (alias != "button" && baseline.Marker != 0)
                 throw new InvalidDataException("Start with no motion, contact closed or leak sensor dry, then retry in a new invocation.");
             await ObserveUi("baseline", baseline, token);
+            // Navigation and capture finish before the user is asked to be ready.
+            // The public coordinator retains the reservations and pauses only this declared wait.
+            deadline.CancelAfter(Timeout.InfiniteTimeSpan);
+            var readiness = await SubmissionPreparedReadiness.WaitAsync(inbox,
+                $"{settings.ProcessorHost}: {target.Name} ({target.Model}, device {id})", token);
+            deadline.CancelAfter(TimeSpan.FromMinutes(12));
+            var handoff = Stopwatch.StartNew();
+            if(readiness != null) await Save("prepared-readiness", readiness);
+            // Events during an overnight readiness wait must never satisfy the upcoming test.
+            baseline = Reading(await ReadDevice(token));
+            if(alias != "button" && baseline.Marker != 0)
+                throw new InvalidDataException("Sensor is active after readiness; preserve this attempt and restore it before a new recording.");
             armed = true;
             if (alias != "button") SensorSession.PhysicalRestorationConfirmed = false;
             string? expectedGesture = alias == "button"
@@ -197,6 +209,9 @@ public sealed class SensorEventTests
             await Save("ready", new { Alias = alias, DeviceId = id, ReadyUtc = DateTimeOffset.UtcNow,
                 Baseline = baseline,
                 Instruction = instruction });
+            await Save("handoff", new { ReadyConsumedUtc = DateTimeOffset.UtcNow,
+                WorkerElapsedMilliseconds = handoff.Elapsed.TotalMilliseconds,
+                Meaning = "Worker preparation after readiness, before arming and publishing the physical action. Not cross-computer UTC subtraction." });
             var changed = await Ask("event", instruction,
                 s => expectedGesture == null ? SensorEventReading.IsNew(alias, baseline, s) : SensorEventReading.IsNewGesture(expectedGesture, baseline, s), token, true);
             if (!SensorEventReading.DisplayChanged(baseline, changed))
