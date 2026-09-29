@@ -80,7 +80,7 @@ public sealed class PowerInterruptionContractTests
     {
         int calls = 0;
         var observed = new List<(int Attempt, int Matches, int Hosts)>();
-        var selected = await PowerInterruptionTests.DiscoverUnique<string>(_ =>
+        var selected = await PowerDiscovery.DiscoverUnique<string>(_ =>
             Task.FromResult<IReadOnlyList<string>>(++calls == 1 ? [] : ["selected-host", "selected-host"]),
             h => h, (a, m, h) => { observed.Add((a, m, h)); return Task.CompletedTask; }, CancellationToken.None);
         Assert.That(selected, Is.EqualTo("selected-host"));
@@ -91,7 +91,7 @@ public sealed class PowerInterruptionContractTests
     public async Task ConflictingHostsAreRejectedWithoutRetry()
     {
         int calls = 0;
-        await Assert.ThrowsAsync<InvalidDataException>(async () => await PowerInterruptionTests.DiscoverUnique<string>(_ =>
+        await Assert.ThrowsAsync<InvalidDataException>(async () => await PowerDiscovery.DiscoverUnique<string>(_ =>
         { calls++; return Task.FromResult<IReadOnlyList<string>>(["host-one", "host-two"]); },
             h => h, (_, _, _) => Task.CompletedTask, CancellationToken.None));
         Assert.That(calls, Is.EqualTo(1));
@@ -101,7 +101,7 @@ public sealed class PowerInterruptionContractTests
     public async Task MissingResponsesStopAfterThreeAttempts()
     {
         int calls = 0;
-        await Assert.ThrowsAsync<InvalidDataException>(async () => await PowerInterruptionTests.DiscoverUnique<string>(_ =>
+        await Assert.ThrowsAsync<InvalidDataException>(async () => await PowerDiscovery.DiscoverUnique<string>(_ =>
         { calls++; return Task.FromResult<IReadOnlyList<string>>([]); },
             h => h, (_, _, _) => Task.CompletedTask, CancellationToken.None));
         Assert.That(calls, Is.EqualTo(3));
@@ -112,7 +112,7 @@ public sealed class PowerInterruptionContractTests
     {
         using var cancel = new CancellationTokenSource();
         int calls = 0;
-        await Assert.ThrowsAsync<OperationCanceledException>(async () => await PowerInterruptionTests.DiscoverUnique<string>(_ =>
+        await Assert.ThrowsAsync<OperationCanceledException>(async () => await PowerDiscovery.DiscoverUnique<string>(_ =>
         { calls++; cancel.Cancel(); return Task.FromResult<IReadOnlyList<string>>([]); },
             h => h, (_, _, _) => Task.CompletedTask, cancel.Token));
         Assert.That(calls, Is.EqualTo(1));

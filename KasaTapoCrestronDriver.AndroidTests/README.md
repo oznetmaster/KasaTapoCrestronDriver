@@ -142,6 +142,16 @@ controls, selector-icon artwork or a quantified response deadline.
 
 The fixtures return the app to Home. On failure, inspect the original NUnit result, capture and restoration journal before recovery. Do not release retained reservations or repeat uncertain inputs automatically.
 
+Before hardware execution, build and inspect the full NUnit discovery XML, not
+only the names selected for that run. The hosted **Workflow discovery** check
+rejects invalid and ignored fixtures, including zero-case generated types. A
+successful `--list-tests` exit code alone does not establish valid discovery.
+Explicit live fixtures remain discoverable but require exact case selection to
+execute. Hardware readiness must also verify every required case is present.
+Generic asynchronous helpers belong outside `[TestFixture]` classes: NUnit 5
+can discover their generated nested state-machine type as an invalid fixture.
+This is test-source organization only and does not change the driver's package.
+
 The optional `PowerInterruptionTests.RecordDevicePowerInterruptionAndRestore` is a preparatory recorder, selected separately from normal controls. Private `PowerInterruption` settings identify `OutletAlias`, an independently controllable `Supply` strip socket, and any `CollateralLights` sharing the possibly interrupted supply. Every physical binding has `DiscoveryId`, `AuthenticatedId`, `ChildId` (null for lights) and explicit `ControlsAuthorized`. The selected outlet must be an authorized root plug. Pin the wiring before unattended use; a supply that powers another device causes the expected outlet-offline check to fail.
 
 The recorder saves original states, records the supply-off intent before switching, confirms at least 60 seconds without supply power, observes the selected driver child disconnect/reconnect and captures its unobscured Room tile before, during and after. It restores the supply, outlet and explicitly selected collateral light states even after a failed observation; unresolved restoration retains reservations. Active lighting effects or incomplete colour state are rejected before the interruption because their restoration is not covered here. Restoration attempts are independent, so failure restoring one device does not skip the others.

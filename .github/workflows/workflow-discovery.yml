@@ -31,3 +31,31 @@ jobs:
           $output | Write-Output
           if ($LASTEXITCODE -ne 0) { throw 'Workflow container build/discovery failed.' }
           if (@($output | Where-Object { $_.ToString().Trim() -eq $env:EXPECTED_WORKFLOW }).Count -ne 1) { throw 'Expected exactly one named processor workflow.' }
+      - name: Reject invalid Android fixture discovery before hardware testing
+        shell: pwsh
+        run: |
+          $project = 'KasaTapoCrestronDriver.AndroidTests/KasaTapoCrestronDriver.AndroidTests.csproj'
+          $output = Join-Path $env:RUNNER_TEMP 'kasa-android-discovery'
+          dotnet test $project -c Release --list-tests --output $output -- NUnit.DumpXmlTestDiscovery=true
+          if ($LASTEXITCODE -ne 0) { throw 'Android build/discovery failed.' }
+          $dumps = @(Get-ChildItem (Join-Path $output 'Dump') -Filter 'D_*.dll.dump')
+          if ($dumps.Count -ne 1) { throw 'Expected one Android discovery tree.' }
+          $settings = [Xml.XmlReaderSettings]::new()
+          $settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit
+          $settings.XmlResolver = $null
+          $settings.MaxCharactersInDocument = 20 * 1024 * 1024
+          $reader = [Xml.XmlReader]::Create($dumps[0].FullName, $settings)
+          try { $xml = [Xml.XmlDocument]::new(); $xml.XmlResolver = $null; $xml.Load($reader) }
+          finally { $reader.Dispose() }
+          $runs = @($xml.SelectNodes('//test-run'))
+          $invalid = @($xml.SelectNodes('//*[@runstate and @runstate!="Runnable" and @runstate!="Explicit"]'))
+          $cases = @($xml.SelectNodes('//test-case'))
+          if ($runs.Count -ne 1 -or $invalid.Count -ne 0 -or $cases.Count -eq 0 -or
+              [int]$runs[0].testcasecount -ne $cases.Count -or
+              @($cases.id | Sort-Object -Unique).Count -ne $cases.Count) {
+            $invalid | ForEach-Object { Write-Output $_.fullname }
+            throw 'Android discovery contains invalid, ignored, empty or inconsistent fixtures.'
+          }
+          # Explicit live fixtures are valid inventory, never executed by this hosted check.
+          # Each hardware workflow must additionally require its exact selected case names.
+          Write-Output "Validated $($cases.Count) Android test cases; no hardware accessed."

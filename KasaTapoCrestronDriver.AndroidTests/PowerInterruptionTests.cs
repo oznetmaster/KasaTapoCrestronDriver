@@ -22,23 +22,6 @@ public sealed class PowerInterruptionTests
     internal static void RequireTileState(AndroidHierarchy hierarchy, OutletTarget target, string expected) =>
         RoomNavigation.InspectTile(hierarchy, target.Room, target.Name, target.EnergyPage, expected);
 
-    internal static async Task<T> DiscoverUnique<T>(Func<CancellationToken, Task<IReadOnlyList<T>>> discover,
-        Func<T, string> host, Func<int, int, int, Task> observe, CancellationToken token)
-    {
-        // UDP discovery can miss one response. Retry only absence, before any connection or write.
-        // Conflicting identities/hosts must never be made acceptable by trying again.
-        for (int attempt = 1; attempt <= 3; attempt++)
-        {
-            token.ThrowIfCancellationRequested();
-            var matches = await discover(token);
-            int hosts = matches.Select(host).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-            await observe(attempt, matches.Count, hosts);
-            if (hosts > 1) throw new InvalidDataException("Physical identity has multiple discovered hosts.");
-            if (hosts == 1) return matches[0];
-        }
-        throw new InvalidDataException("Physical identity was absent from three discovery attempts.");
-    }
-
     internal static void Validate(PowerInterruptionSettings plan, OutletTarget target)
     {
         bool Valid(PhysicalPowerTarget p) => p.ControlsAuthorized && !string.IsNullOrWhiteSpace(p.DiscoveryId) &&
@@ -83,7 +66,7 @@ public sealed class PowerInterruptionTests
                 using var input = JsonDocument.Parse(await File.ReadAllTextAsync(settings.DeviceCredentialsFile, ct));
                 var auth = input.RootElement.GetProperty("credentials");
                 stage = "discovery";
-                var selected = await DiscoverUnique<DiscoveryResult>(async cancellation =>
+                var selected = await PowerDiscovery.DiscoverUnique<DiscoveryResult>(async cancellation =>
                     (await Discover.DiscoverAsync(TimeSpan.FromSeconds(2), cancellationToken: cancellation))
                         .Where(d => string.Equals(d.DeviceId, physical.DiscoveryId, StringComparison.OrdinalIgnoreCase))
                         .OrderByDescending(d => d.TpapPreferred == true || d.TpapMetadata != null).ToArray(),
