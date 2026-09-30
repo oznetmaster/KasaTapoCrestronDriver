@@ -10,6 +10,36 @@ namespace KasaAppEvidenceContracts;
 [TestFixture, Category("unit")]
 public sealed class SensorEventContractTests
 {
+    [TestCase("true", true)]
+    [TestCase("\"true\"", true)]
+    [TestCase("false", false)]
+    [TestCase("\"false\"", false)]
+    [TestCase("null", false)]
+    [TestCase("1", false)]
+    [TestCase("\"unknown\"", false)]
+    public void DoubleGestureRequiresConfirmedEnabledConfiguration(string json, bool accepted)
+    {
+        var field = new DriverConfigurationItem("AllowDoubleClick", null, "Boolean", true,
+            false, false, true, JsonSerializer.Deserialize<JsonElement>(json));
+        var snapshot = new DriverConfigurationSnapshot(42, "Demo Button", "S200B", "2.1.2", true, true, true, [field]);
+        if (accepted) Assert.DoesNotThrow(() => SensorEventReading.RequireDoubleClick(snapshot));
+        else Assert.Throws<InvalidDataException>(() => SensorEventReading.RequireDoubleClick(snapshot));
+    }
+
+    [TestCase("missing")]
+    [TestCase("duplicate")]
+    [TestCase("masked")]
+    [TestCase("unavailable")]
+    [TestCase("no-current-value")]
+    public void AmbiguousOrUnavailableDoubleClickConfigurationCannotPromptForAction(string reason)
+    {
+        var field = new DriverConfigurationItem("AllowDoubleClick", null, "Boolean", true,
+            false, reason == "masked", reason != "no-current-value", JsonSerializer.SerializeToElement(true));
+        DriverConfigurationItem[] fields = reason == "missing" ? [] : reason == "duplicate" ? [field, field] : [field];
+        var snapshot = new DriverConfigurationSnapshot(42, "Demo Button", "S200B", "2.1.2", true, true, reason != "unavailable", fields);
+        Assert.Throws<InvalidDataException>(() => SensorEventReading.RequireDoubleClick(snapshot));
+    }
+
     static DeviceInfo Device(params (string, object)[] values)
     {
         var device = new DeviceInfo { PropertyValues = new() {

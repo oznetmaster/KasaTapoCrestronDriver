@@ -13,6 +13,15 @@ internal sealed record SensorEventSnapshot(DateTimeOffset ObservedUtc, double Ma
 
 internal static class SensorEventReading
 {
+    internal static void RequireDoubleClick(DriverConfigurationSnapshot configuration)
+    {
+        var fields = configuration.Items.Where(i => i.Id == "AllowDoubleClick").ToArray();
+        if (!configuration.ItemsAvailable || fields.Length != 1 || fields[0].Masked || !fields[0].HasCurrentValue ||
+            fields[0].CurrentValue is not { } value || !(value.ValueKind == JsonValueKind.True ||
+                value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var enabled) && enabled))
+            throw new InvalidDataException("The selected button test can require a double press, but AllowDoubleClick is not confirmed enabled. Set AllowDoubleClick=true in the managed button configuration before running this test. No physical press is requested.");
+    }
+
     internal static SensorEventSnapshot Read(string alias, DeviceInfo device)
     {
         var p = device.PropertyValues;
@@ -132,8 +141,18 @@ public sealed class SensorEventTests
         bool Matches(AndroidHierarchy h, SensorEventSnapshot s) => roomTile
             ? SensorEventReading.TileMatches(h, target.Room, target.Name, s) : SensorEventReading.Matches(h, title, s);
         SensorEventSnapshot? baseline = null;
+        SensorEventSnapshot? lastObserved = null;
+        string? expectedGesture = null;
         bool armed = false;
         Exception? failure = null;
+        async Task VerifyGestureConfiguration(string phase)
+        {
+            // The generic button case chooses a different gesture from its fresh baseline.
+            if (alias != "button" || gesture == "Single") return;
+            var configuration = await DriverConfigurationInspection.GetAsync(SensorSession.Api!, id, token);
+            SensorEventReading.RequireDoubleClick(configuration);
+            await Save(phase + "-gesture-configuration", new { DeviceId = id, AllowDoubleClick = true });
+        }
         async Task<SensorEventSnapshot> WaitFor(Func<SensorEventSnapshot, bool> predicate, CancellationToken observationToken)
         {
             using var wait = CancellationTokenSource.CreateLinkedTokenSource(observationToken);
@@ -141,6 +160,7 @@ public sealed class SensorEventTests
             while (true)
             {
                 var reading = Reading(await ReadDevice(wait.Token));
+                lastObserved = reading;
                 if (predicate(reading)) return reading;
                 await Task.Delay(TimeSpan.FromSeconds(1), wait.Token);
             }
@@ -178,6 +198,7 @@ public sealed class SensorEventTests
         }
         try
         {
+            await VerifyGestureConfiguration("before-readiness");
             await RoomNavigation.Open(target.Room, token);
             await RoomNavigation.RevealTile(target.Room, target.Name, token);
             if (!roomTile)
@@ -196,13 +217,14 @@ public sealed class SensorEventTests
             var handoff = Stopwatch.StartNew();
             if(readiness != null) await Save("prepared-readiness", readiness);
             if(readiness != null) await SensorSession.RenewApiAsync(token);
+            await VerifyGestureConfiguration("after-readiness");
             // Events during an overnight readiness wait must never satisfy the upcoming test.
             baseline = Reading(await ReadDevice(token));
             if(alias != "button" && baseline.Marker != 0)
                 throw new InvalidDataException("Sensor is active after readiness; preserve this attempt and restore it before a new recording.");
             armed = true;
             if (alias != "button") SensorSession.PhysicalRestorationConfirmed = false;
-            string? expectedGesture = alias == "button"
+            expectedGesture = alias == "button"
                 ? gesture ?? (baseline.Gesture == "Single" ? "Double" : "Single") : null;
             string instruction = expectedGesture == "Double" ? $"DOUBLE-PRESS {target.Name}, then choose Done. Do not navigate the app." :
                 expectedGesture == "Single" ? $"Press {target.Name} ONCE, then choose Done. Do not navigate the app." :
@@ -229,7 +251,8 @@ public sealed class SensorEventTests
         catch (Exception error)
         {
             failure = error;
-            await Save("failure", new { Utc = DateTimeOffset.UtcNow, ErrorType = error.GetType().Name });
+            await Save("failure", new { Utc = DateTimeOffset.UtcNow, ErrorType = error.GetType().Name,
+                error.Message, ExpectedGesture = expectedGesture, Baseline = baseline, LastObserved = lastObserved });
             throw;
         }
         finally

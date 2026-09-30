@@ -2,7 +2,7 @@
 
 These optional .NET 10 NUnit 5.0.0 fixtures exercise the installed Kasa/Tapo driver through an Android emulator. They are separate from the processor's net472 test assembly and do not run against household devices during ordinary hosted tests.
 
-Build with the .NET 10 SDK and the public package references in this project, including CrestronHomeNUnit.TestAdapter 2.1.0 and CrestronHomeDevTools 1.22.0. Invoke through `InstalledDriverTests.RunAsync` in `CrestronHomeNUnit.Workflow`, or the public DevTools automation workflow's installed-app stage. Those callers verify the installed package and reserve both the processor and emulator. The fixture refuses ordinary standalone execution without that context.
+Build with the .NET 10 SDK and the public package references in this project, including CrestronHomeNUnit.TestAdapter 2.2.0 and CrestronHomeDevTools 1.24.0. Invoke through `InstalledDriverTests.RunAsync` in `CrestronHomeNUnit.Workflow`, or the public DevTools automation workflow's installed-app stage. Those callers verify the installed package and reserve both the processor and emulator. The fixture refuses ordinary standalone execution without that context.
 
 Build from the repository checkout: the fixture embeds the adjacent driver JSON as its expected configuration definition. Preserve the repository's build-output exclusions when preparing an isolated checkout; generated `bin`/`obj` files must not become source changes during a run.
 
@@ -33,6 +33,14 @@ old gestures alone cannot pass. Buttons have no persistent state to restore.
 `ButtonGestureReachesVisibleRoomTile("Single")` and `("Double")` are explicit
 cases for fresh, exact gestures. Include both in the required test inventory when
 those gestures are in scope; neither is implied by the generic button case.
+
+Set `AllowDoubleClick` to `"true"` in the managed button's `Activation`
+configuration step when selecting the Double case or either generic button event
+case, which may request a double press. The fixture verifies the installed setting
+before displaying Ready and again after Ready, so an incompatible configuration
+fails before asking the operator to act. It does not change this setting itself.
+On an event failure, the evidence retains the expected gesture, fresh baseline and
+last observed reading as well as the original operator acknowledgement.
 
 ## Coordinated interruption test
 
