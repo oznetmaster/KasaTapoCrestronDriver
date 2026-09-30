@@ -1,5 +1,18 @@
 # Kasa/Tapo Crestron Driver
 
+## Crestron availability
+
+**Published by Crestron:** Kasa/Tapo **2.1.2** was added to the Crestron production driver database on **28 September 2026** (catalog version `2.1.002.0000`).
+
+Find the driver on the [Crestron driver site](https://drivers.crestron.io/) or in **Crestron Home Configure Pro**, using the following catalog entry:
+
+| Field | Catalog entry |
+|---|---|
+| Developer | Neil Colvin |
+| Device type | Platform |
+| Manufacturer | TP-Link |
+| Model | KasaTapoPlatform |
+
 For shipped changes, see the [changelog](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/CHANGELOG.md). Test, CI and build history is recorded separately in [development and validation history](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/DEVELOPMENT-HISTORY.md).
 
 
@@ -126,9 +139,11 @@ The build pipeline:
 
 ### Installing the Driver
 
-The best way to download and install this driver on a Crestron Home system is to use the [Crestron Home Driver Feed Installer](https://github.com/oznetmaster/Crestron-Home-Driver-Feed-Installer) repository and application.
+Version **2.1.2** is published in the Crestron production driver database. Install it through **Crestron Home Configure Pro**, looking for **KasaTapoPlatform** under **TP-Link** (developer **Neil Colvin**). The driver is also listed on the [Crestron driver site](https://drivers.crestron.io/).
 
-If you prefer to install manually, use the attached `.pkg` asset from the relevant GitHub Release (once published), or build one yourself using the instructions above. The automatic GitHub `Source code (zip)` and `Source code (tar.gz)` assets are repository snapshots, not installable Crestron driver packages.
+For community-distributed releases, you can also use the [Crestron Home Driver Feed Installer](https://github.com/oznetmaster/Crestron-Home-Driver-Feed-Installer) repository and application. The GitHub and NuGet release histories are independent of the version listed by Crestron.
+
+If you prefer to install manually, use the attached `.pkg` asset from the relevant GitHub Release, or build one yourself using the instructions above. The automatic GitHub `Source code (zip)` and `Source code (tar.gz)` assets are repository snapshots, not installable Crestron driver packages.
 
 NuGet package availability: this driver is also published as the `CrestronHomeDriver.TpLink.KasaTapoPlatform` NuGet package. This NuGet package conforms to the **Crestron Home Driver NuGet Publishing Standard v1**. It is a distribution wrapper for the final `.pkg` artifact, includes the required `crestron-driver-package.json` manifest, and is not intended as a direct DLL reference package.
 
