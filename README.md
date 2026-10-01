@@ -279,3 +279,7 @@ GitHub-hosted validation remains mandatory for the checked-out source, and the n
 The [read-only control probe](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.ControlProbe/README.md) supports optional workflow tests that operate a selected installed outlet, verify its physical state independently, and restore it. Private device selection and credentials remain local. These controls are opt-in and are not enabled by the ordinary automatic processor-test plans.
 
 The separate [Android app fixtures](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.AndroidTests/README.md) check sensor displays and explicitly selected outlet/native-light controls through the Crestron Home app. They run on a Windows worker using the public NUnit workflow and restore the selected devices and app afterward.
+
+## NUnit 5 test tooling
+
+All maintained NUnit suites use the official NUnit 5.0.0 framework. Async exception assertions are awaited, and discarded-task warnings fail test builds. Processor test packages use CrestronHomeNUnit SDK 2.2.0; workflow and Android suites, where provided, use the released 2.2.0 adapter. Tests remain available in Visual Studio, VS Code and the command line. Live and manual tests still require their documented devices and permissions. This is a test-tooling update; the published product version and runtime behavior are unchanged.

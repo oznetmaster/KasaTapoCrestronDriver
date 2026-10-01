@@ -1,3 +1,7 @@
+# Test package 1.3.0 - NUnit 5
+
+Independent test-tooling update: NUnit 5.0.0, CrestronHomeNUnit SDK 2.2.0, awaited asynchronous assertions, and compiler enforcement of discarded tasks. Production driver version and behavior are unchanged. Offline, processor, and manual/live evidence are recorded separately.
+
 # KasaTapoCrestronDriver Tests
 
 ## Unreleased test tooling
