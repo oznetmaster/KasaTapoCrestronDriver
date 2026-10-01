@@ -1,5 +1,11 @@
 # KasaTapo driver processor tests
 
+## NUnit 5 test package
+
+Test package **1.3.0** uses **NUnit 5.0.0**. It is independent of the product version. [Download package](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/download/v2.1.2/KasaTapoCrestronDriver.ProcessorTests-1.3.0.pkg), [documentation](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/download/v2.1.2/KasaTapoCrestronDriver.ProcessorTests-1.3.0-Documentation.zip), [validation](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/download/v2.1.2/KasaTapoCrestronDriver.ProcessorTests-1.3.0.validation.json), [exact source revisions](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/download/v2.1.2/KasaTapoCrestronDriver.ProcessorTests-1.3.0.sources.json), and [SHA-256 checksums](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/download/v2.1.2/KasaTapoCrestronDriver.ProcessorTests-1.3.0-SHA256SUMS.txt) are attached to the existing product release. No product binary or NuGet version changed for this test update.
+
+Validated on 1 October 2026: Packaged discovery passed. Windows execution of this merged driver package requires unavailable Crestron native components; source unit tests and the desktop lifecycle harness were validated separately. All suite identities were checked against source discovery. Live/manual tests and execution on the processor were not repeated during this migration; earlier hardware results do not certify this new package.
+
 This project packages the driver's NUnit tests for Crestron Home. It belongs in `KasaTapoCrestronDriver.slnx` beside the production driver and is not a NuGet package.
 
 ## Build and deploy in Visual Studio
