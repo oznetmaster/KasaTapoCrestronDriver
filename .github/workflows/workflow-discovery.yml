@@ -8,6 +8,22 @@ on:
 permissions:
   contents: read
 jobs:
+  submission-discovery:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Discover submission tests without private settings or equipment
+        shell: pwsh
+        run: |
+          $output = @(dotnet test KasaTapoCrestronDriver.SubmissionTests/KasaTapoCrestronDriver.SubmissionTests.csproj -c Release --list-tests 2>&1)
+          $output | Write-Output
+          if ($LASTEXITCODE -ne 0) { throw 'Submission fixture build/discovery failed.' }
+          foreach ($name in @('CandidateValidation','LocalAndProcessorChecks','ProcessorEvidence','AppAndRecoveryChecks','Endurance','PostEnduranceAndRemovalChecks')) {
+            if (@($output | Where-Object { $_.ToString().Trim() -ceq $name }).Count -ne 1) { throw "Expected exactly one $name test." }
+          }
   discover:
     runs-on: windows-latest
     strategy:
