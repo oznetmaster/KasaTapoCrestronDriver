@@ -10,7 +10,7 @@ project follows [Semantic Versioning](https://semver.org/).
 
 This changelog records shipped features, fixes, compatibility and runtime dependency changes. See [development and validation history](DEVELOPMENT-HISTORY.md) for tests, CI, build tooling and work not yet released.
 
-## 2.1.2 - 2026-09-26
+## 2.1.2 — 2026-09-26
 
 - Use KasaTapoClient 2.0.1 to renew TPAP sessions rejected after a device restarts, allowing automatic recovery without reloading the driver.
 - Keep outlet polling active after a transport request timeout and report the device offline until a subsequent refresh succeeds.
@@ -21,13 +21,13 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 - Include illustrated user help, an account-free support contact and third-party license notices in the driver package.
 - Use the descriptive `NeilColvin_Platform_KasaTapo_IP_V2` package and DLL filename while preserving the existing driver identity and controls.
 
-## 2.1.1 - 2026-09-22
+## 2.1.1 — 2026-09-22
 
 - Upgrade to KasaTapoClient 2.0.0 and Crestron.DeviceDrivers.DevKit 29.0.10. The bundled client uses typed System.Text.Json contracts and removes its Newtonsoft.Json and log4net dependencies.
 - Preserve JSON serialization attributes when preparing the merged assembly for the processor. Existing device controls and configuration remain compatible.
 - Preserve persistent child configuration on both newer SDKs and existing processor runtimes, using the persistence property supported by the installed SDK.
 
-## 2.1.0 - 2026-09-16
+## 2.1.0 — 2026-09-16
 
 - Add read-only outlet identity and command-completion properties for independent physical control/restoration verification. Existing outlet controls and UI bindings remain unchanged.
 
@@ -39,7 +39,7 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 
 - Fix an offline callback reaching an entity removed or replaced by an earlier callback in the same notification pass.
 
-## [2.0.0]
+## 2.0.0 — 2026-09-09
 
 Major release: native hub sensor and button device support, alongside supporting reliability and configuration improvements. Bumped to 2.0.0 due to the significant new functionality and the architectural rearchitecture of hub polling described below.
 
@@ -63,11 +63,11 @@ Major release: native hub sensor and button device support, alongside supporting
 
 - Fixed several nullable-reference compiler warnings in the light entity's diagnostic state-snapshot formatter.
 
-## [1.3.1]
+## 1.3.1 — 2026-09-06
 
 - Fixed the NuGet package not carrying any release notes. The release workflow passed the published GitHub Release's body to MSBuild via `-p:PackageReleaseNotesFile`, but nothing in the project file ever read that file's contents into the `PackageReleaseNotes` property NuGet actually packs, so every release notes field was silently blank. Added a `SetPackageReleaseNotesFromFile` build target that reads the file and populates `PackageReleaseNotes` before the nuspec is generated.
 
-## [1.3.0]
+## 1.3.0 — 2026-09-06
 
 - Added support for plugs and power-strip outlets as a new managed device kind, alongside the lights this driver already supported. Every discovered plug and power-strip outlet is always selectable for installation and, per child device, individually configured as either a plain **Outlet** (on/off control, plus current-power and today's-energy-usage telemetry when the connected device reports it) or a **Light**, via that child's own **Treat As Light** configuration item.
 
@@ -89,7 +89,7 @@ Major release: native hub sensor and button device support, alongside supporting
 
 - Fixed the same strip-child-outlet identity bug for on-disk caches written *before* the fix above: those files still have `ChildId=null` baked in from prior rewrites, so simply stopping future drops was not enough to recover already-corrupted entries. `TryCreateCachedDescriptorAndConfiguration` now recovers a missing `ChildId` from the deterministic `device_{parentDeviceId}_{childId}` shape of a strip child's controllerId and persists the recovered value back to the cache, self-healing existing installs without requiring the cache file to be deleted manually.
 
-## [1.2.0]
+## 1.2.0 — 2026-08-22
 
 - Updated to `KasaTapoClient` 1.3.1, which negotiates device capabilities (e.g. brightness) directly from each device's SMART component list instead of relying solely on its device type.
 
@@ -97,7 +97,7 @@ Major release: native hub sensor and button device support, alongside supporting
 
 - `WallSwitch`-classified devices are now always treated as supported light loads (previously gated in some code paths the same way plugs are); this release does not yet support treating a wall switch as a plain switched-outlet control.
 
-## [1.1.0]
+## 1.1.0 — 2026-07-30
 
 First general availability release.
 
@@ -109,7 +109,7 @@ First general availability release.
 
 - Distributed as a NuGet package containing the driver `.pkg`, installable via the Crestron Home Driver Feed Installer.
 
-## [1.0.0-preview]
+## 1.0.0-preview — 2026-07-30
 
 Initial public preview release.
 
@@ -121,7 +121,7 @@ Initial public preview release.
 
 - Distributed as a NuGet package containing the driver `.pkg`, installable via the Crestron Home Driver Feed Installer.
 
-## [1.0.001.0001]
+## 1.0.001.0001 — 2026-07-01
 
 - Improved driver reload behavior by making child-device activation nonblocking from Crestron child configuration callbacks.
 
