@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "product": "KasaTapoPlatform",
+  "driverId": "EE8EF1AA-E993-4482-9F64-A79DCC7913B8",
+  "publicVersionFormat": "MAJOR.MINOR.PATCH",
+  "packageVersionFormat": "MAJOR.MINOR.PATCH.REVISION",
+  "distributions": [
+    {
+      "id": "public-2.1.2",
+      "channel": "public",
+      "publicVersion": "2.1.2",
+      "driverVersion": "2.1.002.0000",
+      "status": "released",
+      "date": "2026-09-26",
+      "packageSha256": "a78e5bc4eb4546272399944aaa30326593cd9b4434e68a26a3a3bb3c742ce1ad",
+      "url": "https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.2"
+    },
+    {
+      "id": "hs220-ks225-test-2.1.002.0002",
+      "channel": "test",
+      "publicVersion": null,
+      "driverVersion": "2.1.002.0002",
+      "status": "prepared",
+      "date": "2026-10-25",
+      "purpose": "Customer test: HS220 3.26 / firmware 1.1.1 power fix; shared KS225 dimmer path",
+      "sourceCommit": "eac528dfba41bbffdba3d77bf67730e7d5002f50",
+      "packageSha256": "b24209120d12620249b9284b3e393e16e94a1e961aeea165ef5f4b1472d7777d",
+      "url": null,
+      "uploaderSha256": "27244156abdfc5b338e722d9b29718d8abf6c1241304fd7fb6f7f9d1737424bc",
+      "downloadSha256": "d6c844870b388dc38b1ff94d26c39c83468460a2a928a71f0fbc864d0ed90cdd",
+      "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.002.0002/"
+    }
+  ]
+}

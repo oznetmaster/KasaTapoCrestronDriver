@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>KasaTapo-Test-Installer</AssemblyName>
+    <Version>1.0.0</Version>
+    <Company>Neil Colvin</Company>
+    <Copyright>Copyright (c) 2026 Neil Colvin</Copyright>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <GenerateResourceUsePreserializedResources>false</GenerateResourceUsePreserializedResources>
+    <NuGetAudit>false</NuGetAudit>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <PackageReference Include="SSH.NET" Version="2026.0.0" />
+    <EmbeddedResource Include="$(PayloadPath)" LogicalName="Payload.pkg" />
+    <EmbeddedResource Include="$(PayloadMetadataPath)" LogicalName="Payload.json" />
+    <EmbeddedResource Include="$(NoticesPath)" LogicalName="Notices.txt" />
+  </ItemGroup>
+  <Target Name="EmbedDependencies" BeforeTargets="AssignTargetPaths" DependsOnTargets="ResolveReferences">
+    <ItemGroup>
+      <EmbeddedResource Include="@(ReferenceCopyLocalPaths)" Condition="'%(Extension)' == '.dll'">
+        <LogicalName>Dependencies.%(Filename)%(Extension)</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
+  <Target Name="RequirePayload" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(PayloadPath)') or !Exists('$(PayloadMetadataPath)') or !Exists('$(NoticesPath)')" Text="Use Build-TestSideload.ps1 with an approved candidate package." />
+  </Target>
+</Project>

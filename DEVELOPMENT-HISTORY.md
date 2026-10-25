@@ -11,6 +11,12 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## Customer test distribution tooling - 2026-10-25
+
+- Add a reusable single-executable Windows uploader containing a frozen driver package, identity, checksum and dependencies. It verifies the transferred bytes before submitting the package to the import directory. The customer updates the existing driver separately in Crestron Home Setup or Configure Pro; the utility has no active-driver update or reboot action and saves no credentials.
+- Reserve customer-test package versions in `driver-distributions.json`, including package/source identity, distribution status and final download hashes. Public GitHub and NuGet releases keep three-part versions. Their release workflow rejects a package version at or below any reserved test version; after test `2.1.002.0002`, the next normal public release is at least `2.1.3` / package `2.1.003.0000`. Retain the register and guard when promoting branches.
+- Prepare a versioned GitHub Pages download bundle and customer cover letter locally. Upload tooling is checked with an isolated loopback SFTP server, not an active-driver update. The existing unrelated SSH.NET README edit in the original checkout is excluded.
+
 ## HS220 dimmer power candidate - 2026-10-25
 
 - Prepare unpublished candidate driver `2.1.002.0002` for customer validation on HS220 hardware 3.26, firmware 1.1.1. Devices classified as `Dimmer` (including SMART HS220 and KS225) use KasaTapoClient's existing general power API; bulbs, strips and other device types retain their existing power calls. Crestron Home's zero/full-level contract and brightness handling are unchanged. The client dependency remains 2.0.1.

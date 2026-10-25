@@ -99,7 +99,9 @@ jobs:
 
       - name: Verify driver version rules
         shell: pwsh
-        run: ./tools/Test-DriverVersioning.ps1
+        run: |
+          ./tools/Test-DriverVersioning.ps1
+          ./tools/Test-DistributionVersioning.ps1
 
       - name: Determine release version
         id: package_version
@@ -109,6 +111,7 @@ jobs:
             (Get-Content -LiteralPath $env:GITHUB_EVENT_PATH -Raw | ConvertFrom-Json).release.tag_name
           } else { $env:GITHUB_REF_NAME }
           $selected = & ./tools/Get-DriverReleaseVersion.ps1 -ManifestPath @('./KasaTapoCrestronDriver/KasaTapoCrestronDriver.json') -Tag $refName -RequireTag:($env:GITHUB_EVENT_NAME -eq 'release')
+          & ./tools/Assert-PublicDistributionVersion.ps1 -ReleaseVersion $selected.PackageVersion
           "value=$($selected.PackageVersion)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "driver=$($selected.DriverReleaseVersion)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "tag=$($selected.Tag)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
