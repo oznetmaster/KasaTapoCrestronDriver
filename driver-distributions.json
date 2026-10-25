@@ -70,13 +70,13 @@
       "channel": "test",
       "publicVersion": null,
       "driverVersion": "2.1.002.0004",
-      "status": "prepared",
+      "status": "distributed",
       "date": "2026-10-25",
       "purpose": "Diagnostic-only Debug build with bounded file collection for customer offline investigation; same HS220/KS225 fix",
       "sourceCommit": "d74846051de27280ff9dc582aa4b923b49f5395e",
       "buildConfiguration": "Debug",
       "packageSha256": "5ab1289f513fc872c8e6b273ff8fb022d92e470b54edac8a8d0a8922e6012b64",
-      "url": null,
+      "url": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.002.0004/",
       "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.002.0004/",
       "uploaderSourceCommit": "d74846051de27280ff9dc582aa4b923b49f5395e",
       "uploaderSha256": "1d0df4ee0b4c3754b90c9474d9c4597970842fd7e1a5443394daddb99f40f139",
@@ -101,7 +101,10 @@
         },
         "PowerInterruptionReportedByUser": true,
         "PhysicalHs220OrKs225Tested": false
-      }
+      },
+      "publicationCommit": "47424939b719f4d2243e9c869418710888561609",
+      "verifiedAtUtc": "2026-10-25T13:25:34.491001+00:00",
+      "publicationApprovedDate": "2026-10-25"
     }
   ]
 }
