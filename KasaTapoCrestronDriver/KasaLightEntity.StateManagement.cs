@@ -621,13 +621,13 @@ internal partial class KasaLightEntity
 		{
 		if (relativeLevel <= 0d)
 			{
-			await device.TurnLightOffAsync (cancellationToken).ConfigureAwait (false);
+			await SetLightPowerAsync (device, false, cancellationToken).ConfigureAwait (false);
 			return;
 			}
 
 		if (device.LightState?.IsOn != true && device.IsOn != true)
 			{
-			await device.TurnLightOnAsync (cancellationToken).ConfigureAwait (false);
+			await SetLightPowerAsync (device, true, cancellationToken).ConfigureAwait (false);
 			return;
 			}
 
@@ -641,7 +641,7 @@ internal partial class KasaLightEntity
 			return;
 			}
 
-		await device.TurnLightOnAsync (cancellationToken).ConfigureAwait (false);
+		await SetLightPowerAsync (device, true, cancellationToken).ConfigureAwait (false);
 		}
 
 	private double GetEffectiveOnLevel ()

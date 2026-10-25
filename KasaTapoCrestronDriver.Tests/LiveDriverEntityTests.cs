@@ -8,7 +8,7 @@ using System.Text.Json.Serialization;
 
 namespace KasaTapoCrestronDriver.Tests;
 
-// A separate manual suite: never sends a device-control command.
+// A separate manual suite. Demo light power control requires an additional explicit opt-in.
 [TestFixture, Category ("Processor"), Category ("Live"), NonParallelizable, FixtureLifeCycle (LifeCycle.SingleInstance)]
 public sealed class LiveDriverEntityTests
 	{
@@ -115,12 +115,83 @@ public sealed class LiveDriverEntityTests
 		Assert.That (entity.OutletIsOn, Is.EqualTo (expected));
 		}
 
+	[Test]
+	public async Task DemoLight_LevelPowerCommandsPreserveBrightnessAndRestoreState ()
+		{
+		if (!_settings.AllowDemoPowerControl) Assert.Ignore ("Demo power control requires its own private opt-in.");
+		using var device = await Connect ("light");
+		using var observer = await Connect ("light");
+		void RequireDemo () => Assert.That (device.SystemInfo?.Alias?.IndexOf ("demo", StringComparison.OrdinalIgnoreCase) >= 0,
+			Is.True, "Only a currently named demo light is authorized for control.");
+		RequireDemo ();
+		var original = observer.Light.State ?? throw new InvalidDataException ("The demo light must report its original state.");
+		Assert.That (original.IsOn, Is.Not.Null);
+		Assert.That (original.Brightness, Is.InRange (1, 100));
+		using var logger = new DriverLogger ("demo-power-test");
+		var resources = new DriverImplementationResources { Logger = logger, InitLogger = logger.GetComponentLogger ("test", "demo") };
+		var kind = KasaLightEntity.InferManagedLightKind (device, device.DeviceType);
+		var descriptor = new ManagedLightDescriptor ("demo-light", device.Configuration.Host, device.DeviceType,
+			device.SystemInfo!.Alias!, device.SystemInfo.Model!, device.SystemInfo.DeviceId!, kind);
+		using var entity = new KasaLightEntity ("demo-light", descriptor, device.Configuration, null, Settings (), null, resources, null!, "demo-test");
+		Assert.That (entity.TryAttachConnectedDevice (device, "demo-test"), Is.True);
+		await entity.SetConfiguredAsync (true, "demo-test", default);
+		typeof (KasaLightEntity).GetProperty ("_startupDimmerReplayGuardUntilUtc", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue (entity, null);
+
+		async Task Observe (bool on)
+			{
+			DateTime deadline = DateTime.UtcNow.AddSeconds (30);
+			do
+				{
+				await observer.UpdateAsync ();
+				if (observer.Light.State?.IsOn == on)
+					{
+					Assert.That (observer.Light.State.Brightness, Is.EqualTo (original.Brightness), "Power must retain brightness.");
+					Assert.That (observer.Light.State.Hue, Is.EqualTo (original.Hue));
+					Assert.That (observer.Light.State.Saturation, Is.EqualTo (original.Saturation));
+					Assert.That (observer.Light.State.ColorTemperature, Is.EqualTo (original.ColorTemperature));
+					TestContext.Progress.WriteLine ($"Demo observation: {device.SystemInfo.Alias} ({device.SystemInfo.Model}), power={on}, brightness={observer.Light.State.Brightness}.");
+					return;
+					}
+				await Task.Delay (250);
+				} while (DateTime.UtcNow < deadline);
+			Assert.Fail ("Demo light power did not reach the requested state.");
+			}
+
+		try
+			{
+			foreach (double level in new[] { 0d, 1d })
+				{
+				await device.UpdateAsync ();
+				RequireDemo ();
+				entity.ExecuteCommand ("lightDimmer:setLevel", new Dictionary<string, Crestron.DeviceDrivers.EntityModel.Data.DriverEntityValue> { ["level"] = new (level) },
+					result => Assert.That (result.Failed, Is.False));
+				await Observe (level > 0);
+				// Ensure the entity's refreshed zero level settles before sending its power-on gesture.
+				await entity.RefreshAsync (default);
+				}
+			}
+		finally
+			{
+			await device.UpdateAsync ();
+			RequireDemo ();
+			if (device.Light.State?.Brightness != original.Brightness)
+				await device.SetBrightnessAsync (original.Brightness!.Value);
+			if (device.Light.State?.Hue != original.Hue || device.Light.State?.Saturation != original.Saturation)
+				await device.SetHsvAsync (original.Hue!.Value, original.Saturation!.Value, original.Brightness!.Value);
+			if (original.ColorTemperature > 0 && device.Light.State?.ColorTemperature != original.ColorTemperature)
+				await device.SetColorTemperatureAsync (original.ColorTemperature.Value);
+			if (original.IsOn == true) await device.TurnOnAsync (); else await device.TurnOffAsync ();
+			await Observe (original.IsOn!.Value);
+			}
+		}
+
 	internal sealed class LiveSettings
 		{
 		[JsonPropertyName ("enabled")] public bool Enabled { get; set; }
 		[JsonPropertyName ("timeoutSeconds")] public int TimeoutSeconds { get; set; } = 10;
 		[JsonPropertyName ("devices")] public Dictionary<string, LiveTarget> Devices { get; set; } = new ();
 		[JsonPropertyName ("credentials")] public LiveCredentials? Credentials { get; set; }
+		[JsonPropertyName ("allowDemoPowerControl")] public bool AllowDemoPowerControl { get; set; }
 		}
 	internal sealed class LiveCredentials
 		{

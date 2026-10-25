@@ -530,11 +530,11 @@ internal partial class KasaLightEntity
 		switch (command.Mode)
 			{
 			case DesiredLightMode.Off:
-				await device.TurnLightOffAsync (cancellationToken).ConfigureAwait (false);
+				await SetLightPowerAsync (device, false, cancellationToken).ConfigureAwait (false);
 				return;
 
 			case DesiredLightMode.On:
-				await device.TurnLightOnAsync (cancellationToken).ConfigureAwait (false);
+				await SetLightPowerAsync (device, true, cancellationToken).ConfigureAwait (false);
 				return;
 
 			case DesiredLightMode.Hsv:

@@ -11,6 +11,13 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## HS220 dimmer power candidate - 2026-10-25
+
+- Prepare unpublished candidate driver `2.1.002.0002` for customer validation on HS220 hardware 3.26, firmware 1.1.1. Devices classified as `Dimmer` (including SMART HS220 and KS225) use KasaTapoClient's existing general power API; bulbs, strips and other device types retain their existing power calls. Crestron Home's zero/full-level contract and brightness handling are unchanged. The client dependency remains 2.0.1.
+- Preserve the existing native dimmer command mapping: zero turns off, full level from off restores retained brightness, and full level while on sets 100%. The user accepted retaining this behavior because the native dimmer integration conveys its on gesture as a full-level command. Other positive levels from off also retain the existing power-on behavior.
+- Add synthetic SMART regressions using the captured HS220 3.26 and KS225 component lists for the failed power route, actual `lightDimmer:setLevel` off/on/full-brightness dispatch, retained brightness, and slider power handling. Preserve explicit legacy bulb, strip and on/off wire-command checks. The power regression fails against the preceding driver with `does not support light-state control`. Final validation passes 103 local tests (34 portable, 69 lifecycle), the same 103 on the processor, and four live tests. The demo KL130 off/on/restoration test retains its 46% brightness and original color state; an earlier demo L530 check also passes. Preserve the earlier failed live run separately: its read-only plug fixture was unavailable, and the corrected plan selects the discovered demo KP115.
+- Build the Release candidate with zero warnings/errors, validate merged JSON and package notices, and normalize archive paths while preserving payload bytes. Physical HS220 and KS225 validation remains pending. This entry does not record a published release or completed hardware acceptance; the candidate platform package itself has not been installed by these processor-host tests. Upgrade the processor workflow to adapter 3.0.0 (with its DevTools 1.27.0 dependency), and pin the processor SDK to its published source revision. The private validation plan selects the user-requested Office room by name; test-instance cleanup and lease release pass.
+
 ## NUnit 5 test tooling - 2026-09-28
 
 - Move the Windows, lifecycle and Android fixtures to NUnit 5.0.0 and the workflow adapter to CrestronHomeNUnit.TestAdapter 2.0.0. Pin the processor host to the released CrestronHomeNUnit 2.0.0 source revision. Await asynchronous assertions using NUnit 5's API.

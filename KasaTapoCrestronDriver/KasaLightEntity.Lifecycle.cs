@@ -1045,7 +1045,7 @@ internal partial class KasaLightEntity
 		{
 		int brightness = (int)Math.Round (relativeLevel * 100d, MidpointRounding.AwayFromZero);
 		return brightness <= 0
-			? device.TurnLightOffAsync (cancellationToken)
+			? SetLightPowerAsync (device, false, cancellationToken)
 			: device.SetBrightnessAsync (brightness, cancellationToken);
 		}
 
@@ -1101,11 +1101,11 @@ internal partial class KasaLightEntity
 
 		if (!on)
 			{
-			await device.TurnLightOffAsync (cancellationToken).ConfigureAwait (false);
+			await SetLightPowerAsync (device, false, cancellationToken).ConfigureAwait (false);
 			return;
 			}
 
-		await device.TurnLightOnAsync (cancellationToken).ConfigureAwait (false);
+		await SetLightPowerAsync (device, true, cancellationToken).ConfigureAwait (false);
 		}
 
 	}
