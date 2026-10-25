@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework><OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms><LangVersion>latest</LangVersion><Nullable>enable</Nullable>
+    <AssemblyName>KasaTapo-Binding-Diagnostics</AssemblyName><Version>1.0.0</Version>
+    <Company>Neil Colvin</Company><Copyright>Copyright (c) 2026 Neil Colvin</Copyright>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects><NuGetAudit>false</NuGetAudit>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
+    <PackageReference Include="SSH.NET" Version="2026.0.0" />
+    <EmbeddedResource Include="NOTICES.txt" LogicalName="Notices.txt" />
+  </ItemGroup>
+  <Target Name="EmbedDependencies" BeforeTargets="AssignTargetPaths" DependsOnTargets="ResolveReferences">
+    <ItemGroup>
+      <EmbeddedResource Include="@(ReferenceCopyLocalPaths)" Condition="'%(Extension)' == '.dll'">
+        <LogicalName>Dependencies.%(Filename)%(Extension)</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
+</Project>
