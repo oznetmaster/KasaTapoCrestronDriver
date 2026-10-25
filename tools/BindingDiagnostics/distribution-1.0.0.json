@@ -1,0 +1,14 @@
+{
+  "tool": "KasaTapo Binding Diagnostics",
+  "toolVersion": "1.0.0",
+  "sourceCommit": "0f5b461588c30a3a3f43807002722522da7803db",
+  "status": "prepared",
+  "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/bindings-1.0.0/",
+  "exeSha256": "fc2c6c24bd8800a70e6b3cf7d6450ed91832628e2df2c017e0bd896e28a89e97",
+  "zipSha256": "7c0ef7733332b368fa3f69581f891a10a71b1aebaaa2c650f81f3d0c02bbc2ec",
+  "driverPackageChanged": false,
+  "driverVersion": "2.1.002.0004",
+  "publicDriverVersionMinimumUnchanged": "2.1.3",
+  "customerReportRequired": true,
+  "published": false
+}
