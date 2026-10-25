@@ -49,6 +49,20 @@
         "PersistentOfflineReproduced": false,
         "PhysicalHs220OrKs225Tested": false
       }
+    },
+    {
+      "id": "hs220-offline-debug-2.1.002.0003",
+      "channel": "test",
+      "publicVersion": null,
+      "driverVersion": "2.1.002.0003",
+      "status": "reserved",
+      "date": "2026-10-25",
+      "purpose": "Temporary Debug diagnostic build for customer offline investigation; same HS220/KS225 power fix",
+      "sourceCommit": "4c0d379628caeef3fde497adbbac9ca5be7702d3",
+      "buildConfiguration": "Debug",
+      "packageSha256": null,
+      "url": null,
+      "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.002.0003/"
     }
   ]
 }
