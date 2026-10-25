@@ -2,7 +2,7 @@
   "tool": "KasaTapo Binding Diagnostics",
   "toolVersion": "1.0.0",
   "sourceCommit": "0f5b461588c30a3a3f43807002722522da7803db",
-  "status": "prepared",
+  "status": "published-and-verified",
   "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/bindings-1.0.0/",
   "exeSha256": "fc2c6c24bd8800a70e6b3cf7d6450ed91832628e2df2c017e0bd896e28a89e97",
   "zipSha256": "7c0ef7733332b368fa3f69581f891a10a71b1aebaaa2c650f81f3d0c02bbc2ec",
@@ -10,5 +10,47 @@
   "driverVersion": "2.1.002.0004",
   "publicDriverVersionMinimumUnchanged": "2.1.3",
   "customerReportRequired": true,
-  "published": false
+  "published": true,
+  "url": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/bindings-1.0.0/",
+  "pagesCommit": "a04fc48a0a38979c46d835b2172706d866b5e96f",
+  "verifiedAtUtc": "2026-10-25T18:10:29.777172+00:00",
+  "files": [
+    {
+      "name": "index.html",
+      "bytes": 2273,
+      "sha256": "6ce2bec95ea7621509dbf3a22b25bcd62b750b742e5b5eef03d809565c44acb6",
+      "matchesValidatedFile": true
+    },
+    {
+      "name": "KasaTapo-Binding-Diagnostics-1.0.0.exe",
+      "bytes": 6391296,
+      "sha256": "fc2c6c24bd8800a70e6b3cf7d6450ed91832628e2df2c017e0bd896e28a89e97",
+      "matchesValidatedFile": true
+    },
+    {
+      "name": "KasaTapo-Binding-Diagnostics-1.0.0.zip",
+      "bytes": 3168038,
+      "sha256": "7c0ef7733332b368fa3f69581f891a10a71b1aebaaa2c650f81f3d0c02bbc2ec",
+      "matchesValidatedFile": true
+    },
+    {
+      "name": "Quick-start.txt",
+      "bytes": 1464,
+      "sha256": "a192e6ee320fdec2deb72f97eb13c1150070f4ce09f4d9075ae2b0d1d23253a7",
+      "matchesValidatedFile": true
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 386,
+      "sha256": "dd908e582d6b42ea1cd7fd752e7e90d0520df728dc9ad2ec312e4e9aaba0e206",
+      "matchesValidatedFile": true
+    },
+    {
+      "name": "THIRD-PARTY-NOTICES.txt",
+      "bytes": 6449,
+      "sha256": "96d898da390909bf62d09e6779ec570742948716f3eb65a8a36901fd951606fc",
+      "matchesValidatedFile": true
+    }
+  ],
+  "zipEntriesVerified": true
 }
