@@ -31,7 +31,24 @@
       "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.002.0002/",
       "publicationCommit": "cb024c06f8b7bc33e89af36c1d586432d9ac7602",
       "verifiedAtUtc": "2026-10-25T07:51:05.949342+00:00",
-      "uploaderSourceCommit": "794585ef3e13f5af6dfa275db6a12abaa9975062"
+      "uploaderSourceCommit": "794585ef3e13f5af6dfa275db6a12abaa9975062",
+      "customerFeedback": {
+        "Date": "2026-10-25",
+        "Status": "investigating",
+        "Report": "All dimmers and switches offline after upgrade; platform online",
+        "StartupLogReceived": false
+      },
+      "labNativeValidation": {
+        "Date": "2026-10-25",
+        "UpgradeFrom": "2.1.002.0000",
+        "UpgradePassed": true,
+        "ReloadPassed": true,
+        "ExistingChildIdentitiesPreserved": true,
+        "DemoLightAndPlugControlPassed": true,
+        "OriginalStatesRestored": true,
+        "PersistentOfflineReproduced": false,
+        "PhysicalHs220OrKs225Tested": false
+      }
     }
   ]
 }

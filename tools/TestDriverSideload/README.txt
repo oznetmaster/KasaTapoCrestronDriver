@@ -33,6 +33,15 @@ transitive versions from tools/TestDriverSideload/obj/project.assets.json.
 The embedded driver retains its own packaged THIRD-PARTY-NOTICES.txt.
 
 Validation
+- Test the exact frozen .pkg as an upgrade of an existing authorized demo-only
+  driver tree. Processor test-host execution alone does not cover that upgrade.
+  Preserve existing child IDs, room placement and configuration; do not remove
+  and recreate children to make the test pass.
+- After startup and after a separate tree reload, verify readiness for the root
+  and every installed child. Check actual installed-driver commands with an
+  independent physical-device observer and restore original demo-device states.
+  Match the extracted processor payload to the frozen package and verify release
+  of processor reservations. Keep this evidence with the candidate record.
 - Run the produced EXE from a folder containing no companion DLLs.
 - EXE --verify REPORT_JSON validates the package identity/hash and loads SSH.NET.
 - EXE --self-test REPORT_JSON exercises ten upload/failure/integrity checks.
