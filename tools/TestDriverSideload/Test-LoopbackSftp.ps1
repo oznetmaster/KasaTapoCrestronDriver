@@ -20,6 +20,8 @@ try {
     $upload = $assembly.GetType('TestDriverSideload.Upload').GetMethod('Run')
     if (-not $upload.Invoke($null,@($payload,$remote,$progress))) { throw 'Initial transfer did not upload.' }
     if ($upload.Invoke($null,@($payload,$remote,$progress))) { throw 'Repeated transfer rewrote the package.' }
+    $download = $assembly.GetType('TestDriverSideload.Diagnostics').GetMethod('Download')
+    $download.Invoke($null,@($remote,(Join-Path $ReportDirectory 'downloaded-diagnostics.txt'),'loopback-test'))
 } finally { $remote.Dispose() }
-@{ Passed = 4; Checks = @('SSH identity probe before authentication','Changed SSH key refused','Real SFTP upload and read-back verification','Duplicate upload preserved'); Fingerprint = $fingerprint } |
+@{ Passed = 5; Checks = @('SSH identity probe before authentication','Changed SSH key refused','Real SFTP upload and read-back verification','Duplicate upload preserved','Diagnostic files downloaded without modification'); Fingerprint = $fingerprint } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $ReportDirectory 'loopback-result.json') -Encoding utf8

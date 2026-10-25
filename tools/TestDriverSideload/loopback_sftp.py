@@ -16,6 +16,10 @@ root = Path(sys.argv[2]).resolve()
 root.mkdir(parents=True, exist_ok=True)
 remote_root = root / "remote"
 (remote_root / "user/ThirdPartyDrivers/Import").mkdir(parents=True, exist_ok=True)
+diagnostics = remote_root / "user/Data/ThirdParty/NeilColvin/KasaTapoCrestronDriver/diagnostics"
+diagnostics.mkdir(parents=True, exist_ok=True)
+(diagnostics / "diagnostic.log.1").write_text("loopback previous diagnostic\n", encoding="utf-8")
+(diagnostics / "diagnostic.log").write_text("loopback current diagnostic\n", encoding="utf-8")
 auth = []
 
 class Server(paramiko.ServerInterface):
@@ -99,6 +103,10 @@ try:
     assert auth == ["test-uploader"], auth
     packages = list((remote_root / "user/ThirdPartyDrivers/Import").iterdir())
     assert len(packages) == 1 and packages[0].suffix == ".pkg"
+    collected = (root / "downloaded-diagnostics.txt").read_text(encoding="utf-8")
+    assert "loopback previous diagnostic" in collected and "loopback current diagnostic" in collected
+    assert (diagnostics / "diagnostic.log").read_text(encoding="utf-8") == "loopback current diagnostic\n"
+    assert (diagnostics / "diagnostic.log.1").read_text(encoding="utf-8") == "loopback previous diagnostic\n"
     report = json.loads((root / "loopback-result.json").read_text(encoding="utf-8-sig"))
     report["RemoteSha256"] = hashlib.sha256(packages[0].read_bytes()).hexdigest()
     report["PasswordAuthentications"] = len(auth)

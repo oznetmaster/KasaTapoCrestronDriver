@@ -64,6 +64,27 @@ internal static class SelfTests
             Version = "0.0.0.0", DriverId = payload.Metadata.DriverId, Sha256 = payload.Metadata.Sha256 };
         Reject (() => new Payload (bytes.ToArray (), wrong));
         Check (true, "incorrect version label is rejected");
+        string downloadRoot = Path.Combine (Path.GetTempPath (), "kasa-log-download-test-" + Guid.NewGuid ().ToString ("N"));
+        Directory.CreateDirectory (downloadRoot);
+        try
+            {
+            string local = Path.Combine (downloadRoot, "diagnostics.txt");
+            var logs = new Remote ();
+            logs.Files[Diagnostics.DirectoryPath + "/diagnostic.log.1"] = System.Text.Encoding.UTF8.GetBytes ("previous startup\n");
+            logs.Files[Diagnostics.DirectoryPath + "/diagnostic.log"] = System.Text.Encoding.UTF8.GetBytes ("current startup\n");
+            Diagnostics.Download (logs, local, payload.Metadata.Version);
+            string collected = File.ReadAllText (local);
+            Check (collected.Contains ("previous startup") && collected.Contains ("current startup") && logs.Writes.Count == 0, "diagnostic collection reads both files without processor writes");
+            Reject (() => Diagnostics.Download (logs, local, payload.Metadata.Version));
+            Check (File.ReadAllText (local) == collected, "existing local diagnostic file is preserved");
+            Reject (() => Diagnostics.Download (new Remote (), Path.Combine (downloadRoot, "missing.txt"), payload.Metadata.Version));
+            Check (!File.Exists (Path.Combine (downloadRoot, "missing.txt")), "missing remote diagnostics leave no output");
+            var oversized = new Remote ();
+            oversized.Files[Diagnostics.DirectoryPath + "/diagnostic.log"] = new byte[Diagnostics.MaximumFileBytes + 1];
+            Reject (() => Diagnostics.Download (oversized, Path.Combine (downloadRoot, "oversized.txt"), payload.Metadata.Version));
+            Check (!File.Exists (Path.Combine (downloadRoot, "oversized.txt")) && Directory.GetFiles (downloadRoot).Length == 1, "oversized diagnostics are rejected and partial downloads cleaned");
+            }
+        finally { Directory.Delete (downloadRoot, true); }
         return new JavaScriptSerializer ().Serialize (new { Passed = checks.Count, Checks = checks });
         }
     }

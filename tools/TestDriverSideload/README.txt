@@ -4,8 +4,19 @@ This Windows GUI embeds one existing, validated driver .pkg and its metadata in
 one executable. Runtime dependencies are embedded too. It uses .NET Framework
 4.7.2 or later (present on current Windows 10/11 installations), rather than
 requiring the tester to install a separate .NET SDK or run PowerShell scripts.
-The executable uploads only. The tester updates their existing driver using
-Crestron Home Setup or Configure Pro afterward.
+The executable uploads the embedded package and can download the two bounded
+diagnostic log files. The tester updates their existing driver using Crestron
+Home Setup or Configure Pro afterward. Log collection is read-only and never
+retrieves the managed-device cache or configuration files.
+
+Diagnostic Debug builds add an ILoggerProvider file sink at the existing
+Crestron logger boundary. No general logging conversion or client update is
+required. The sink is absent from Release builds. It writes automatically,
+including while Home logging is off, closes each append, rotates at 2 MiB and
+retains one previous file. Collection reads snapshots of only diagnostic.log
+and diagnostic.log.1 from the fixed diagnostic directory. Known configured
+credentials and authentication fields are redacted; logs still contain local
+device names, addresses and IDs and should be sent directly to support.
 
 Version allocation
 1. Read driver-distributions.json on the maintained driver branch before allocating

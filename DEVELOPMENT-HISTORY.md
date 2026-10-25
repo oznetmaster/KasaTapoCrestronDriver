@@ -11,6 +11,12 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## Customer offline diagnostic build - 2026-10-25
+
+- Reserve diagnostic Debug package `2.1.002.0004`. Build `2.1.002.0003` was prepared but never distributed and is retained as withdrawn in the version register. Both remain below the next normal public release `2.1.3` / package `2.1.003.0000`.
+- Add a small Debug-only `ILoggerProvider` file sink at the existing Crestron logger boundary, retaining native Home logging. It captures startup/child diagnostics independently of Home's logging toggle, closes each write, bounds storage to two 2 MiB files, redacts configured credentials and authentication fields, and tolerates file failures. Release compilation excludes the provider and bridge; no client or general logging migration is included.
+- Extend the Windows test utility with pinned-SFTP read-only diagnostic collection. It retrieves only the two fixed log files, bounds reads, preserves existing local files and removes incomplete downloads. This diagnostic distribution is for evidence collection only; provide a Release test build after reviewing the customer's results. Preserve the customer's existing child devices.
+
 ## Customer test distribution tooling - 2026-10-25
 
 - Add a reusable single-executable Windows uploader containing a frozen driver package, identity, checksum and dependencies. It verifies the transferred bytes before submitting the package to the import directory. The customer updates the existing driver separately in Crestron Home Setup or Configure Pro; the utility has no active-driver update or reboot action and saves no credentials.

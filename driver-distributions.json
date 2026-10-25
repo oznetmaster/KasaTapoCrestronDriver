@@ -55,14 +55,29 @@
       "channel": "test",
       "publicVersion": null,
       "driverVersion": "2.1.002.0003",
-      "status": "reserved",
+      "status": "withdrawn",
       "date": "2026-10-25",
       "purpose": "Temporary Debug diagnostic build for customer offline investigation; same HS220/KS225 power fix",
       "sourceCommit": "4c0d379628caeef3fde497adbbac9ca5be7702d3",
       "buildConfiguration": "Debug",
+      "packageSha256": "1ae3e2e6032db5d4a6f15bd5cf6953574eccb7f372e5816224006a9524740840",
+      "url": null,
+      "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.002.0003/",
+      "reason": "Prepared but never distributed; superseded by diagnostic file collection build."
+    },
+    {
+      "id": "hs220-offline-diagnostic-2.1.002.0004",
+      "channel": "test",
+      "publicVersion": null,
+      "driverVersion": "2.1.002.0004",
+      "status": "reserved",
+      "date": "2026-10-25",
+      "purpose": "Diagnostic-only Debug build with bounded file collection for customer offline investigation; same HS220/KS225 fix",
+      "sourceCommit": null,
+      "buildConfiguration": "Debug",
       "packageSha256": null,
       "url": null,
-      "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.002.0003/"
+      "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.002.0004/"
     }
   ]
 }
