@@ -20,15 +20,18 @@
       "channel": "test",
       "publicVersion": null,
       "driverVersion": "2.1.002.0002",
-      "status": "prepared",
+      "status": "distributed",
       "date": "2026-10-25",
       "purpose": "Customer test: HS220 3.26 / firmware 1.1.1 power fix; shared KS225 dimmer path",
       "sourceCommit": "eac528dfba41bbffdba3d77bf67730e7d5002f50",
       "packageSha256": "b24209120d12620249b9284b3e393e16e94a1e961aeea165ef5f4b1472d7777d",
-      "url": null,
+      "url": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.002.0002/",
       "uploaderSha256": "27244156abdfc5b338e722d9b29718d8abf6c1241304fd7fb6f7f9d1737424bc",
       "downloadSha256": "d6c844870b388dc38b1ff94d26c39c83468460a2a928a71f0fbc864d0ed90cdd",
-      "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.002.0002/"
+      "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.002.0002/",
+      "publicationCommit": "cb024c06f8b7bc33e89af36c1d586432d9ac7602",
+      "verifiedAtUtc": "2026-10-25T07:51:05.949342+00:00",
+      "uploaderSourceCommit": "794585ef3e13f5af6dfa275db6a12abaa9975062"
     }
   ]
 }
