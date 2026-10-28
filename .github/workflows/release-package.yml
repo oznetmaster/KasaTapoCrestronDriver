@@ -8,6 +8,10 @@ on:
         required: false
         type: boolean
         default: false
+      prepared_release_tag:
+        description: Existing immutable vMAJOR.MINOR.PATCH tag to publish with prepared_release
+        required: false
+        type: string
       documentation_patch:
         description: Publish only the reviewed NuGet documentation patch; preserve existing runtime binaries and GitHub releases
         required: false
@@ -228,6 +232,8 @@ jobs:
     environment: release
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.prepared_release_tag }}
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.401
@@ -244,11 +250,21 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          PREPARED_RELEASE_TAG: ${{ inputs.prepared_release_tag }}
         run: |
           $plan = Get-Content FrozenRelease.json -Raw | ConvertFrom-Json
           $tag = 'v' + $plan.publicVersion
-          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" | ConvertFrom-Json
-          if ($LASTEXITCODE -or !$release.draft -or $release.target_commitish -ne $env:GITHUB_SHA -or !$release.body.Contains('<!-- prepared-artifacts -->')) { throw 'Expected the prepared draft on this exact source.' }
+          if ($env:PREPARED_RELEASE_TAG -cne $tag) { throw 'Select the exact immutable prepared-release tag.' }
+          $source = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -or $source -notmatch '^[a-f0-9]{40}$') { throw 'Cannot resolve the prepared source.' }
+          # Draft releases are returned by the authenticated list endpoint; lookup
+          # by tag can return 404 until publication.
+          $pages = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --paginate --slurp | ConvertFrom-Json
+          if ($LASTEXITCODE) { throw 'Draft listing failed.' }
+          $matching = @($pages | ForEach-Object { $_ } | Where-Object { $_.tag_name -ceq $tag })
+          if ($matching.Count -ne 1) { throw 'Expected exactly one prepared release.' }
+          $release = $matching[0]
+          if (!$release.draft -or $release.target_commitish -ne $source -or !$release.body.Contains('<!-- prepared-artifacts -->')) { throw 'Expected the prepared draft on this exact source.' }
           $directory = Join-Path $PWD 'artifacts/frozen-release'
           New-Item -ItemType Directory -Path $directory | Out-Null
           gh release download $tag --repo $env:GITHUB_REPOSITORY --dir $directory
