@@ -111,11 +111,29 @@
       "channel": "public",
       "publicVersion": "2.1.4",
       "driverVersion": "2.1.004.0000",
-      "status": "reserved",
+      "status": "prepared",
       "date": "2026-10-28",
       "purpose": "Normal dimmer power fix; customer delivery and GitHub/NuGet release preparation; temporary diagnostic logger retired",
-      "packageSha256": null,
-      "url": null
+      "packageSha256": "fb8658ff7ca956474e8d24eb15173bade576ab9eeb989707176e7ec3dd604e6f",
+      "url": null,
+      "sourceCommit": "af9e8dba4057c21ce1b8c90c9b3b5d9948ddf639",
+      "uploaderSha256": "b2cd03695f3a31bbee0cbb1fc8da4dda9c82838e21ef30ec50f287e2c509d851",
+      "downloadSha256": "27cba280328734e027244791d04d56f70de2fe85e9ead4f56b1f60bbac6a4a47",
+      "nugetSha256": "7ed875882f8d14158e0e8d3d2efa5d947d6bb02d7010487d0e67a0a71836b2c3",
+      "plannedCustomerUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.004.0000/",
+      "validation": {
+        "portable": 34,
+        "lifecycle": 69,
+        "uploader": 10,
+        "loopback": 4,
+        "debugAndPackagedReleaseTemporaryLoggerAbsent": true,
+        "mergedJson": true,
+        "dependencyNotices": true,
+        "nugetDocumentationLinks": 49,
+        "nugetPkgIdentical": true,
+        "physicalHs220OrKs225": false,
+        "newProcessorRun": false
+      }
     }
   ],
   "nugetDocumentationPatches": [
