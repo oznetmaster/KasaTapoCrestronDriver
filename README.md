@@ -224,7 +224,7 @@ This driver communicates with TP-Link Kasa and Tapo devices using the independen
 > the source code in this repository is licensed independently under the terms in [LICENSE](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/LICENSE).
 ## NUnit tests and processor validation
 
-The dedicated [submission test project](KasaTapoCrestronDriver.SubmissionTests/README.md) uses the published shared NUnit fixture for IDE and CI execution. Endurance requires explicit selection; documents and delivery remain a separate phase.
+The dedicated [submission test project](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.SubmissionTests/README.md) uses the published shared NUnit fixture for IDE and CI execution. Endurance requires explicit selection; documents and delivery remain a separate phase.
 
 The test projects use NUnit 5.0.0, NUnit3TestAdapter 6.3.0, Microsoft.NET.Test.Sdk 18.10.1 and NUnit.Analyzers 4.15.0. The workflow project uses CrestronHomeNUnit.TestAdapter 2.0.0. See the [test README](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.Tests/README.md) for local commands and live-test configuration. The `net472` project includes 34 ordinary tests and 58 processor lifecycle cases; the desktop lifecycle project runs those 58 cases with the desktop-compatible SDK. The repository `.runsettings` excludes the `Processor` category on Windows.
 
