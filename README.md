@@ -28,6 +28,18 @@ TP-Link, Kasa, and Tapo are trademarks of their respective owners. This project 
 
 ---
 
+## 2.1.4 release preparation
+
+The next GitHub/NuGet release is **2.1.4**, with Crestron driver version **2.1.004.0000**. The Crestron catalog entry above remains the published 2.1.2 release until Crestron publishes an update. NuGet 2.1.3 was a documentation-only wrapper update containing the unchanged 2.1.2 driver.
+
+This update fixes on/off control for devices identified by KasaTapoClient as SMART dimmers, including the HS220 and KS225. Dimming and power are separate device operations: the driver now uses the dimmer power command when Crestron Home requests a power change. Existing bulbs, strips and non-dimmable switches retain their power commands. KasaTapoClient remains at 2.0.1.
+
+Crestron Home conveys dimmer on/off through its level command. A zero level turns the load off. A full-level command while off turns it on at its retained brightness; a full-level command while already on sets brightness to 100%. This preserves the existing native dimmer behavior.
+
+Update the existing platform driver in Home Setup or Configure Pro after importing the package. Importing the package alone does not update the running driver. Recreating the platform or its children is not a routine update step. If existing children remain offline, contact [support](https://oznetmaster.github.io/support/) before removing configured devices, which can affect room assignments, scenes and programming.
+
+The temporary diagnostic file logger and diagnostic-log download are retired. Both Debug and Release builds use the existing Crestron Home logging path without that file sink. Previously distributed diagnostic downloads are preserved unchanged.
+
 ## Driver Architecture
 
 This driver is a **Crestron Home platform Entity V2 driver**. A single configured instance of `PlatformDriver` runs discovery, maintains the set of known devices, and publishes/manages one child device per discovered, supported device. This is fundamentally different from an extension driver, which represents exactly one physical device: here, one driver instance can own and manage an arbitrary number of child devices simultaneously, adding and removing them as devices are discovered, added, or removed.

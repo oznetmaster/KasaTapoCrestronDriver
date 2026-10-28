@@ -895,9 +895,6 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 		LogInfo ($"ApplyConfigurationItems: action='{action}', stepId='{stepId}', mode={applyMode}.");
 
 		ApplyValues (values);
-#if DEBUG
-		DiagnosticFileLoggerProvider.RegisterSecrets (_userName, _password, _processorSshUserName, _processorSshPassword);
-#endif
 
 		bool hasUserName = !string.IsNullOrWhiteSpace (_userName);
 		bool hasPassword = !string.IsNullOrWhiteSpace (_password);

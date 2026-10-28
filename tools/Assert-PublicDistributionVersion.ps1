@@ -9,6 +9,12 @@ $version = [version]($ReleaseVersion + '.0')
 $register = Get-Content -LiteralPath $RegisterPath -Raw | ConvertFrom-Json
 if ($register.schemaVersion -ne 1 -or -not $register.distributions) { throw 'Invalid driver distribution register.' }
 $seen = @{}
+foreach ($patch in $register.nugetDocumentationPatches) {
+    if ($patch.publicVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid NuGet documentation-patch version.' }
+    if ($version -le [version]($patch.publicVersion + '.0')) {
+        throw "Public $ReleaseVersion must exceed the already published NuGet wrapper $($patch.publicVersion)."
+    }
+}
 foreach ($entry in $register.distributions) {
     if ($entry.driverVersion -notmatch '^\d+\.\d+\.\d+\.\d+$' -or $entry.channel -notin @('public','test')) { throw 'Invalid distribution version or channel.' }
     $known = [version]$entry.driverVersion

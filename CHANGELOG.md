@@ -10,6 +10,16 @@ project follows [Semantic Versioning](https://semver.org/).
 
 This changelog records shipped features, fixes, compatibility and runtime dependency changes. See [development and validation history](DEVELOPMENT-HISTORY.md) for tests, CI, build tooling and work not yet released.
 
+## 2.1.4 — Unreleased
+
+- Fix power control for SMART dimmers, including HS220 and KS225, using the client's dimmer-compatible power API. Brightness control and Crestron Home's existing zero/full-level mapping are preserved.
+- Remove the temporary problem-specific diagnostic file logger from both Debug and Release builds and retire diagnostic-log collection from the Windows uploader. Existing Home logging remains available.
+- Keep KasaTapoClient 2.0.1 and the existing bulb, strip and non-dimmable switch power paths.
+
+## 2.1.3 — NuGet documentation update
+
+- Correct README links and supply NuGet release notes. This NuGet wrapper contains the unchanged 2.1.2 driver (`2.1.002.0000`); no GitHub driver release was made for 2.1.3.
+
 ## 2.1.2 — 2026-09-26
 
 - Use KasaTapoClient 2.0.1 to renew TPAP sessions rejected after a device restarts, allowing automatic recovery without reloading the driver.

@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory)][string]$PackagePath,
     [Parameter(Mandatory)][string]$OutputDirectory,
     [Parameter(Mandatory)][string]$NoticesPath,
+    [switch]$NormalBuild,
     [string]$RegisterPath = (Join-Path $PSScriptRoot '../driver-distributions.json')
 )
 $ErrorActionPreference = 'Stop'
@@ -18,12 +19,13 @@ try {
 } finally { $zip.Dispose() }
 $register = Get-Content -LiteralPath $RegisterPath -Raw | ConvertFrom-Json
 $entry = @($register.distributions | Where-Object { [version]$_.driverVersion -eq [version]$info.driverVersion })
-if ($entry.Count -ne 1 -or $entry[0].channel -ne 'test' -or $entry[0].status -notin @('reserved','prepared','distributed') -or $entry[0].packageSha256 -ne $hash) {
-    throw 'Reserve this exact test version and package checksum in driver-distributions.json before building a sideloader.'
+if ($entry.Count -ne 1 -or $entry[0].channel -ne $(if ($NormalBuild) { 'public' } else { 'test' }) -or $entry[0].status -notin @('reserved','prepared','distributed') -or $entry[0].packageSha256 -ne $hash) {
+    throw 'Register this exact distribution version and package checksum in driver-distributions.json before building a sideloader.'
 }
 if ($info.driverId -ne $register.driverId -or $info.baseModel -ne $register.product) { throw 'The package belongs to another product.' }
 $public = @($register.distributions | Where-Object channel -eq public | ForEach-Object { [version]$_.driverVersion } | Sort-Object -Descending)
-if ($public.Count -gt 0 -and [version]$info.driverVersion -le $public[0]) { throw 'The test package must be higher than the latest recorded public version.' }
+if (!$NormalBuild -and $public.Count -gt 0 -and [version]$info.driverVersion -le $public[0]) { throw 'The test package must be higher than the latest recorded public version.' }
+if ($NormalBuild) { & (Join-Path $PSScriptRoot 'Assert-PublicDistributionVersion.ps1') -ReleaseVersion ([version]$info.driverVersion).ToString(3) -RegisterPath $RegisterPath }
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 [IO.Directory]::CreateDirectory($output) | Out-Null
 $metadataPath = Join-Path $output 'embedded-payload.json'
@@ -33,6 +35,6 @@ $project = Join-Path $PSScriptRoot 'TestDriverSideload/TestDriverSideload.csproj
 dotnet build $project -c Release "-p:PayloadPath=$package" "-p:PayloadMetadataPath=$metadataPath" "-p:NoticesPath=$notices" -p:NuGetAudit=false
 if ($LASTEXITCODE -ne 0) { throw 'Sideloader build failed.' }
 $built = Join-Path $PSScriptRoot 'TestDriverSideload/bin/Release/net472/KasaTapo-Test-Installer.exe'
-$destination = Join-Path $output ("KasaTapo-Test-" + $info.driverVersion + '.exe')
+$destination = Join-Path $output ("KasaTapo-Upload-" + $info.driverVersion + '.exe')
 Copy-Item -LiteralPath $built -Destination $destination
 Write-Output $destination

@@ -1,14 +1,17 @@
-# KasaTapoCrestronDriver 2.1.2
+# KasaTapoCrestronDriver 2.1.4
 
-Adds packaged user help with illustrated installation and operation instructions, model and firmware details, limitations, licensing and an account-free support contact.
+Fixes on/off control for supported SMART dimmers, including HS220 and KS225. The driver uses KasaTapoClient's dimmer-compatible power API, allowing the load to turn on or off independently of its brightness setting.
 
-- The package and driver DLL now use the descriptive filename `NeilColvin_Platform_KasaTapo_IP_V2`; the driver identity and existing device controls are unchanged.
-- Cached children register during startup and retain separate parent and child identities after reload, without waiting for fresh network discovery.
-- Outlet transport timeouts report offline status without stopping subsequent polling and recovery attempts.
-- Outlet, sensor and button connection changes now update the standard availability interfaces used by Crestron Home, alongside their existing extension properties.
-- The package includes the matching help PDF and third-party license notices. The support website is also included in the driver metadata.
-- KasaTapoClient 2.0.1 renews established TPAP sessions rejected after a device restarts, allowing automatic recovery without reloading the driver. Crestron.DeviceDrivers.DevKit remains at 29.0.10; no new physical-device settings are required.
+- Retains native Crestron Home dimmer behavior: zero turns off, full level from off restores retained brightness, and full level while on sets 100%.
+- Keeps existing bulb, strip and non-dimmable switch power commands. KasaTapoClient remains at 2.0.1 and Crestron.DeviceDrivers.DevKit remains at 29.0.10.
+- Removes the temporary diagnostic file logger from both Debug and Release builds. The Windows uploader no longer offers diagnostic-log collection; normal Crestron Home logging remains available.
 
-Support: [contact form](https://oznetmaster.github.io/support/), with no GitHub account required.
+GitHub and NuGet use version **2.1.4**; the included Crestron driver is **2.1.004.0000**, higher than the distributed 2.1.002.0002 and 2.1.002.0004 customer-test builds. NuGet 2.1.3 only updated documentation around the unchanged 2.1.2 driver.
 
-Source, documentation and history: [KasaTapoCrestronDriver](https://github.com/oznetmaster/KasaTapoCrestronDriver).
+Import the package, then update the existing KasaTapoPlatform driver in Home Setup or Configure Pro. Importing alone does not update the active driver. Routine updates do not require removing children. If children remain offline, contact support before deleting configured devices.
+
+The earlier customer-test installation recovered after the platform was removed and re-added; the customer reports all loads working correctly. The cause of the earlier missing child configuration is unconfirmed. That recovery does not establish a general upgrade repair, and this release does not rewrite saved child configuration. Physical KS225 operation has not been confirmed in this case.
+
+Support: [contact form](https://oznetmaster.github.io/support/).
+
+Source and history: [KasaTapoCrestronDriver](https://github.com/oznetmaster/KasaTapoCrestronDriver).

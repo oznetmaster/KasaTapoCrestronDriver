@@ -11,6 +11,14 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## 2.1.4 preparation - 2026-10-28
+
+- Prepare a normal Release driver and a single-executable Windows uploader for customer delivery and subsequent GitHub/NuGet release. Public version 2.1.4 maps to driver 2.1.004.0000 and exceeds all reserved test versions. Record NuGet's documentation-only 2.1.3 wrapper separately; it contains the unchanged 2.1.2 runtime.
+- Retire the temporary problem-specific file logger, its controller bridge and credential registration from both Debug and Release source. Remove the corresponding temporary tests and the uploader's diagnostic-log collection. Preserve ordinary Home logging and all previously distributed diagnostic bytes.
+- Re-run the discovered offline suites: 34 portable and 69 SDK lifecycle cases pass. Both unmerged Debug and packaged Release assemblies are checked for absence of the temporary types. The normal Release package builds with zero warnings and errors. New physical HS220/KS225 or processor tests have not been run for these bytes.
+- The customer reports all loads working after removing and re-adding the platform. Treat that as recovery; the exact installed build is unconfirmed and the cause of the earlier missing child records remains unproven. Do not claim that this version repairs saved Home configuration or requires routine child recreation.
+
+
 ## Customer offline diagnostic build - 2026-10-25
 
 - After explicit approval, publish the diagnostic download at `https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.002.0004/` (Pages commit `47424939b719f4d2243e9c869418710888561609`). Independently retrieve all six public files and verify exact validated bytes, ZIP members, embedded utility checksum and package identity/version. Mark the version register distributed. The customer letter and lab logs remain private and the email is unsent. Preserve frozen download bytes with the hosting repository's scoped Git attributes; the older distribution is unchanged.

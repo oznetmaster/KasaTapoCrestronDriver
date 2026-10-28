@@ -5,7 +5,7 @@ $checks = 0
 $fixture = [IO.Path]::GetTempFileName()
 try {
 @'
-{"schemaVersion":1,"distributions":[
+{"schemaVersion":1,"nugetDocumentationPatches":[{"publicVersion":"2.1.3"}],"distributions":[
 {"id":"public","channel":"public","publicVersion":"2.1.2","driverVersion":"2.1.002.0000","status":"released"},
 {"id":"test","channel":"test","publicVersion":null,"driverVersion":"2.1.002.0002","status":"reserved"}
 ]}
@@ -13,7 +13,8 @@ try {
 foreach ($case in @(
     @{ Version = '2.1.2'; Reject = $true },
     @{ Version = '2.1.1'; Reject = $true },
-    @{ Version = '2.1.3'; Reject = $false },
+    @{ Version = '2.1.3'; Reject = $true },
+    @{ Version = '2.1.4'; Reject = $false },
     @{ Version = '2.2.0'; Reject = $false },
     @{ Version = '3.0.0'; Reject = $false },
     @{ Version = '2.1.2.3'; Reject = $true },

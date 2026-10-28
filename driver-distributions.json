@@ -105,6 +105,26 @@
       "publicationCommit": "47424939b719f4d2243e9c869418710888561609",
       "verifiedAtUtc": "2026-10-25T13:25:34.491001+00:00",
       "publicationApprovedDate": "2026-10-25"
+    },
+    {
+      "id": "public-2.1.4",
+      "channel": "public",
+      "publicVersion": "2.1.4",
+      "driverVersion": "2.1.004.0000",
+      "status": "reserved",
+      "date": "2026-10-28",
+      "purpose": "Normal dimmer power fix; customer delivery and GitHub/NuGet release preparation; temporary diagnostic logger retired",
+      "packageSha256": null,
+      "url": null
+    }
+  ],
+  "nugetDocumentationPatches": [
+    {
+      "publicVersion": "2.1.3",
+      "includedDriverVersion": "2.1.002.0000",
+      "status": "released",
+      "purpose": "NuGet documentation-only wrapper; runtime package identical to 2.1.2",
+      "url": "https://www.nuget.org/packages/CrestronHomeDriver.TpLink.KasaTapoPlatform/2.1.3"
     }
   ]
 }

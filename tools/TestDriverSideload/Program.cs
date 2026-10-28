@@ -31,7 +31,7 @@ internal static class Program
             if (args.Length == 2 && (args[0] == "--verify" || args[0] == "--self-test"))
                 File.WriteAllText (args[1], error.ToString ());
             else if (args.Length != 0) Console.Error.WriteLine (error.Message);
-            else MessageBox.Show (error.Message, "Test driver upload", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            else MessageBox.Show (error.Message, "Kasa/Tapo driver upload", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
             }
         }
@@ -81,8 +81,7 @@ internal sealed class UploadForm : Form
     private readonly Payload _payload;
     private readonly TextBox _host = new TextBox (), _user = new TextBox { Text = "admin" }, _password = new TextBox { UseSystemPasswordChar = true };
     private readonly NumericUpDown _port = new NumericUpDown { Minimum = 1, Maximum = 65535, Value = 22 };
-    private readonly Button _upload = new Button { Text = "Upload test driver", AutoSize = true };
-    private readonly Button _download = new Button { Text = "Download diagnostic log", AutoSize = true };
+    private readonly Button _upload = new Button { Text = "Upload driver", AutoSize = true };
     private readonly Button _licences = new Button { Text = "Licences", AutoSize = true };
     private readonly ProgressBar _progress = new ProgressBar { Dock = DockStyle.Fill, Maximum = 100 };
     private readonly TextBox _status = new TextBox { Multiline = true, ReadOnly = true, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, TabStop = false };
@@ -90,7 +89,7 @@ internal sealed class UploadForm : Form
     public UploadForm (Payload payload)
         {
         _payload = payload;
-        Text = "Kasa/Tapo diagnostic test utility";
+        Text = "Kasa/Tapo driver uploader";
         Font = new Font ("Segoe UI", 10);
         AutoScaleMode = AutoScaleMode.Dpi;
         ClientSize = new Size (680, 620);
@@ -106,8 +105,8 @@ internal sealed class UploadForm : Form
             layout.Controls.Add (c, 0, row);
             layout.SetColumnSpan (c, 2);
             }
-        Wide (new Label { Text = "Kasa/Tapo diagnostic build only", Font = new Font (Font, FontStyle.Bold) }, 0, 34);
-        Wide (new Label { Text = payload.Metadata.Model + "  |  Test version " + payload.Metadata.Version }, 1, 32);
+        Wide (new Label { Text = "Kasa/Tapo driver package", Font = new Font (Font, FontStyle.Bold) }, 0, 34);
+        Wide (new Label { Text = payload.Metadata.Model + "  |  Version " + payload.Metadata.Version }, 1, 32);
         Wide (new Label { Text = "Step 1: Upload the package here.\r\nStep 2: Update the existing driver in Home Setup or Configure Pro." }, 2, 62);
         void Field (string label, Control control, int row)
             {
@@ -122,16 +121,14 @@ internal sealed class UploadForm : Form
         Field ("SFTP port", _port, 6);
         var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight };
         buttons.Controls.Add (_upload);
-        buttons.Controls.Add (_download);
         buttons.Controls.Add (_licences);
         Wide (buttons, 7, 46);
         Wide (_progress, 8, 22);
         Wide (_status, 9, 110);
-        _status.Text = "Use the processor's login, rather than your Kasa/Tapo account.\r\nAfter updating and reloading the driver, download its diagnostic log here.\r\nCredentials are used for the connection and are never saved.";
+        _status.Text = "Use the processor's login, rather than your Kasa/Tapo account.\r\nCredentials are used for the connection and are never saved.";
         Controls.Add (layout);
         AcceptButton = _upload;
         _upload.Click += async (_, _) => await StartUpload ();
-        _download.Click += async (_, _) => await StartDownload ();
         _licences.Click += (_, _) =>
             {
             using var dialog = new Form { Text = "Licences and notices", Size = new Size (760, 560), StartPosition = FormStartPosition.CenterParent };
@@ -148,7 +145,7 @@ internal sealed class UploadForm : Form
             { MessageBox.Show (this, "Enter the processor IP address or hostname, username and password.", Text); return; }
         int port = (int)_port.Value;
         _busy = true;
-        _upload.Enabled = _download.Enabled = _host.Enabled = _user.Enabled = _password.Enabled = _port.Enabled = false;
+        _upload.Enabled = _host.Enabled = _user.Enabled = _password.Enabled = _port.Enabled = false;
         _progress.Value = 0;
         try
             {
@@ -181,45 +178,7 @@ internal sealed class UploadForm : Form
             _password.Clear ();
             _busy = false;
             _upload.Enabled = !_submitted;
-            _download.Enabled = _host.Enabled = _user.Enabled = _password.Enabled = _port.Enabled = true;
-            }
-        }
-    private async Task StartDownload ()
-        {
-        string host = _host.Text.Trim (), user = _user.Text.Trim (), password = _password.Text;
-        if (Uri.CheckHostName (host) == UriHostNameType.Unknown || string.IsNullOrWhiteSpace (user) || password.Length == 0)
-            { MessageBox.Show (this, "Enter the processor address, username and password to download its diagnostic log.", Text); return; }
-        using var save = new SaveFileDialog { Title = "Save Kasa/Tapo diagnostic log", Filter = "Text log (*.txt)|*.txt", FileName = "KasaTapo-diagnostics-" + DateTime.Now.ToString ("yyyyMMdd-HHmmss") + ".txt", AddExtension = true, DefaultExt = "txt", OverwritePrompt = true };
-        if (save.ShowDialog (this) != DialogResult.OK) return;
-        int port = (int)_port.Value;
-        _busy = true;
-        _upload.Enabled = _download.Enabled = _host.Enabled = _user.Enabled = _password.Enabled = _port.Enabled = false;
-        try
-            {
-            _status.Text = "Reading processor identity...";
-            string fingerprint = await Task.Run (() => SftpFiles.Probe (host, port));
-            if (MessageBox.Show (this, "Download the Kasa/Tapo diagnostic log from " + host + "?\r\n\r\nSSH identity (SHA256):\r\n" + fingerprint + "\r\n\r\nConfirm this is your intended processor. This only reads the diagnostic files; it does not update or reload the driver.", "Confirm processor and download", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
-                { _status.Text = "Download cancelled."; return; }
-            _status.Text = "Downloading diagnostic log...";
-            await Task.Run (() =>
-                {
-                using var remote = new SftpFiles (host, port, user, password, fingerprint);
-                Diagnostics.Download (remote, save.FileName, _payload.Metadata.Version);
-                });
-            _status.Text = "Diagnostic log saved to:\r\n" + save.FileName + "\r\nPlease email this file to Neil. The driver and its configuration were not changed.";
-            }
-        catch (Exception error)
-            {
-            _status.Text = "Diagnostic download failed. " + error.Message;
-            MessageBox.Show (this, _status.Text, "Download failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        finally
-            {
-            password = "";
-            _password.Clear ();
-            _busy = false;
-            _upload.Enabled = !_submitted;
-            _download.Enabled = _host.Enabled = _user.Enabled = _password.Enabled = _port.Enabled = true;
+            _host.Enabled = _user.Enabled = _password.Enabled = _port.Enabled = true;
             }
         }
     }

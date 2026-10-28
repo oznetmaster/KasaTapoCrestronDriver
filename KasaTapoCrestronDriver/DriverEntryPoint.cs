@@ -21,9 +21,6 @@ public sealed class EntryPoint : DriverAssemblyEntryPoint
 	/// </returns>
 	public override DriverController CreateDriverControllerInstance (DriverControllerCreationArgs args)
 		{
-#if DEBUG
-		args = KasaTapoCrestronDriver.DiagnosticControllerLogger.Wrap (args);
-#endif
 		var resources = DriverImplementationResources.FromCreationArgs (args, typeof (EntryPoint), "KasaTapoCrestronDriver.KasaTapoCrestronDriver.json");
 		var platform = new KasaTapoCrestronDriver.PlatformDriver (args, resources);
 		var rootEntity = new ConfigurableDriverEntity (platform.ControllerId, platform, platform.ConfigurationController);
