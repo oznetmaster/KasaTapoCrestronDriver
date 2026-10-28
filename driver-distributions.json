@@ -115,11 +115,11 @@
       "date": "2026-10-28",
       "purpose": "Normal dimmer power fix; customer delivery and GitHub/NuGet release preparation; temporary diagnostic logger retired",
       "packageSha256": "fb8658ff7ca956474e8d24eb15173bade576ab9eeb989707176e7ec3dd604e6f",
-      "url": null,
+      "url": "https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.4",
       "sourceCommit": "af9e8dba4057c21ce1b8c90c9b3b5d9948ddf639",
       "uploaderSha256": "b2cd03695f3a31bbee0cbb1fc8da4dda9c82838e21ef30ec50f287e2c509d851",
       "downloadSha256": "27cba280328734e027244791d04d56f70de2fe85e9ead4f56b1f60bbac6a4a47",
-      "nugetSha256": "7ed875882f8d14158e0e8d3d2efa5d947d6bb02d7010487d0e67a0a71836b2c3",
+      "nugetSha256": "64477cc502f514f4a29860dcc71fd583508463bfe233ade3ac9324b864567646",
       "plannedCustomerUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.004.0000/",
       "validation": {
         "portable": 34,
@@ -133,7 +133,8 @@
         "nugetPkgIdentical": true,
         "physicalHs220OrKs225": false,
         "newProcessorRun": false
-      }
+      },
+      "documentationSourceCommit": "acd3455b029800f6af528f5f9fdb91fb04457c90"
     }
   ],
   "nugetDocumentationPatches": [
