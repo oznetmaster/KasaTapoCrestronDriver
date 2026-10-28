@@ -111,7 +111,7 @@
       "channel": "public",
       "publicVersion": "2.1.4",
       "driverVersion": "2.1.004.0000",
-      "status": "prepared",
+      "status": "released",
       "date": "2026-10-28",
       "purpose": "Normal dimmer power fix; customer delivery and GitHub/NuGet release preparation; temporary diagnostic logger retired",
       "packageSha256": "fb8658ff7ca956474e8d24eb15173bade576ab9eeb989707176e7ec3dd604e6f",
@@ -132,9 +132,25 @@
         "nugetDocumentationLinks": 49,
         "nugetPkgIdentical": true,
         "physicalHs220OrKs225": false,
-        "newProcessorRun": false
+        "newProcessorRun": true,
+        "processorTestsPassed": 103,
+        "hardwareRunner": "HPNEIL-CrestronHome",
+        "hardwareCheckRun": 40685658709,
+        "hardwareOverrideUsed": false,
+        "temporaryInstanceRemoved": true,
+        "preExistingPackagePreserved": true,
+        "processorLeaseReleased": true
       },
-      "documentationSourceCommit": "acd3455b029800f6af528f5f9fdb91fb04457c90"
+      "documentationSourceCommit": "acd3455b029800f6af528f5f9fdb91fb04457c90",
+      "releaseSourceCommit": "a54f11b438ddb2b480bf118f750619392bab2f9a",
+      "publicationWorkflowCommit": "21ac4a8d13dd48547a58124ada1c952d20feae4f",
+      "publicationRun": 40686781082,
+      "publishedUtc": "2026-10-28T12:19:53Z",
+      "customerUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.004.0000/",
+      "customerFilesVerified": true,
+      "githubAssetsVerified": true,
+      "nugetIndexed": false,
+      "nugetPayloadVerified": false
     }
   ],
   "nugetDocumentationPatches": [

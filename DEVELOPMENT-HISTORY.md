@@ -11,6 +11,15 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## 2.1.4 publication - 2026-10-28
+
+- Publish the normal customer download and GitHub 2.1.4 release with driver 2.1.004.0000, preserving the approved driver, uploader and Windows ZIP bytes. Finalize the README/changelog wording in the NuGet and documentation wrappers before distribution. Independently download all seven customer files and all five GitHub assets and verify their exact checksums. Keep correspondence and raw lab evidence private.
+- Pass 103 local and 103 processor tests on HPNEIL for release source a54f11b438ddb2b480bf118f750619392bab2f9a. The temporary test instance is removed, a pre-existing package path is preserved and the processor lease is released. No live physical device controls or reboot are part of this run. This validates the source through the separate test host; it is not physical HS220/KS225 acceptance of the Release binary.
+- Preserve the failed first hardware run, which rejected its legacy numeric-location profile before processor connection. Reproduce its missing-room validation error with the published adapter v3; migrate only the HPNEIL Kasa/Tapo test profile to the user-selected Office room and retain its original file before the successful deliberate retry. Both development runners are online in the private central hardware repository; no hardware override is used.
+- Publish through the existing Trusted Publishing workflow using a frozen-asset path and committed checksums. The successful publication run 40686781082 checks the immutable v2.1.4 tag, exact-source hosted and App-reported processor checks, package identity, NuGet documentation and identical embedded .pkg bytes before login/push. The first publication attempt is retained: draft lookup by tag returned 404 before NuGet login or push. Resolve drafts through authenticated listing and execute the corrected workflow from master while checking out the unchanged release tag. No tag or distributed runtime bytes are replaced.
+- NuGet accepted 2.1.4 at 12:19:52 UTC. Public-index and downloaded-payload verification are recorded separately in the distribution register and publication receipt; acceptance alone does not establish indexing.
+
+
 ## 2.1.4 preparation - 2026-10-28
 
 - Prepare a normal Release driver and a single-executable Windows uploader for customer delivery and subsequent GitHub/NuGet release. Public version 2.1.4 maps to driver 2.1.004.0000 and exceeds all reserved test versions. Record NuGet's documentation-only 2.1.3 wrapper separately; it contains the unchanged 2.1.2 runtime.
