@@ -149,8 +149,9 @@
       "customerUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.004.0000/",
       "customerFilesVerified": true,
       "githubAssetsVerified": true,
-      "nugetIndexed": false,
-      "nugetPayloadVerified": false
+      "nugetIndexed": true,
+      "nugetPayloadVerified": true,
+      "nugetServerSha256": "65f39bf0974c8bb928f5692d32d94f7907ab2c7bf5dbb07423a07c5fb7d0a94b"
     }
   ],
   "nugetDocumentationPatches": [
