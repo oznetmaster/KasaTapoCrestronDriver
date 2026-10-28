@@ -10,7 +10,7 @@ project follows [Semantic Versioning](https://semver.org/).
 
 This changelog records shipped features, fixes, compatibility and runtime dependency changes. See [development and validation history](DEVELOPMENT-HISTORY.md) for tests, CI, build tooling and work not yet released.
 
-## 2.1.4 — Unreleased
+## 2.1.4 — 2026-10-28
 
 - Fix power control for SMART dimmers, including HS220 and KS225, using the client's dimmer-compatible power API. Brightness control and Crestron Home's existing zero/full-level mapping are preserved.
 - Remove the temporary problem-specific diagnostic file logger from both Debug and Release builds and retire diagnostic-log collection from the Windows uploader. Existing Home logging remains available.

@@ -28,9 +28,9 @@ TP-Link, Kasa, and Tapo are trademarks of their respective owners. This project 
 
 ---
 
-## 2.1.4 release preparation
+## GitHub and NuGet release 2.1.4
 
-The next GitHub/NuGet release is **2.1.4**, with Crestron driver version **2.1.004.0000**. The Crestron catalog entry above remains the published 2.1.2 release until Crestron publishes an update. NuGet 2.1.3 was a documentation-only wrapper update containing the unchanged 2.1.2 driver.
+The GitHub/NuGet release is **2.1.4**, with Crestron driver version **2.1.004.0000**. The Crestron catalog entry above remains the published 2.1.2 release until Crestron publishes an update. NuGet 2.1.3 was a documentation-only wrapper update containing the unchanged 2.1.2 driver.
 
 This update fixes on/off control for devices identified by KasaTapoClient as SMART dimmers, including the HS220 and KS225. Dimming and power are separate device operations: the driver now uses the dimmer power command when Crestron Home requests a power change. Existing bulbs, strips and non-dimmable switches retain their power commands. KasaTapoClient remains at 2.0.1.
 

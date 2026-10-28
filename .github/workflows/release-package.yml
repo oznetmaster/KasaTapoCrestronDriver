@@ -3,6 +3,11 @@ name: Release Package
 on:
   workflow_dispatch:
     inputs:
+      prepared_release:
+        description: Publish the frozen, checksum-verified release assets without rebuilding
+        required: false
+        type: boolean
+        default: false
       documentation_patch:
         description: Publish only the reviewed NuGet documentation patch; preserve existing runtime binaries and GitHub releases
         required: false
@@ -30,7 +35,7 @@ permissions:
 jobs:
   build-and-upload-package:
     # Processor-test releases have their own workflow and never publish NuGet packages.
-    if: inputs.documentation_patch != true && (github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v'))
+    if: inputs.documentation_patch != true && inputs.prepared_release != true && !contains(github.event.release.body, '<!-- prepared-artifacts -->') && (github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v'))
     runs-on: windows-latest
     environment: release
     env:
@@ -215,6 +220,61 @@ jobs:
           tag_name: ${{ github.event.release.tag_name || github.ref_name }}
           files: ${{ steps.package.outputs.pkg_path }}
           fail_on_unmatched_files: true
+
+  prepared-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.prepared_release == true && inputs.documentation_patch != true
+    runs-on: windows-latest
+    timeout-minutes: 20
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.401
+      - name: Verify configured release checks
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUIRED_RELEASE_CHECKS: ${{ vars.RELEASE_REQUIRED_CHECKS }}
+          REQUIRED_HOSTED_WORKFLOWS: '["tests.yml","workflow-discovery.yml"]'
+          RELEASE_SKIP_HARDWARE_CHECKS: ${{ inputs.skip_hardware_checks }}
+          RELEASE_HARDWARE_SKIP_REASON: ${{ inputs.hardware_skip_reason }}
+        run: '& ./.github/scripts/Wait-RequiredReleaseChecks.ps1'
+      - name: Download and verify frozen assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $plan = Get-Content FrozenRelease.json -Raw | ConvertFrom-Json
+          $tag = 'v' + $plan.publicVersion
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" | ConvertFrom-Json
+          if ($LASTEXITCODE -or !$release.draft -or $release.target_commitish -ne $env:GITHUB_SHA -or !$release.body.Contains('<!-- prepared-artifacts -->')) { throw 'Expected the prepared draft on this exact source.' }
+          $directory = Join-Path $PWD 'artifacts/frozen-release'
+          New-Item -ItemType Directory -Path $directory | Out-Null
+          gh release download $tag --repo $env:GITHUB_REPOSITORY --dir $directory
+          if ($LASTEXITCODE) { throw 'Prepared release download failed.' }
+          ./tools/Test-FrozenRelease.ps1 -ArtifactDirectory $directory
+      - uses: NuGet/login@v1
+        id: prepared-login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+      - name: Publish verified NuGet package
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ steps.prepared-login.outputs.NUGET_API_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) { throw 'Trusted Publishing did not return an API key.' }
+          $plan = Get-Content FrozenRelease.json -Raw | ConvertFrom-Json
+          dotnet nuget push "artifacts/frozen-release/CrestronHomeDriver.TpLink.KasaTapoPlatform.$($plan.publicVersion).nupkg" --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json
+          if ($LASTEXITCODE) { throw 'Frozen NuGet publication failed; inspect before retrying.' }
+      - name: Publish prepared GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $plan = Get-Content FrozenRelease.json -Raw | ConvertFrom-Json
+          gh release edit "v$($plan.publicVersion)" --repo $env:GITHUB_REPOSITORY --draft=false --latest
+          if ($LASTEXITCODE) { throw 'GitHub publication failed; do not repeat the NuGet push.' }
 
   nuget-documentation:
     if: github.event_name == 'workflow_dispatch' && inputs.documentation_patch == true
