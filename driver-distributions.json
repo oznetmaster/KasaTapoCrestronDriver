@@ -186,6 +186,26 @@
         "allPassed": true,
         "processorPackageDiscoveryPassed": true,
         "processorExecution": false
+      },
+      "customerFeedback": {
+        "receivedAtUtc": "2026-11-02T23:17:06Z",
+        "status": "confirmed-working",
+        "provenance": "Customer report relayed by maintainer; not an independently observed lab test",
+        "processorModel": "CP4-R",
+        "installedVersion": "2.1.004.0001",
+        "driverOnline": true,
+        "lightPollingEnabled": true,
+        "pollIntervalSeconds": 10,
+        "eventToTileFeedbackConfigured": true,
+        "kasaAppChangesUpdateBothTiles": true,
+        "crestronHomeControlWorks": true,
+        "tileDrivers": [
+          "Ultamation Toggle Tile",
+          "Control Programming LLC Toggle Tile"
+        ],
+        "temporarySecondTileAndProgrammingRemoved": true,
+        "diagnosticLoggingDisabled": true,
+        "physicalButtonTestExplicitlyReported": false
       }
     }
   ],
