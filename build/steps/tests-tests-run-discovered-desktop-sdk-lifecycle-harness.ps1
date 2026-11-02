@@ -1,0 +1,1 @@
+./tools/Test-DiscoveredCoverage.ps1 -Stage Desktop -Project KasaTapoCrestronDriver.Lifecycle.Tests/KasaTapoCrestronDriver.Lifecycle.Tests.csproj -Framework net10.0 -RequiredCategories unit -CompareProcessorInventory TestResults/KasaTapoCrestronDriver.Tests/inventory.json -ResultsDirectory TestResults

@@ -1,0 +1,123 @@
+{
+  "schema": 1,
+  "tasks": {
+    "tests-tests-build-read-only-installed-control-probe": {
+      "commands": [
+        {
+          "executable": "dotnet",
+          "arguments": [
+            "build",
+            "KasaTapoCrestronDriver.ControlProbe/KasaTapoCrestronDriver.ControlProbe.csproj",
+            "-c",
+            "Release"
+          ]
+        }
+      ]
+    },
+    "tests-tests-compile-optional-android-app-fixtures": {
+      "commands": [
+        {
+          "executable": "dotnet",
+          "arguments": [
+            "build",
+            "KasaTapoCrestronDriver.AndroidTests/KasaTapoCrestronDriver.AndroidTests.csproj",
+            "-c",
+            "Release"
+          ]
+        }
+      ]
+    },
+    "tests-tests-verify-offline-app-evidence-contracts": {
+      "commands": [
+        {
+          "executable": "dotnet",
+          "arguments": [
+            "test",
+            "KasaTapoCrestronDriver.AndroidTests/KasaTapoCrestronDriver.AndroidTests.csproj",
+            "-c",
+            "Release",
+            "--no-build",
+            "--filter",
+            "FullyQualifiedName~KasaAppEvidenceContracts",
+            "--logger",
+            "trx;LogFileName=app-evidence-contracts.trx",
+            "--results-directory",
+            "TestResults/AppEvidence"
+          ]
+        }
+      ],
+      "results": [
+        "TestResults/AppEvidence/**/*.trx"
+      ]
+    },
+    "tests-tests-verify-discovery-coverage-guards": {
+      "commands": [
+        {
+          "executable": "pwsh",
+          "script": "build/steps/tests-tests-verify-discovery-coverage-guards.ps1",
+          "shell": "pwsh"
+        }
+      ]
+    },
+    "tests-tests-run-discovered-nunit-driver-tests": {
+      "commands": [
+        {
+          "executable": "pwsh",
+          "script": "build/steps/tests-tests-run-discovered-nunit-driver-tests.ps1",
+          "shell": "pwsh"
+        }
+      ],
+      "results": [
+        "TestResults/**/*.trx"
+      ]
+    },
+    "tests-tests-run-discovered-desktop-sdk-lifecycle-harness": {
+      "commands": [
+        {
+          "executable": "pwsh",
+          "script": "build/steps/tests-tests-run-discovered-desktop-sdk-lifecycle-harness.ps1",
+          "shell": "pwsh"
+        }
+      ],
+      "results": [
+        "TestResults/**/*.trx"
+      ]
+    },
+    "tests-tests-build-processor-package": {
+      "commands": [
+        {
+          "executable": "pwsh",
+          "script": "build/steps/tests-tests-build-processor-package.ps1",
+          "shell": "pwsh"
+        }
+      ]
+    },
+    "tests-tests-validate-all-packaged-suites": {
+      "commands": [
+        {
+          "executable": "pwsh",
+          "script": "build/steps/tests-tests-validate-all-packaged-suites.ps1",
+          "shell": "pwsh"
+        }
+      ]
+    },
+    "workflow-discovery-submission-discovery-discover-submission-tests-without-private-settings-or-equipment": {
+      "commands": [
+        {
+          "executable": "pwsh",
+          "script": "build/steps/workflow-discovery-submission-discovery-discover-submission-tests-without-private-settings-or-equipment.ps1",
+          "shell": "pwsh"
+        }
+      ]
+    },
+    "workflow-discovery-discover-verify-offline-test-explorer-discovery": {
+      "commands": [
+        {
+          "executable": "pwsh",
+          "script": "build/steps/workflow-discovery-discover-verify-offline-test-explorer-discovery.ps1",
+          "shell": "pwsh"
+        }
+      ]
+    }
+  }
+}

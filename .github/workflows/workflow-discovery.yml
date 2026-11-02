@@ -16,14 +16,9 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - name: Discover submission tests without private settings or equipment
-        shell: pwsh
-        run: |
-          $output = @(dotnet test KasaTapoCrestronDriver.SubmissionTests/KasaTapoCrestronDriver.SubmissionTests.csproj -c Release --list-tests 2>&1)
-          $output | Write-Output
-          if ($LASTEXITCODE -ne 0) { throw 'Submission fixture build/discovery failed.' }
-          foreach ($name in @('CandidateValidation','LocalAndProcessorChecks','ProcessorEvidence','AppAndRecoveryChecks','Endurance','PostEnduranceAndRemovalChecks')) {
-            if (@($output | Where-Object { $_.ToString().Trim() -ceq $name }).Count -ne 1) { throw "Expected exactly one $name test." }
-          }
+        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        with:
+          task: workflow-discovery-submission-discovery-discover-submission-tests-without-private-settings-or-equipment
   discover:
     runs-on: windows-latest
     strategy:
@@ -38,12 +33,9 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - name: Verify offline Test Explorer discovery
-        shell: pwsh
+        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        with:
+          task: workflow-discovery-discover-verify-offline-test-explorer-discovery
         env:
           WORKFLOW_PROJECT: ${{ matrix.project }}
           EXPECTED_WORKFLOW: ${{ matrix.expected }}
-        run: |
-          $output = @(dotnet test $env:WORKFLOW_PROJECT -c Release --list-tests 2>&1)
-          $output | Write-Output
-          if ($LASTEXITCODE -ne 0) { throw 'Workflow container build/discovery failed.' }
-          if (@($output | Where-Object { $_.ToString().Trim() -eq $env:EXPECTED_WORKFLOW }).Count -ne 1) { throw 'Expected exactly one named processor workflow.' }

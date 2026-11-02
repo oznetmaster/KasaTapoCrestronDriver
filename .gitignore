@@ -59,3 +59,7 @@ Desktop.ini
 !KasaTapoCrestronDriver.ProcessorTests/licenses/*.txt
 !licenses/*.txt
 !KasaTapoCrestronDriver/IncludeInPkg/THIRD-PARTY-NOTICES.txt
+
+# Shared Cake build downloads and invocation receipts
+/artifacts/build-components/
+/artifacts/build-automation/

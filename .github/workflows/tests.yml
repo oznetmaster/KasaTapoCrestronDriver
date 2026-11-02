@@ -32,15 +32,30 @@ jobs:
       - name: Install processor packaging tools
         run: ../CrestronHomeNUnit/tools/InstallCiTools.ps1
       - name: Build read-only installed-control probe
-        run: dotnet build KasaTapoCrestronDriver.ControlProbe/KasaTapoCrestronDriver.ControlProbe.csproj -c Release
+        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        with:
+          task: tests-tests-build-read-only-installed-control-probe
+          root: driver
       - name: Compile optional Android app fixtures
-        run: dotnet build KasaTapoCrestronDriver.AndroidTests/KasaTapoCrestronDriver.AndroidTests.csproj -c Release
+        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        with:
+          task: tests-tests-compile-optional-android-app-fixtures
+          root: driver
       - name: Verify offline app evidence contracts
-        run: dotnet test KasaTapoCrestronDriver.AndroidTests/KasaTapoCrestronDriver.AndroidTests.csproj -c Release --no-build --filter FullyQualifiedName~KasaAppEvidenceContracts --logger "trx;LogFileName=app-evidence-contracts.trx" --results-directory TestResults/AppEvidence
+        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        with:
+          task: tests-tests-verify-offline-app-evidence-contracts
+          root: driver
       - name: Verify discovery coverage guards
-        run: ./tools/Test-DiscoveredCoverageGuards.ps1
+        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        with:
+          task: tests-tests-verify-discovery-coverage-guards
+          root: driver
       - name: Run discovered NUnit driver tests
-        run: ./tools/Test-DiscoveredCoverage.ps1 -Stage Desktop -Project KasaTapoCrestronDriver.Tests/KasaTapoCrestronDriver.Tests.csproj -Framework net472 -ExcludeProcessor -ResultsDirectory TestResults
+        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        with:
+          task: tests-tests-run-discovered-nunit-driver-tests
+          root: driver
       - name: Restore public desktop SDK dependency
         run: |
           $tools = Join-Path $env:RUNNER_TEMP 'kasa-public-tools'
@@ -52,17 +67,20 @@ jobs:
           "CompactJsonPath=$compact" >> $env:GITHUB_ENV
           "MANIFEST_UTIL_EXE=$(Join-Path $runtime 'ManifestUtil.exe')" >> $env:GITHUB_ENV
       - name: Run discovered desktop SDK lifecycle harness
-        run: ./tools/Test-DiscoveredCoverage.ps1 -Stage Desktop -Project KasaTapoCrestronDriver.Lifecycle.Tests/KasaTapoCrestronDriver.Lifecycle.Tests.csproj -Framework net10.0 -RequiredCategories unit -CompareProcessorInventory TestResults/KasaTapoCrestronDriver.Tests/inventory.json -ResultsDirectory TestResults
+        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        with:
+          task: tests-tests-run-discovered-desktop-sdk-lifecycle-harness
+          root: driver
       - name: Build processor package
-        run: |
-          dotnet build KasaTapoCrestronDriver.ProcessorTests/KasaTapoCrestronDriver.ProcessorTests.csproj -c Release -p:BuildProcessorTestPackages=true -p:ReleaseVersion=1.3.0 -p:DeployAfterBuild=false "-p:ManifestUtilExe=$env:MANIFEST_UTIL_EXE"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        with:
+          task: tests-tests-build-processor-package
+          root: driver
       - name: Validate all packaged suites
-        run: |
-          $output = Join-Path $PWD 'KasaTapoCrestronDriver.ProcessorTests/bin/Release/net472'
-          $extracted = Join-Path $env:RUNNER_TEMP 'driver-package-tests'
-          [IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $output 'KasaTapoCrestronDriver.ProcessorTests.pkg'), $extracted)
-          ./tools/Test-DiscoveredCoverage.ps1 -Stage Package -SdkRoot ../CrestronHomeNUnit -PackageAssembly (Join-Path $extracted 'KasaTapoCrestronDriver.ProcessorTests.dll') -SourceInventory TestResults/KasaTapoCrestronDriver.Tests/inventory.json -SuiteCategories @{'kasatapodriver'='unit';'kasatapodriver-lifecycle'='processor';'kasatapodriver-live'='live'} -DiscoveryOnly -ResultsDirectory TestResults
+        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        with:
+          task: tests-tests-validate-all-packaged-suites
+          root: driver
       - uses: actions/upload-artifact@v4
         if: always()
         with:
