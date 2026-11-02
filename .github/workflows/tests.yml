@@ -32,27 +32,27 @@ jobs:
       - name: Install processor packaging tools
         run: ../CrestronHomeNUnit/tools/InstallCiTools.ps1
       - name: Build read-only installed-control probe
-        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        uses: oznetmaster/BuildAutomation@ae6f311e530a18dc705971dcc655fc97de03e368
         with:
           task: tests-tests-build-read-only-installed-control-probe
           root: driver
       - name: Compile optional Android app fixtures
-        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        uses: oznetmaster/BuildAutomation@ae6f311e530a18dc705971dcc655fc97de03e368
         with:
           task: tests-tests-compile-optional-android-app-fixtures
           root: driver
       - name: Verify offline app evidence contracts
-        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        uses: oznetmaster/BuildAutomation@ae6f311e530a18dc705971dcc655fc97de03e368
         with:
           task: tests-tests-verify-offline-app-evidence-contracts
           root: driver
       - name: Verify discovery coverage guards
-        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        uses: oznetmaster/BuildAutomation@ae6f311e530a18dc705971dcc655fc97de03e368
         with:
           task: tests-tests-verify-discovery-coverage-guards
           root: driver
       - name: Run discovered NUnit driver tests
-        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        uses: oznetmaster/BuildAutomation@ae6f311e530a18dc705971dcc655fc97de03e368
         with:
           task: tests-tests-run-discovered-nunit-driver-tests
           root: driver
@@ -67,17 +67,17 @@ jobs:
           "CompactJsonPath=$compact" >> $env:GITHUB_ENV
           "MANIFEST_UTIL_EXE=$(Join-Path $runtime 'ManifestUtil.exe')" >> $env:GITHUB_ENV
       - name: Run discovered desktop SDK lifecycle harness
-        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        uses: oznetmaster/BuildAutomation@ae6f311e530a18dc705971dcc655fc97de03e368
         with:
           task: tests-tests-run-discovered-desktop-sdk-lifecycle-harness
           root: driver
       - name: Build processor package
-        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        uses: oznetmaster/BuildAutomation@ae6f311e530a18dc705971dcc655fc97de03e368
         with:
           task: tests-tests-build-processor-package
           root: driver
       - name: Validate all packaged suites
-        uses: oznetmaster/BuildAutomation@6f20e1937d3bab8ba7e545a3a77b6fe689f63f2e
+        uses: oznetmaster/BuildAutomation@ae6f311e530a18dc705971dcc655fc97de03e368
         with:
           task: tests-tests-validate-all-packaged-suites
           root: driver
