@@ -11,6 +11,15 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## 2.1.5 publication - 2026-11-02
+
+- Publish GitHub/NuGet 2.1.5 with driver 2.1.005.0000, higher than the recorded 2.1.004.0001 outlet-feedback test. The production C# sources are unchanged from the customer-confirmed test fix. Update the README, changelog, release notes and illustrated help; preserve the support-form link and existing screenshots. Keep customer correspondence private.
+- Hosted validation of source 5da2651b6958fd68622958fe92b0c565fc1baf46 passes 34 portable and 84 desktop SDK lifecycle cases with no failures/skips, packaged discovery, workflow discovery and NUnit policy. Native run 41545675016 on HPNEIL passes its required suites and confirms temporary instance/storage cleanup and processor lease release. Synthetic processor suites remain separate from the customer's CP4-R/Kasa-app/two-tile report.
+- Install the exact frozen Release package on the existing demo-only lab platform without load commands or reboot. A post-update full-inventory request times out; a fresh read-only connection confirms installed version, online/ready state, readable inventory and processor-stored package bytes. Preserve that limitation: this follow-up is not a retained pre/post-inventory comparison.
+- Freeze all five release assets and promote them without rebuilding through Trusted Publishing run 41547019023, reusing completed validation with bounded evidence notes. The first dispatch 41546826997 stops before NuGet login because its reuse reason exceeds 500 characters; the corrected dispatch retains the same source, immutable tag and artifact bytes.
+- Independently download and verify all GitHub assets, all seven normal customer files, and the server-signed NuGet archive. Check feed search and the community driver manifest; permit only the NuGet repository-signature addition when comparing package entries. Installer self-tests (10) and loopback SFTP checks (4) pass. Prepare an updated customer email with the normal-build download link; it is not sent automatically.
+
+
 ## 2.1.4 publication - 2026-10-28
 
 - Publish the normal customer download and GitHub 2.1.4 release with driver 2.1.004.0000, preserving the approved driver, uploader and Windows ZIP bytes. Finalize the README/changelog wording in the NuGet and documentation wrappers before distribution. Independently download all seven customer files and all five GitHub assets and verify their exact checksums. Keep correspondence and raw lab evidence private.
