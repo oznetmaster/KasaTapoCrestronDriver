@@ -158,19 +158,34 @@
       "channel": "test",
       "publicVersion": null,
       "driverVersion": "2.1.004.0001",
-      "status": "prepared",
+      "status": "distributed",
       "date": "2026-11-02",
       "purpose": "Customer test: confirmed outlet state-transition events for commands and external changes; no device identity or programming ID changes",
       "buildConfiguration": "Release",
       "packageSha256": "0492b77c3c3d6f7fea912e02528cf35932168c3512a8d21c09fcc0907f9f6fcb",
-      "url": null,
+      "url": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.004.0001/",
       "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.004.0001/",
       "validation": {
         "desktopSdkOffline": 84,
         "productionPortable": 34,
         "newFeedbackRegressions": 15,
         "liveCustomerPlugTested": false,
-        "newProcessorRun": false
+        "newProcessorRun": false,
+        "installerChecks": 10,
+        "loopbackChecks": 4
+      },
+      "sourceCommit": "8302307e4b21089d2305b9e5c479da3bdbd67e7f",
+      "uploaderSha256": "ca7959db4abe23865d3b465ef1a68c538fcdaac11f4b195e800bdee1a2d72fd1",
+      "downloadSha256": "2fde070ee0b30b3b9877c92d696005e87d28658dc3721573a54faf8bdd43dbe6",
+      "publicationCommit": "2644d6b4c2a004f665d5f83f99b30507fa5422e9",
+      "verifiedAtUtc": "2026-11-02T18:08:46.665931+00:00",
+      "ci": {
+        "testsRun": 41496739040,
+        "discoveryRun": 41496738946,
+        "policyRun": 41496740130,
+        "allPassed": true,
+        "processorPackageDiscoveryPassed": true,
+        "processorExecution": false
       }
     }
   ],
