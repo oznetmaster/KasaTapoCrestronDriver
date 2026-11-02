@@ -28,17 +28,19 @@ TP-Link, Kasa, and Tapo are trademarks of their respective owners. This project 
 
 ---
 
-## GitHub and NuGet release 2.1.4
+## GitHub and NuGet release 2.1.5
 
-The GitHub/NuGet release is **2.1.4**, with Crestron driver version **2.1.004.0000**. The Crestron catalog entry above remains the published 2.1.2 release until Crestron publishes an update. NuGet 2.1.3 was a documentation-only wrapper update containing the unchanged 2.1.2 driver.
+The GitHub/NuGet release is **2.1.5**, with Crestron driver version **2.1.005.0000**. This is higher than customer test build **2.1.004.0001**. The Crestron catalog entry above is separate from GitHub/NuGet publication. NuGet 2.1.3 was a documentation-only wrapper containing the unchanged 2.1.2 driver.
 
-This update fixes on/off control for devices identified by KasaTapoClient as SMART dimmers, including the HS220 and KS225. Dimming and power are separate device operations: the driver now uses the dimmer power command when Crestron Home requests a power change. Existing bulbs, strips and non-dimmable switches retain their power commands. KasaTapoClient remains at 2.0.1.
+This patch fixes plain-outlet feedback. `outletTurnedOn` and `outletTurnedOff` now follow confirmed device-state transitions, including Kasa/Tapo app or physical-control changes detected by polling. Commands that fail, acknowledgements without a state change, and unchanged polls no longer generate misleading transition events. The first successful read publishes initial state without inventing a transition.
 
-Crestron Home conveys dimmer on/off through its level command. A zero level turns the load off. A full-level command while off turns it on at its retained brightness; a full-level command while already on sets brightness to 100%. This preserves the existing native dimmer behavior.
+Third-party toggle tiles still require event-to-feedback programming using their own state/display actions; see [Outlet feedback and third-party tiles](#outlet-feedback-and-third-party-tiles). Enable **Enable Light Polling** for external changes. Outlets use **Light Poll Interval (Seconds)**, normally 15 seconds.
 
-Update the existing platform driver in Home Setup or Configure Pro after importing the package. Importing the package alone does not update the running driver. Recreating the platform or its children is not a routine update step. If existing children remain offline, contact [support](https://oznetmaster.github.io/support/) before removing configured devices, which can affect room assignments, scenes and programming.
+The fix was confirmed by a customer on a CP4-R with 10-second polling and both Ultamation and Control Programming LLC toggle tiles. That report covers Crestron Home control and feedback for Kasa-app changes. The plug model and a physical-button test were not specified. Automated SDK tests separately cover standalone plugs, strip sockets, command failures, retries, unchanged state and startup behavior.
 
-The temporary diagnostic file logger and diagnostic-log download are retired. Both Debug and Release builds use the existing Crestron Home logging path without that file sink. Previously distributed diagnostic downloads are preserved unchanged.
+Existing device identities and programmable IDs are retained. Light/dimmer control paths and the 2.1.4 SMART-dimmer power fix are retained; KasaTapoClient remains at 2.0.1 and Crestron.DeviceDrivers.DevKit remains at 29.0.10.
+
+Import the package, then update the existing platform driver in Home Setup or Configure Pro. Importing alone does not update the active driver. Removing and re-adding the platform or its children is not a routine update step. Contact [support](https://oznetmaster.github.io/support/) before deleting configured devices, which can affect rooms, scenes and programming.
 
 ## Driver Architecture
 
@@ -97,7 +99,7 @@ Known dimmable plug models (for example, `P135`) are always treated as lights an
 ### Outlet feedback and third-party tiles
 
 `outletIsOn` reports the last successfully read device state. The outlet's own UI uses this
-state directly. In the outlet-feedback test build, `outletTurnedOn` and `outletTurnedOff`
+state directly. From version 2.1.5, `outletTurnedOn` and `outletTurnedOff`
 fire once per confirmed transition, after the state, status and icon have been updated.
 Issuing a command, receiving an acknowledgement without a matching state change, or
 repeating an unchanged poll does not generate a transition event. The first successful
@@ -247,7 +249,7 @@ This driver communicates with TP-Link Kasa and Tapo devices using the independen
 
 The dedicated [submission test project](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.SubmissionTests/README.md) uses the published shared NUnit fixture for IDE and CI execution. Endurance requires explicit selection; documents and delivery remain a separate phase.
 
-The test projects use NUnit 5.0.0, NUnit3TestAdapter 6.3.0, Microsoft.NET.Test.Sdk 18.10.1 and NUnit.Analyzers 4.15.0. The workflow project uses CrestronHomeNUnit.TestAdapter 2.0.0. See the [test README](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.Tests/README.md) for local commands and live-test configuration. The `net472` project includes 34 ordinary tests and 58 processor lifecycle cases; the desktop lifecycle project runs those 58 cases with the desktop-compatible SDK. The repository `.runsettings` excludes the `Processor` category on Windows.
+The test projects use NUnit 5.0.0, NUnit3TestAdapter 6.3.0, Microsoft.NET.Test.Sdk 18.10.1 and NUnit.Analyzers 4.15.0. The workflow project uses CrestronHomeNUnit.TestAdapter 3.0.0. See the [test README](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.Tests/README.md) for local commands and live-test configuration. The `net472` project includes 34 ordinary tests and 84 processor lifecycle cases; the desktop lifecycle project runs those 84 cases with the desktop-compatible SDK. The repository `.runsettings` excludes the `Processor` category on Windows.
 
 Build **KasaTapoCrestronDriver.ProcessorTests** in the existing solution to create the separate **Utility / KasaTapoCrestronDriver Tests** package. It runs the shared tests against the real driver and SDK on the processor, using simulated responses without operating live devices. Deployment settings and machine paths remain locally excluded. See [processor test instructions](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.ProcessorTests/README.md).
 
@@ -256,7 +258,7 @@ Build **KasaTapoCrestronDriver.ProcessorTests** in the existing solution to crea
 
 Download `KasaTapoCrestronDriver.ProcessorTests.pkg` from a release titled **KasaTapoCrestronDriver Tests**, then add **Utility â†’ Neil Colvin â†’ KasaTapoCrestronDriver Tests** in Crestron Home Configure. All processor test packages use the **Utility** category. Each has its own standalone Home tile and embedded NUnit host, and can also be selected in the [Windows runner](https://github.com/oznetmaster/CrestronHomeNUnit/releases). The production driver and test package can coexist.
 
-The **Release processor tests** workflow takes an independent test-package version, for example `1.0.0`, and publishes a `processor-tests-v1.0.0` tag. Its assets include the test `.pkg`, exact source revisions, documentation and SHA-256 checksums. It builds only the processor package and its test dependencies, validates all 34 ordinary tests and the 58 desktop lifecycle tests, and validates merged package discovery. Running the 58 lifecycle tests against the processor SDK requires a processor.
+The **Release processor tests** workflow takes an independent test-package version, for example `1.0.0`, and publishes a `processor-tests-v1.0.0` tag. Its assets include the test `.pkg`, exact source revisions, documentation and SHA-256 checksums. It builds only the processor package and its test dependencies, validates all 34 ordinary tests and the 84 desktop lifecycle tests, and validates merged package discovery. Running the 84 lifecycle tests against the processor SDK requires a processor.
 
 This workflow never packs or publishes to NuGet and does not bump the production driver version. The production release workflow ignores test-package releases, and test releases do not replace the latest production release. NUnit 5.0.0 and NUnit3TestAdapter replace MSTest in both test projects. See [test-package third-party notices](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/KasaTapoCrestronDriver.ProcessorTests/THIRD-PARTY-NOTICES.md) for redistributed dependencies.
 

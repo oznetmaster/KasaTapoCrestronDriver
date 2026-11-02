@@ -1,17 +1,29 @@
-# KasaTapoCrestronDriver 2.1.4
+# KasaTapoCrestronDriver 2.1.5
 
-Fixes on/off control for supported SMART dimmers, including HS220 and KS225. The driver uses KasaTapoClient's dimmer-compatible power API, allowing the load to turn on or off independently of its brightness setting.
+Fix plain-outlet feedback so Crestron Home programming receives confirmed state transitions, including changes made outside Home and detected by polling.
 
-- Retains native Crestron Home dimmer behavior: zero turns off, full level from off restores retained brightness, and full level while on sets 100%.
-- Keeps existing bulb, strip and non-dimmable switch power commands. KasaTapoClient remains at 2.0.1 and Crestron.DeviceDrivers.DevKit remains at 29.0.10.
-- Removes the temporary diagnostic file logger from both Debug and Release builds. The Windows uploader no longer offers diagnostic-log collection; normal Crestron Home logging remains available.
+## Changes
 
-GitHub and NuGet use version **2.1.4**; the included Crestron driver is **2.1.004.0000**, higher than the distributed 2.1.002.0002 and 2.1.002.0004 customer-test builds. NuGet 2.1.3 only updated documentation around the unchanged 2.1.2 driver.
+- Raise `outletTurnedOn` / `outletTurnedOff` only after device readback confirms a transition. Publish `outletIsOn`, status and icon before the event.
+- Detect external state changes through the same polling path. Repeated commands, unchanged polls and acknowledgements without a state change do not repeat transition events.
+- Keep the last confirmed state when commands or readbacks fail. A later successful read reports a changed state once. The first successful read establishes the initial state without an on/off event.
+- Serialize outlet commands and resolve queued toggles after preceding readback. A retry retains its original target if an acknowledgement or readback is lost.
+- Update the README, illustrated help and third-party tile feedback instructions. Preserve existing child identities, property/event/command IDs, light/dimmer paths and dependencies: KasaTapoClient 2.0.1 and DevKit 29.0.10.
 
-Import the package, then update the existing KasaTapoPlatform driver in Home Setup or Configure Pro. Importing alone does not update the active driver. Routine updates do not require removing children. If children remain offline, contact support before deleting configured devices.
+## Feedback programming
 
-The earlier customer-test installation recovered after the platform was removed and re-added; the customer reports all loads working correctly. The cause of the earlier missing child configuration is unconfirmed. That recovery does not establish a general upgrade repair, and this release does not rewrite saved child configuration. Physical KS225 operation has not been confirmed in this case.
+The driver's own outlet UI uses its state directly. Unrelated tiles need feedback programming: connect the outlet's **Outlet Turned On** and **Outlet Turned Off** events to that tile's on/off state-display actions, where supported. These actions must not command the plug again. The tile driver determines action names and startup synchronization options; publishing `outletIsOn` does not automatically connect other tiles.
 
-Support: [contact form](https://oznetmaster.github.io/support/).
+Enable **Enable Light Polling** for Kasa/Tapo-app and physical-control changes. Plain outlets share **Light Poll Interval (Seconds)**, whose default is 15 seconds. Feedback follows a successful poll. Initial state is published without replaying transition events.
 
-Source and history: [KasaTapoCrestronDriver](https://github.com/oznetmaster/KasaTapoCrestronDriver).
+## Validation
+
+The customer confirmed test driver 2.1.004.0001 working on a CP4-R with 10-second polling, both Ultamation and Control Programming LLC toggle tiles, and event-to-tile feedback programming. Home control and feedback for Kasa-app changes worked. The plug model and a physical-button test were not reported. This is customer-reported hardware evidence, separate from our automated SDK and processor validation.
+
+## Installation and upgrade
+
+GitHub and NuGet use **2.1.5**; the included Crestron driver is **2.1.005.0000**, higher than all registered customer-test allocations, including 2.1.004.0001. Import the package, then update the existing KasaTapoPlatform driver through Home Setup or Configure Pro. Importing alone does not update the running driver. Removing configured children is not a routine upgrade step.
+
+The NuGet package is a driver distribution wrapper containing the final `.pkg` and community `crestron-driver-package.json` manifest, not a DLL-reference library. GitHub's automatic source archives are not installable driver packages.
+
+Support: [contact form](https://oznetmaster.github.io/support/). Source and history: [KasaTapoCrestronDriver](https://github.com/oznetmaster/KasaTapoCrestronDriver).

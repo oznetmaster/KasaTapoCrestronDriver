@@ -207,6 +207,17 @@
         "diagnosticLoggingDisabled": true,
         "physicalButtonTestExplicitlyReported": false
       }
+    },
+    {
+      "id": "public-2.1.5",
+      "channel": "public",
+      "publicVersion": "2.1.5",
+      "driverVersion": "2.1.005.0000",
+      "status": "prepared",
+      "date": "2026-11-02",
+      "purpose": "Confirmed outlet state-transition feedback, including polled external changes; updated feedback and installation documentation",
+      "packageSha256": null,
+      "url": null
     }
   ],
   "nugetDocumentationPatches": [

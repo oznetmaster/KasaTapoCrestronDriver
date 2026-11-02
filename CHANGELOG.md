@@ -10,10 +10,10 @@ project follows [Semantic Versioning](https://semver.org/).
 
 This changelog records shipped features, fixes, compatibility and runtime dependency changes. See [development and validation history](DEVELOPMENT-HISTORY.md) for tests, CI, build tooling and work not yet released.
 
-## Unreleased
+## [2.1.5](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.5) — 2026-11-02
 
 - Publish outlet on/off events after confirmed device-state transitions, including changes detected from the Kasa/Tapo app or physical controls. Failed commands, unchanged readbacks and repeated polls no longer generate misleading events. Initial state is published without inventing a transition.
-- Document feedback programming and initial-state synchronization for third-party outlet tiles. Customer test build: `2.1.004.0001`; public GitHub/NuGet version remains 2.1.4.
+- Document feedback programming and initial-state synchronization for third-party outlet tiles. Customer confirmed the fix on CP4-R with Ultamation and Control Programming LLC toggle tiles.
 
 ## [2.1.4](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.4) — 2026-10-28
 
