@@ -216,8 +216,9 @@
       "status": "prepared",
       "date": "2026-11-02",
       "purpose": "Confirmed outlet state-transition feedback, including polled external changes; updated feedback and installation documentation",
-      "packageSha256": null,
-      "url": null
+      "packageSha256": "28c778c7b0c56c93181805e6731e979e6a44ea585ff92f9b15e8bc20da74b0d0",
+      "url": null,
+      "sourceCommit": "cc324f6fd01415354f6c09f88c8e8f3a96e13802"
     }
   ],
   "nugetDocumentationPatches": [
