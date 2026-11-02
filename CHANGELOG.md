@@ -10,6 +10,11 @@ project follows [Semantic Versioning](https://semver.org/).
 
 This changelog records shipped features, fixes, compatibility and runtime dependency changes. See [development and validation history](DEVELOPMENT-HISTORY.md) for tests, CI, build tooling and work not yet released.
 
+## Unreleased
+
+- Publish outlet on/off events after confirmed device-state transitions, including changes detected from the Kasa/Tapo app or physical controls. Failed commands, unchanged readbacks and repeated polls no longer generate misleading events. Initial state is published without inventing a transition.
+- Document feedback programming and initial-state synchronization for third-party outlet tiles. Customer test build: `2.1.004.0001`; public GitHub/NuGet version remains 2.1.4.
+
 ## [2.1.4](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.4) — 2026-10-28
 
 - Fix power control for SMART dimmers, including HS220 and KS225, using the client's dimmer-compatible power API. Brightness control and Crestron Home's existing zero/full-level mapping are preserved.

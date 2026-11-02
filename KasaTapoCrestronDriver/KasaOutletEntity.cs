@@ -55,6 +55,9 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	private Task? _pollingTask;
 	private bool _disposed;
 	private readonly CommandActivity _controlActivity = new ();
+	private readonly object _outletStateLock = new ();
+	private readonly SemaphoreSlim _commandGate = new (1, 1);
+	private bool _hasConfirmedOutletState;
 
 	// Read-only diagnostics for automation: physical identity and completion include background retries.
 	[EntityProperty (Id = "controlDeviceId")]
@@ -204,10 +207,6 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	public void OutletOff ()
 		{
 		LogInfo ($"Outlet entity '{ControllerId}' command invoked: outletOff.");
-		OutletIsOn = false;
-		OutletStatus = "Off";
-		OutletIcon = "icGenericDeviceOff";
-		OutletTurnedOff?.Invoke (this, EventArgs.Empty);
 		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => StripOutletControl.SetIsOnAsync (device, _descriptor.ChildId, false, cancellationToken), _lifetimeCancellationSource.Token), "outletOff");
 		}
 
@@ -216,10 +215,6 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	public void OutletOn ()
 		{
 		LogInfo ($"Outlet entity '{ControllerId}' command invoked: outletOn.");
-		OutletIsOn = true;
-		OutletStatus = "On";
-		OutletIcon = "icGenericDeviceOn";
-		OutletTurnedOn?.Invoke (this, EventArgs.Empty);
 		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => StripOutletControl.SetIsOnAsync (device, _descriptor.ChildId, true, cancellationToken), _lifetimeCancellationSource.Token), "outletOn");
 		}
 
@@ -228,14 +223,16 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	public void OutletToggle ()
 		{
 		LogInfo ($"Outlet entity '{ControllerId}' command invoked: outletToggle.");
-		if (OutletIsOn)
+		// Resolve the toggle when its queued operation runs, after any preceding
+		// command's readback, rather than twice against the same pre-command UI state.
+		bool? targetIsOn = null;
+		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) =>
 			{
-			OutletOff ();
-			}
-		else
-			{
-			OutletOn ();
-			}
+			// Retrying a lost acknowledgement/readback must retain the same target.
+			targetIsOn ??= !StripOutletControl.ReadIsOn (device, _descriptor.ChildId);
+			return StripOutletControl.SetIsOnAsync (device, _descriptor.ChildId, targetIsOn.Value, cancellationToken);
+			},
+			_lifetimeCancellationSource.Token), "outletToggle");
 		}
 
 	// ExtensionSetPropertyValueExecutor (extension:setPropertyValue) does not write the property
@@ -661,7 +658,12 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 
 	private void ApplyState (KasaDevice device)
 		{
-		OutletIsOn = StripOutletControl.ReadIsOn (device, _descriptor.ChildId);
+		// A missing state is not confirmation that the outlet is off.
+		bool? reportedIsOn = string.IsNullOrWhiteSpace (_descriptor.ChildId)
+			? device.IsOn
+			: device.GetChild (_descriptor.ChildId!)?.IsOn;
+		if (reportedIsOn.HasValue)
+			ApplyConfirmedOutletState (reportedIsOn.Value);
 		// Parent aggregate energy must not be displayed as one socket's consumption.
 		_energyAvailable = string.IsNullOrWhiteSpace (_descriptor.ChildId) && (device.Energy?.IsAvailable ?? false);
 		HasEnergyReporting = _energyAvailable;
@@ -674,9 +676,30 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			OutletEnergyVoltageVolts = device.Energy!.VoltageVolts ?? 0d;
 			OutletEnergyCurrentAmps = device.Energy!.CurrentAmps ?? 0d;
 			}
-		OutletStatus = OutletIsOn ? "On" : "Off";
-		OutletIcon = OutletIsOn ? "icGenericDeviceOn" : "icGenericDeviceOff";
 		EnsureUiDefinitionMatchesEnergyCapability ();
+		}
+
+	private void ApplyConfirmedOutletState (bool isOn)
+		{
+		lock (_outletStateLock)
+			{
+			bool changed = _hasConfirmedOutletState && OutletIsOn != isOn;
+			_hasConfirmedOutletState = true;
+			OutletIsOn = isOn;
+			OutletStatus = isOn ? "On" : "Off";
+			OutletIcon = isOn ? "icGenericDeviceOn" : "icGenericDeviceOff";
+
+			// The first read establishes the startup baseline. Later confirmed transitions
+			// include app/button changes, command readbacks and recovery after an outage.
+			// Do not announce command intent as device feedback or replay unchanged polls.
+			if (changed)
+				{
+				if (isOn)
+					OutletTurnedOn?.Invoke (this, EventArgs.Empty);
+				else
+					OutletTurnedOff?.Invoke (this, EventArgs.Empty);
+				}
+			}
 		}
 
 	// The entity always starts with the basic (no-navigation, empty-layout) UI definition -
@@ -862,6 +885,19 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 		}
 
 	private async Task ExecuteDeviceCommandAsync (Func<KasaDevice, CancellationToken, Task> action, CancellationToken cancellationToken)
+		{
+		await _commandGate.WaitAsync (cancellationToken).ConfigureAwait (false);
+		try
+			{
+			await ExecuteDeviceCommandCoreAsync (action, cancellationToken).ConfigureAwait (false);
+			}
+		finally
+			{
+			_commandGate.Release ();
+			}
+		}
+
+	private async Task ExecuteDeviceCommandCoreAsync (Func<KasaDevice, CancellationToken, Task> action, CancellationToken cancellationToken)
 		{
 		for (int attempt = 1; ; attempt++)
 			{

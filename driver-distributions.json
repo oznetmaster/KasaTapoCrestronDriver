@@ -152,6 +152,26 @@
       "nugetIndexed": true,
       "nugetPayloadVerified": true,
       "nugetServerSha256": "65f39bf0974c8bb928f5692d32d94f7907ab2c7bf5dbb07423a07c5fb7d0a94b"
+    },
+    {
+      "id": "outlet-feedback-test-2.1.004.0001",
+      "channel": "test",
+      "publicVersion": null,
+      "driverVersion": "2.1.004.0001",
+      "status": "prepared",
+      "date": "2026-11-02",
+      "purpose": "Customer test: confirmed outlet state-transition events for commands and external changes; no device identity or programming ID changes",
+      "buildConfiguration": "Release",
+      "packageSha256": "0492b77c3c3d6f7fea912e02528cf35932168c3512a8d21c09fcc0907f9f6fcb",
+      "url": null,
+      "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.004.0001/",
+      "validation": {
+        "desktopSdkOffline": 84,
+        "productionPortable": 34,
+        "newFeedbackRegressions": 15,
+        "liveCustomerPlugTested": false,
+        "newProcessorRun": false
+      }
     }
   ],
   "nugetDocumentationPatches": [

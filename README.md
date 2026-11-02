@@ -94,6 +94,27 @@ Every plug and every power-strip outlet is always discovered and can be installe
 
 Known dimmable plug models (for example, `P135`) are always treated as lights and do not expose this choice, since a dim level can only ever control a light; a wall switch is likewise always treated as a light in this release — support for treating a wall switch as a plain switched-outlet control is planned for a future release.
 
+### Outlet feedback and third-party tiles
+
+`outletIsOn` reports the last successfully read device state. The outlet's own UI uses this
+state directly. In the outlet-feedback test build, `outletTurnedOn` and `outletTurnedOff`
+fire once per confirmed transition, after the state, status and icon have been updated.
+Issuing a command, receiving an acknowledgement without a matching state change, or
+repeating an unchanged poll does not generate a transition event. The first successful
+read establishes the initial state without generating an on/off event.
+
+For changes made in the Kasa/Tapo app or at the physical device, enable **Enable Light
+Polling**; outlets also use **Light Poll Interval (Seconds)** (15 seconds by default).
+Feedback arrives after a successful poll rather than immediately from the app.
+
+Third-party tiles need their own feedback programming: connect this outlet's **Outlet
+Turned On** and **Outlet Turned Off** events to the tile's respective state-feedback
+actions, where supported. Use actions that update the display without commanding the
+outlet again. Publishing `outletIsOn` does not automatically connect unrelated tiles.
+Initialize a third-party tile from the current `outletIsOn` value using the facilities
+that tile provides; startup snapshots do not replay transition events. The tile's driver
+determines the available action names and initialization options.
+
 ### Known Issue: Configure Pro and Outlet â†” Light Conversion
 
 Converting a child device between **Outlet** and **Light** (in either direction) is fully supported and works correctly for actual device operation — the Room UI tile, on/off control, and (for lights) brightness/color controls all update correctly and immediately, and the change is fully persisted. However, Crestron Home's **Configure Pro** tool has two related display bugs around this conversion that are outside this driver's control:
