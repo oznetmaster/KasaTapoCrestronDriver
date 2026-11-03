@@ -1,6 +1,6 @@
 # Public releases and Crestron submissions
 
-Future public driver packages, NuGet wrappers, documentation ZIPs and other public downloads exclude Crestron submission help PDFs. Public documentation is the README and normal public documentation. Help sources may remain in the repository for preparing a separate Crestron submission.
+Future public driver packages, NuGet wrappers, documentation ZIPs and other public downloads exclude Crestron submission help PDFs. Public documentation is the README and normal public documentation. Kasa/Tapo product releases do not publish a separate documentation ZIP; link to the repository README, changelog and release notes instead. Processor-test distributions remain a separate workflow. Help sources may remain in the repository for preparing a separate Crestron submission.
 
 The release workflows run `tools/Assert-PublicDriverArtifacts.ps1` on the actual artifacts before publication, including frozen/staged, documentation-only and processor-test release paths. The guard recursively checks `.pkg`, `.nupkg`, `.snupkg` and `.zip` files; it rejects PDFs, malformed archives, missing paths and an empty archive selection. It never strips or rewrites a frozen artifact. If the guard fails, fix preparation, stage new bytes and repeat applicable validation before freezing them.
 

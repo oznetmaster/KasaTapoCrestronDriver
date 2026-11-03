@@ -214,7 +214,7 @@ See [CHANGELOG.md](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/ma
 
 ## Help and support
 
-The driver package includes `NeilColvin_Platform_KasaTapo_IP_V2.pdf`, with illustrated setup and operation instructions, device limitations and tested firmware details. Third-party license notices are included in `THIRD-PARTY-NOTICES.txt`.
+Setup, operation, device limitations and feedback programming are documented in this README. See the [changelog](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/CHANGELOG.md) and [release notes](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/RELEASE-NOTES.md) for version-specific changes. A separate product documentation ZIP is not required. Third-party license notices remain included in `THIRD-PARTY-NOTICES.txt`.
 
 Use the [support form](https://oznetmaster.github.io/support/) to contact Neil Colvin without a GitHub account. Include the driver version, device model, processor/app versions and the steps needed to reproduce the problem. Do not include passwords. The [repository](https://github.com/oznetmaster/KasaTapoCrestronDriver) also provides source, documentation and release history.
 

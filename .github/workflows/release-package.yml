@@ -321,6 +321,7 @@ jobs:
         shell: pwsh
         run: |
           ./tools/Assert-PublicDriverArtifacts.ps1 -Path @("artifacts/frozen-release")
+          if (@(Get-ChildItem -LiteralPath "artifacts/frozen-release" -Filter "KasaTapo-*-Documentation.zip" -File).Count) { throw "Omit the redundant product documentation ZIP; use the repository documentation links." }
       - uses: NuGet/login@v1
         id: prepared-login
         with:

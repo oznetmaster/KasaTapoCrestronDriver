@@ -11,6 +11,13 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## Public product documentation cleanup - 2026-11-03
+
+- At the maintainer's request, remove the redundant KasaTapo-2.1.5-Documentation.zip GitHub release asset. Point the release documentation link at the repository README and remove only that archive's checksum listing. Update the current release inventory to match the remaining assets; retain the original manifest and remote metadata in the private cleanup receipt.
+- Future prepared product releases reject the redundant documentation ZIP. Keep the README, changelog and release notes as public documentation; retain required licences in the installable distributions.
+- The driver .pkg, NuGet archive, Windows uploader, immutable release tag and all Crestron submission packages/PDFs remain unchanged. Historical release-validation entries below describe the assets and checks at their original publication time.
+
+
 ## 2.1.5 publication - 2026-11-02
 
 - Publish GitHub/NuGet 2.1.5 with driver 2.1.005.0000, higher than the recorded 2.1.004.0001 outlet-feedback test. The production C# sources are unchanged from the customer-confirmed test fix. Update the README, changelog, release notes and illustrated help; preserve the support-form link and existing screenshots. Keep customer correspondence private.

@@ -21,14 +21,9 @@
       "sha256": "d0f9ab0bedac15ecca84c15389c770f0c9b0da30f2bd2104a061abd696081ebf"
     },
     {
-      "name": "KasaTapo-2.1.5-Documentation.zip",
-      "bytes": 1937581,
-      "sha256": "214ff78b0219248262e1804db84233f0879272770bd72c1c8fe36f8e94f2d0b2"
-    },
-    {
       "name": "KasaTapo-2.1.5-SHA256SUMS.txt",
-      "bytes": 422,
-      "sha256": "a3eac39f3055b97c637c699d3476fb7cc567ac9f8745c108bd325d26a8f58f53"
+      "bytes": 319,
+      "sha256": "888ea4a379c9a2e9baba3a5401c5a7e1f42eef229079bb771b3cba7a11671a51"
     }
   ]
 }
