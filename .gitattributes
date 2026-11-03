@@ -9,3 +9,4 @@ tools/Assert-PublicDriverArtifacts.ps1 text eol=lf
 tools/Test-PublicDriverArtifacts.ps1 text eol=lf
 build/shared/driver-versioning/** text eol=lf
 build/shared/test-coverage/** text eol=lf
+build/shared/nuget-artifacts/** text eol=lf
