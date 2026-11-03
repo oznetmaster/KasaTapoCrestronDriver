@@ -18,6 +18,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: driver
+      - name: Test shared driver versioning policy
+        uses: oznetmaster/BuildAutomation@ae6f311e530a18dc705971dcc655fc97de03e368
+        with:
+          task: driver-versioning-regressions
+          root: driver
       - name: Test public driver packaging policy
         uses: oznetmaster/BuildAutomation@ae6f311e530a18dc705971dcc655fc97de03e368
         with:

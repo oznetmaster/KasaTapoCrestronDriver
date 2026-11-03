@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/oznetmaster/BuildAutomation.git",
+  "commit": "021a2f84f1168ca529072a0b2fe1e335b4c0e10e",
+  "directory": "DriverVersioning",
+  "files": {
+    "Assert-DriverPackageVersion.ps1": "c79e5b62b6bc4c7afecf90a968315a6b0489dc070c0ae6636f87c00095b0d50f",
+    "BumpDriverVersion.ps1": "b31d31fa66ac2a51e380bee544cd4bb4ff44c6f1b13071376eb812464cb49ebc",
+    "DriverVersion.props": "9c42c887205fbe449471585e4b09008c83d39a74c89b4031f6b04a874c6157ba",
+    "Get-DriverReleaseVersion.ps1": "c5608b7997cda0613a5d84e8633be2633c81a35473f985343cc83b9ec87623b9",
+    "Test-DriverVersioning.ps1": "50856cf5dbd4eccb11373af4b417d5e857b0f6d5d29a13f218928065d6f42e81",
+    "Test-SharedDriverVersioning.ps1": "e5e58f0a6220e15da9d9c06b349abcb6679ea9c1e6ca77771a5bc79ceb0695ca",
+    "LICENSE": "254ba2c413da497077d4b7c8b4a38070d9bab0818d40ec8a4d73b456a4ae6818",
+    "NOTICE.md": "61878e4369cbd8b6c49bc16ce44b6606122aa93350013bfad819ac7a84ab93e5",
+    "README.md": "1b9a78228b4db72ba1116e623e0df5822da726cbed672a2bc3b05fce90df145f"
+  }
+}
