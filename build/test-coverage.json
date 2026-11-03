@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/oznetmaster/BuildAutomation.git",
+  "commit": "429d6939d911c2766a4b3bbcb9378335fe6306f2",
+  "directory": "TestCoverage",
+  "files": {
+    "Coverage.ps1": "032dbcd1cfef7300db528434936f240f3aad46f5fb97ea28422e16be648eee44",
+    "Test-Coverage.ps1": "0b487d7e752839181c878465a129dbed284809121ea4751dd229399f284e8c84",
+    "LICENSE": "254ba2c413da497077d4b7c8b4a38070d9bab0818d40ec8a4d73b456a4ae6818",
+    "README.md": "20abd9265f20eac56e76d8b6b54048270c868d75f35c9a57e5b8464f08813ab1"
+  }
+}

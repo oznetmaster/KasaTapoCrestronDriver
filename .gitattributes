@@ -8,3 +8,4 @@ KasaTapoCrestronDriver/IncludeInPkg/THIRD-PARTY-NOTICES.txt -text -whitespace
 tools/Assert-PublicDriverArtifacts.ps1 text eol=lf
 tools/Test-PublicDriverArtifacts.ps1 text eol=lf
 build/shared/driver-versioning/** text eol=lf
+build/shared/test-coverage/** text eol=lf
