@@ -153,6 +153,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Test tag creation failed.' }
           git push --atomic origin HEAD:refs/heads/master "refs/tags/$env:TEST_TAG"
           if ($LASTEXITCODE -ne 0) { throw 'Release push failed; master may have advanced.' }
+      - name: Verify public driver artifact contents
+        shell: pwsh
+        run: |
+          ./tools/Assert-PublicDriverArtifacts.ps1 -Path @("artifacts/release")
       - name: Publish test package on GitHub
         shell: pwsh
         run: |

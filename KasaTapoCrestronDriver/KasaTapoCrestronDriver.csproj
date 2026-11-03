@@ -139,6 +139,8 @@
 	 <RemoveDir Directories="$(TargetDir)patched\IncludeInPkg" />
 	 <ItemGroup>
 		<IncludeInPkgFiles Include="$(MSBuildProjectDirectory)\IncludeInPkg\**\*" Exclude="$(MSBuildProjectDirectory)\IncludeInPkg\**\*.xsd" />
+		<!-- Submission help is added only to a separate frozen Crestron submission copy. -->
+		<IncludeInPkgFiles Remove="@(IncludeInPkgFiles)" Condition="'%(IncludeInPkgFiles.Extension)' == '.pdf'" />
 	 </ItemGroup>
 	 <Copy SourceFiles="@(IncludeInPkgFiles)" DestinationFiles="@(IncludeInPkgFiles->'$(TargetDir)patched\IncludeInPkg\%(RecursiveDir)%(Filename)%(Extension)')" />
 	 <Exec Command="&quot;$(ManifestUtilExe)&quot; --file &quot;$(TargetDir)patched\$(AssemblyName).dll&quot; --lib &quot;$(TargetDir.TrimEnd('\'))&quot; --output &quot;$(TargetDir.TrimEnd('\'))&quot;" ContinueOnError="$(PackageDriverContinueOnError)" IgnoreExitCode="$(PackageDriverIgnoreExitCode)" />

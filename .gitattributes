@@ -3,3 +3,7 @@ licenses/** -text -whitespace
 lib/Renci.SshNet/LICENSE-Renci.SshNet.txt -text -whitespace
 LICENSE -text -whitespace
 KasaTapoCrestronDriver/IncludeInPkg/THIRD-PARTY-NOTICES.txt -text -whitespace
+
+# Preserve shared public packaging script hashes across platforms.
+tools/Assert-PublicDriverArtifacts.ps1 text eol=lf
+tools/Test-PublicDriverArtifacts.ps1 text eol=lf

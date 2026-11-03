@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "oznetmaster/BuildAutomation",
+  "sourceCommit": "55bea5c8d79b38723bd643ae9ca07556d2aad311",
+  "sourceDirectory": "PublicDriverPackaging",
+  "policy": "Crestron submission PDFs are excluded from future public distributions",
+  "files": {
+    "tools/Assert-PublicDriverArtifacts.ps1": "e68b0b6a5a29ebb5c27c3d0b2126687996756c37bd92b19864d7890383363653",
+    "tools/Test-PublicDriverArtifacts.ps1": "3512ed96361ee68f8a12aa546d40282fa34d8bc4e11def2c80f0a2e5eb0c3f9a"
+  }
+}

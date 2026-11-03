@@ -223,6 +223,13 @@ jobs:
 
           "nupkg_path=$($nupkg.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
+      - name: Verify public driver artifact contents
+        shell: pwsh
+        env:
+          PUBLIC_ARTIFACT_0: ${{ steps.package.outputs.pkg_path }}
+          PUBLIC_ARTIFACT_1: ${{ steps.nuget_package.outputs.nupkg_path }}
+        run: |
+          ./tools/Assert-PublicDriverArtifacts.ps1 -Path @($env:PUBLIC_ARTIFACT_0, $env:PUBLIC_ARTIFACT_1)
       - name: Generate short-lived NuGet API key (Trusted Publishing)
         id: nuget_login
         uses: NuGet/login@v1
@@ -310,6 +317,10 @@ jobs:
           gh release download $tag --repo $env:GITHUB_REPOSITORY --dir $directory
           if ($LASTEXITCODE) { throw 'Prepared release download failed.' }
           ./tools/Test-FrozenRelease.ps1 -ArtifactDirectory $directory
+      - name: Verify public driver artifact contents
+        shell: pwsh
+        run: |
+          ./tools/Assert-PublicDriverArtifacts.ps1 -Path @("artifacts/frozen-release")
       - uses: NuGet/login@v1
         id: prepared-login
         with:
@@ -350,6 +361,10 @@ jobs:
           name: nuget-documentation-patch
           path: artifacts/nuget-documentation/*
           if-no-files-found: error
+      - name: Verify public driver artifact contents
+        shell: pwsh
+        run: |
+          ./tools/Assert-PublicDriverArtifacts.ps1 -Path @("artifacts/nuget-documentation")
       - uses: NuGet/login@v1
         id: documentation-login
         with:

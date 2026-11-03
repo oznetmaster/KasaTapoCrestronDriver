@@ -118,6 +118,19 @@
           "shell": "pwsh"
         }
       ]
+    },
+    "public-driver-packaging-regressions": {
+      "commands": [
+        {
+          "executable": "pwsh",
+          "arguments": [
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            "tools/Test-PublicDriverArtifacts.ps1"
+          ]
+        }
+      ]
     }
   }
 }
