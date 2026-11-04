@@ -114,7 +114,7 @@ Turned On** and **Outlet Turned Off** events to the tile's respective state-feed
 actions, where supported. Use actions that update the display without commanding the
 outlet again. Publishing `outletIsOn` does not automatically connect unrelated tiles.
 Initialize a third-party tile from the current `outletIsOn` value using the facilities
-that tile provides; startup snapshots do not replay transition events. Lights likewise establish their initial readable properties without change notifications; their processor colour/white baseline is synchronized before readiness. Only subsequent confirmed changes generate notifications. The tile's driver
+that tile provides; startup snapshots do not replay transition events. Lights likewise establish their initial readable power, level and colour channels without change notifications; their processor colour/white baseline is synchronized before readiness. Only subsequent confirmed changes generate notifications. The tile's driver
 determines the available action names and initialization options.
 
 ### Confirmed light and sensor feedback (unreleased)

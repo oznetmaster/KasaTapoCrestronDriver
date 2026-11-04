@@ -159,7 +159,7 @@ public sealed class LightRefreshPublicationTests
         using var device = new KasaDevice(new DeviceConfiguration("127.0.0.1"), transport);
         await device.UpdateAsync();
         var settings = new PlatformSharedConfiguration();
-        settings.Update("", "", TimeSpan.FromSeconds(5), false, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30), true, "fixture-host", "fixture-user", "fixture-password");
+        settings.Update("", "", TimeSpan.FromSeconds(5), false, TimeSpan.FromMilliseconds(50), TimeSpan.FromSeconds(30), true, "fixture-host", "fixture-user", "fixture-password");
         using var logger = new DriverLogger("awaited-baseline-test");
         var resources = new DriverImplementationResources { Logger = logger, InitLogger = logger.GetComponentLogger("test", "awaited-baseline") };
         var descriptor = new ManagedLightDescriptor("fixture-light", "127.0.0.1", device.DeviceType, "Fixture light", "KL130", "fixture-bulb", ManagedLightKind.Color);
@@ -184,6 +184,7 @@ public sealed class LightRefreshPublicationTests
         try
         {
             Assert.That(await Task.WhenAny(entered.Task, Task.Delay(TimeSpan.FromSeconds(5))), Is.SameAs(entered.Task));
+            await Task.Delay(200); // Let offline-recovery polling run while the baseline operation is held.
             Assert.That(initialize.IsCompleted, Is.False, "Readiness must wait for the processor baseline operation.");
             var pending = light.GetState().PropertyValues;
             Assert.That(pending["onlineIndicator:isOnline"].GetValue<bool>(), Is.False);

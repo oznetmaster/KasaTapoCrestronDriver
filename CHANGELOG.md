@@ -12,6 +12,8 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 
 ## Unreleased
 
+- Keep recovery polling from marking a light ready while its initial processor-baseline synchronization is still pending.
+
 - Convert the relative light level to percentage correctly when synchronizing the processor baseline, preventing a 60% light from being restored at 1%.
 
 - Establish readable initial light properties without change notifications. Preserve awaited processor colour/white baseline synchronization before readiness; subsequent confirmed changes still notify Home.

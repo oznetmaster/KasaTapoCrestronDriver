@@ -69,4 +69,4 @@ Failed observation windows retain their failure evidence and package archive.
 
 ### Startup baseline
 
-Light initialization sets all readable state without `ValuesChanged` notifications. With the processor baseline workaround enabled, initialization awaits synchronization of confirmed mode, level and active colour channels before online/ready. First state is a baseline; subsequent confirmed transitions notify Home. Native installed-driver programming must separately verify quiet startup and unchanged polling.
+Light initialization sets readable light power, level and colour channels without `ValuesChanged` notifications. Availability is announced after the initial baseline completes. With the processor baseline workaround enabled, initialization awaits synchronization of confirmed mode, level and active colour channels before online/ready. First state is a baseline; subsequent confirmed transitions notify Home. Native installed-driver programming must separately verify quiet startup and unchanged polling.

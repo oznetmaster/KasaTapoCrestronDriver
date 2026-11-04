@@ -183,6 +183,9 @@ internal partial class KasaLightEntity
 
 	public async Task RefreshAsync (CancellationToken cancellationToken)
 		{
+		// The startup owner retries initial connection and awaits processor baseline synchronization.
+		// Recovery polling must not race it and mark a partly initialized light online/ready.
+		if (!_initialStateEstablished) return;
 		try
 			{
 			await RefreshAndApplyStateAsync (cancellationToken).ConfigureAwait (false);
@@ -456,9 +459,9 @@ internal partial class KasaLightEntity
 			if (establishingBaseline)
 				{
 				_initialStateEstablished = true;
-				// Dynamic capabilities already announced their initial channel values. Re-announcing
-				// the definition here makes Home replay its native Level Changed programming.
-				// Only advertise availability after the complete baseline has been established.
+				// Dynamic registration already announced the initial channel definition.
+				// Readiness changes availability, not the definition or the light channels.
+				// Home can independently raise native events when binding/connecting a Load.
 				PublishProperty ("onlineIndicator:isOnline", new DriverEntityValue (OnlineIndicatorIsOnline), "StartupAvailability");
 				PublishProperty ("readyIndicator:isReady", new DriverEntityValue (ReadyIndicatorIsReady), "StartupAvailability");
 				}
