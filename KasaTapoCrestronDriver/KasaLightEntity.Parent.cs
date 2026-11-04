@@ -23,18 +23,31 @@ internal partial class KasaLightEntity : IParentDeviceChild
             ((IParentDeviceChild)this).ApplyConnectionState(false);
             return;
         }
-        _connectedDevice = parentDevice;
-        UpdateDescriptorFromConnectedDevice(parentDevice);
-        ConfigureDynamicFeatures(parentDevice, _descriptor);
-        ApplyState(parentDevice);
-        OnlineIndicatorIsOnline = true;
-        ReadyIndicatorIsReady = true;
+        bool establishingBaseline = !_initialStateEstablished;
+        bool previousSuppression = _suppressPropertyNotifications;
+        if (establishingBaseline) _suppressPropertyNotifications = true;
+        try
+        {
+            _connectedDevice = parentDevice;
+            UpdateDescriptorFromConnectedDevice(parentDevice);
+            ConfigureDynamicFeatures(parentDevice, _descriptor);
+            ApplyState(parentDevice);
+            OnlineIndicatorIsOnline = true;
+            ReadyIndicatorIsReady = true;
+            if (establishingBaseline)
+            {
+                _initialStateEstablished = true;
+                RaiseDefinitionChangedEvent();
+            }
+        }
+        finally { _suppressPropertyNotifications = previousSuppression; }
 
     }
 
     void IParentDeviceChild.ApplyConnectionState(bool online)
     {
         if (_disposed || !_isConfigured || Volatile.Read(ref _stopState) != 0) return;
+        if (!_initialStateEstablished) return;
         OnlineIndicatorIsOnline = online;
         ReadyIndicatorIsReady = online;
 

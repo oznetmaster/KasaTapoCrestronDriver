@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin. See LICENSE in the repository root.
+// Copyright (c) 2026 Neil Colvin. See LICENSE in the repository root.
 using Crestron.DeviceDrivers.EntityModel.Data;
 using Crestron.DeviceDrivers.SDK;
 using KasaTapoClient;
@@ -93,6 +93,22 @@ public sealed class LightFeedbackTests
         while (!predicate()) await Task.Delay(10, timeout.Token);
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task OnOffLightInitializationSetsBaselineWithoutEvents(bool on)
+    {
+        using var f = new Fixture(on, onOffOnly: true);
+        var updates = new List<string>();
+        f.Light.ValuesChanged += (_, e) => updates.AddRange(e.Update.Changes.Keys);
+        await f.Initialize();
+        f.Light.NotifyChildPublished(); f.Light.NotifyChildRunning("fixture");
+        await f.Light.RefreshAsync(default);
+        Assert.That(f.Light.GetState().PropertyValues["light:isOn"].GetValue<bool>(), Is.EqualTo(on));
+        Assert.That(updates, Is.Empty);
+        f.Transport.On = !on;
+        await f.Light.RefreshAsync(default);
+        Assert.That(updates.Count(id => id == "light:isOn"), Is.EqualTo(1));
+    }
     [TestCase(true, 0d, 0d)]
     [TestCase(false, 1d, .4d)]
     [TestCase(true, .75d, .75d)]

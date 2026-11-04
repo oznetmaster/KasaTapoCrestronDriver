@@ -52,7 +52,7 @@ hub without changing reporting intervals or double-click preferences. It establi
 sensor/log baselines and checks properties, status, icon and availability inside callbacks.
 
 When `LIVE HUB LISTENER READY` appears, operate the button, open/close the contact and trigger
-motion, then move away until motion clears. The default window is 180 seconds. The required
+motion, then move away until motion clears. The default window is 300 seconds. The required
 observations are `buttonTriggered`, `contactOpened`, `contactClosed`, `motionDetectedEvent`
 and `motionCleared`. Unobserved required transitions fail the test; an idle observation window
 does not count as a pass. Additional observed button gestures and alarms are recorded.
@@ -66,3 +66,7 @@ also have repeatable fixture coverage on the workstation and processor.
 The normal processor workflow retains exact source/package identity, result files and traces.
 It removes its temporary instance and releases the processor lease after confirmed completion.
 Failed observation windows retain their failure evidence and package archive.
+
+### Startup baseline
+
+Light initialization sets all readable state without `ValuesChanged` notifications. With the processor baseline workaround enabled, initialization awaits synchronization of confirmed mode, level and active colour channels before online/ready. First state is a baseline; subsequent confirmed transitions notify Home. Native installed-driver programming must separately verify quiet startup and unchanged polling.

@@ -270,9 +270,19 @@
       "channel": "public",
       "publicVersion": "2.1.7",
       "driverVersion": "2.1.007.0000",
+      "status": "withdrawn",
+      "date": "2026-11-04",
+      "purpose": "Unpublished lab candidate; unchanged-poll acceptance passed, then startup policy was revised to suppress initial native light events",
+      "packageSha256": "f6bb4297f177a7f2bfc9755b8817e0a5ee94504c368c617fa27f9fe53512892b"
+    },
+    {
+      "id": "public-2.1.8",
+      "channel": "public",
+      "publicVersion": "2.1.8",
+      "driverVersion": "2.1.008.0000",
       "status": "prepared",
       "date": "2026-11-04",
-      "purpose": "Unpublished Release candidate including confirmed event ordering and suppression of unchanged native light polling notifications; lab acceptance pending"
+      "purpose": "Unpublished lab candidate: silent initial light baseline, awaited processor colour/white baseline synchronization, confirmed changes only; acceptance pending"
     }
   ],
   "nugetDocumentationPatches": [

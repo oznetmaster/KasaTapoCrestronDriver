@@ -111,4 +111,96 @@ public sealed class LightRefreshPublicationTests
         light.Stop();
         Assert.That(updates, Is.Empty, "Actual scheduled polls must not replay native light events for unchanged values.");
     }
+
+    [TestCase(false, 0)]
+    [TestCase(true, 0)]
+    [TestCase(false, 4000)]
+    [TestCase(true, 4000)]
+    public async Task InitializationSetsReadableBaselineWithoutChangeNotifications(bool on, int kelvin)
+    {
+        var transport = new Transport { On = on, Kelvin = kelvin };
+        using var device = new KasaDevice(new DeviceConfiguration("127.0.0.1"), transport);
+        await device.UpdateAsync();
+        var settings = new PlatformSharedConfiguration();
+        settings.Update("", "", TimeSpan.FromSeconds(5), false, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30), false, "", "", "");
+        using var logger = new DriverLogger("initial-baseline-test");
+        var resources = new DriverImplementationResources { Logger = logger, InitLogger = logger.GetComponentLogger("test", "initial-baseline") };
+        var descriptor = new ManagedLightDescriptor("fixture-light", "127.0.0.1", device.DeviceType, "Fixture light", "KL130", "fixture-bulb", ManagedLightKind.Color);
+        using var light = new KasaLightEntity("fixture-light", descriptor, device.Configuration, null, settings, null, resources, null!, "initial-baseline-test");
+        var updates = new List<string>();
+        light.ValuesChanged += (_, e) => updates.AddRange(e.Update.Changes.Keys);
+        Assert.That(light.TryAttachConnectedDevice(device, "fixture"), Is.True);
+        await light.SetConfiguredAsync(true, "fixture", default);
+        light.NotifyChildPublished();
+        light.NotifyChildRunning("fixture");
+        await light.RefreshAsync(default);
+        Assert.That(updates, Is.Empty, "Construction, initialization, publication and Running must not announce startup state as a change.");
+        var baseline = light.GetState().PropertyValues;
+        Assert.That(baseline["onlineIndicator:isOnline"].GetValue<bool>(), Is.True);
+        Assert.That(baseline["readyIndicator:isReady"].GetValue<bool>(), Is.True);
+        Assert.That(baseline["lightDimmer:level"].GetValue<double>(), Is.EqualTo(on ? .6 : 0));
+        Assert.That(baseline["lightEmulatedColorTemperature:level"].GetValue<long>(), Is.EqualTo(kelvin > 0 ? kelvin : 2500));
+        Assert.That(baseline["lightColor:hue"].GetValue<double>(), Is.EqualTo(kelvin > 0 ? 0 : 210d / 359d).Within(.001));
+        transport.On = !on;
+        await light.RefreshAsync(default);
+        Assert.That(updates.Count(id => id == "lightDimmer:level"), Is.EqualTo(1), "A subsequent confirmed transition must still be published once.");
+    }
+
+    [TestCase(false, 0)]
+    [TestCase(true, 0)]
+    [TestCase(false, 4000)]
+    [TestCase(true, 4000)]
+    public async Task StartupAwaitsProcessorBaselineWithConfirmedChannelsBeforeReadiness(bool on, int kelvin)
+    {
+        var transport = new Transport { On = on, Kelvin = kelvin };
+        using var device = new KasaDevice(new DeviceConfiguration("127.0.0.1"), transport);
+        await device.UpdateAsync();
+        var settings = new PlatformSharedConfiguration();
+        settings.Update("", "", TimeSpan.FromSeconds(5), false, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30), true, "fixture-host", "fixture-user", "fixture-password");
+        using var logger = new DriverLogger("awaited-baseline-test");
+        var resources = new DriverImplementationResources { Logger = logger, InitLogger = logger.GetComponentLogger("test", "awaited-baseline") };
+        var descriptor = new ManagedLightDescriptor("fixture-light", "127.0.0.1", device.DeviceType, "Fixture light", "KL130", "fixture-bulb", ManagedLightKind.Color);
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        string? actualName = null;
+        ProcessorLightTuningMode actualMode = default;
+        double actualLevel = -1, actualHue = -1, actualSaturation = -1;
+        long actualKelvin = -1;
+        Task Synchronize(string name, ProcessorLightTuningMode mode, double level, double hue, double saturation, long temperature, CancellationToken token)
+        {
+            actualName = name; actualMode = mode; actualLevel = level;
+            actualHue = hue; actualSaturation = saturation; actualKelvin = temperature;
+            entered.TrySetResult(true);
+            return release.Task;
+        }
+        using var light = new KasaLightEntity("fixture-light", descriptor, device.Configuration, null, settings, Synchronize, resources, null!, "awaited-baseline-test");
+        var updates = new List<string>();
+        light.ValuesChanged += (_, e) => updates.AddRange(e.Update.Changes.Keys);
+        Assert.That(light.TryAttachConnectedDevice(device, "fixture"), Is.True);
+        Task initialize = light.SetConfiguredAsync(true, "fixture", default);
+        try
+        {
+            Assert.That(await Task.WhenAny(entered.Task, Task.Delay(TimeSpan.FromSeconds(5))), Is.SameAs(entered.Task));
+            Assert.That(initialize.IsCompleted, Is.False, "Readiness must wait for the processor baseline operation.");
+            var pending = light.GetState().PropertyValues;
+            Assert.That(pending["onlineIndicator:isOnline"].GetValue<bool>(), Is.False);
+            Assert.That(pending["readyIndicator:isReady"].GetValue<bool>(), Is.False);
+            Assert.That(actualName, Is.EqualTo("Fixture bulb"));
+            Assert.That(actualMode, Is.EqualTo(kelvin > 0 ? ProcessorLightTuningMode.White : ProcessorLightTuningMode.Color));
+            Assert.That(actualLevel, Is.EqualTo(on ? .6 : 0));
+            Assert.That(actualHue, Is.EqualTo(kelvin > 0 ? 0 : 210d / 359d).Within(.001));
+            Assert.That(actualSaturation, Is.EqualTo(kelvin > 0 ? 0 : .8));
+            Assert.That(actualKelvin, Is.EqualTo(kelvin > 0 ? kelvin : 2500));
+            Assert.That(updates, Is.Empty, "Correcting the processor baseline must not emit initial driver transitions.");
+        }
+        finally { release.TrySetResult(true); await initialize; }
+        var ready = light.GetState().PropertyValues;
+        Assert.That(ready["onlineIndicator:isOnline"].GetValue<bool>(), Is.True);
+        Assert.That(ready["readyIndicator:isReady"].GetValue<bool>(), Is.True);
+        Assert.That(ready["lightDimmer:level"].GetValue<double>(), Is.EqualTo(actualLevel));
+        Assert.That(ready["lightColor:hue"].GetValue<double>(), Is.EqualTo(actualHue));
+        Assert.That(ready["lightColor:saturation"].GetValue<double>(), Is.EqualTo(actualSaturation));
+        Assert.That(ready["lightEmulatedColorTemperature:level"].GetValue<long>(), Is.EqualTo(actualKelvin));
+        Assert.That(updates, Is.Empty);
+    }
 }

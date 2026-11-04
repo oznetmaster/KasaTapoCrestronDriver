@@ -12,6 +12,8 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 
 ## Unreleased
 
+- Establish readable initial light properties without change notifications. Preserve awaited processor colour/white baseline synchronization before readiness; subsequent confirmed changes still notify Home.
+
 - Stop forced light-state notifications on unchanged scheduled polls and shared parent updates, preventing native Home level programming from replaying. Publish retained colour channels once when a confirmed white/colour mode switch requires them.
 
 - Report light/dimmer power, brightness and colour changes only after device readback. Keep requested slider/channel values separate from confirmed feedback; ignored commands and failed reads retain the last confirmed state.

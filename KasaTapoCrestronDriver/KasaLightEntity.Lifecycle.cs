@@ -121,30 +121,14 @@ internal partial class KasaLightEntity
 
 	public void NotifyChildPublished ()
 		{
-		if (_disposed)
-			{
-			return;
-			}
-
-		_childPublished = true;
-		TryPublishDeferredStartupSnapshot ("NotifyChildPublished");
+		// Home reads the initialized property baseline through GetState. Publication is
+		// not a physical state change and must not replay level/state notifications.
 		}
 
 	public void NotifyChildRunning (string context)
 		{
-		if (_disposed)
-			{
-			return;
-			}
-
-		if (_connectedDevice is null)
-			{
-			LogInfo ($"Light entity '{ControllerId}' child reached Running before connected device state was available; deferring current state snapshot; context='{context}'.");
-			return;
-			}
-
-		LogInfo ($"Light entity '{ControllerId}' child reached Running with connected device state available; republishing current state snapshot; context='{context}'.");
-		PublishStateSnapshot ();
+		// Running does not change any confirmed light value. In particular, do not force
+		// the initial level through ValuesChanged: Home turns that into native events.
 		}
 
 	public void ApplyRuntimeConfiguration (PlatformSharedConfigurationSnapshot previousConfiguration, PlatformSharedConfigurationSnapshot currentConfiguration)
@@ -269,7 +253,6 @@ internal partial class KasaLightEntity
 		KasaDevice? staleDevice = _connectedDevice;
 		LogInfo ($"Light entity '{ControllerId}' ResetConnectionState: hadConnectedDevice={staleDevice is not null}, flipIndicatorsOffline={flipIndicatorsOffline}.");
 		_connectedDevice = null;
-		_pendingStartupSnapshotAfterConnectedState = false;
 
 		// A single failed attempt that will be immediately retried (see ExecuteDeviceCommandAsync)
 		// should not visibly flap the UI to offline - a transient one-off TCP connect hiccup (e.g.
@@ -331,25 +314,6 @@ internal partial class KasaLightEntity
 			{
 			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' failed to dispose deferred stale connected device: {ex}");
 			}
-		}
-
-	private void TryPublishDeferredStartupSnapshot (string context)
-		{
-		if (!_pendingStartupSnapshotAfterConnectedState || !_childPublished)
-			{
-			return;
-			}
-
-		_pendingStartupSnapshotAfterConnectedState = false;
-		LogInfo ($"Light entity '{ControllerId}' publishing deferred startup snapshot after connected state and child publication were both satisfied; context='{context}'.");
-		PublishStateSnapshot ();
-
-		// Diagnostic: unlike LogDynamicFeatureEntityState (which only ever logs once, before this
-		// startup snapshot is published), capture the full GetState() payload - the actual combined
-		// definition/value contract Crestron Home receives - immediately after this deferred
-		// snapshot so a mismatched initial UI mode can be correlated against exactly what was sent,
-		// not just the individual PublishProperty calls logged elsewhere.
-		LogEntityStateSnapshot ($"TryPublishDeferredStartupSnapshot.{context}");
 		}
 
 	private static bool HasMaterialConfigurationChange (DeviceConfiguration previousConfiguration, DeviceConfiguration currentConfiguration)
@@ -483,20 +447,33 @@ internal partial class KasaLightEntity
 
 	private async Task InitializeConnectedStateAsync (CancellationToken cancellationToken)
 		{
+		bool establishingBaseline = !_initialStateEstablished;
+		bool previousSuppression = _suppressPropertyNotifications;
+		if (establishingBaseline) _suppressPropertyNotifications = true;
+		try
+			{
+			await InitializeConnectedStateCoreAsync (cancellationToken).ConfigureAwait (false);
+			if (establishingBaseline)
+				{
+				_initialStateEstablished = true;
+				// Refresh the readable definition/state only after every startup value is set.
+				// This is initialization, not a ValuesChanged transition notification.
+				RaiseDefinitionChangedEvent ();
+				}
+			}
+		finally
+			{
+			_suppressPropertyNotifications = previousSuppression;
+			}
+		}
+
+	private async Task InitializeConnectedStateCoreAsync (CancellationToken cancellationToken)
+		{
 		KasaDevice device = await EnsureConnectedAsync (cancellationToken).ConfigureAwait (false);
 		ConfigureDynamicFeatures (device, _descriptor);
 		LogReportedState ("InitializeConnectedState", device);
 
-		bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
-		_suppressPropertyNotifications = true;
-		try
-			{
-			ApplyState (device);
-			}
-		finally
-			{
-			_suppressPropertyNotifications = previousSuppressPropertyNotifications;
-			}
+		ApplyState (device);
 
 		// Synchronize the processor baseline to the light's actual reported mode and AWAIT it to
 		// completion before this entity reports itself online/ready. Live processor log evidence
@@ -517,7 +494,6 @@ internal partial class KasaLightEntity
 
 		OnlineIndicatorIsOnline = true;
 		ReadyIndicatorIsReady = true;
-		PublishCurrentLightModeProperties ("InitializeConnectedStateAsync.AfterOnlineReady", synchronizeProcessorBaseline: false);
 
 		// Arm the startup dimmer-replay guard (see remarks on the fields above) whenever the bulb is
 		// actually reported on, regardless of its real brightness level - even a genuinely low level
@@ -535,8 +511,6 @@ internal partial class KasaLightEntity
 			_startupDimmerReplayGuardUntilUtc = null;
 			}
 
-		_pendingStartupSnapshotAfterConnectedState = true;
-		TryPublishDeferredStartupSnapshot ("InitializeConnectedStateAsync");
 		}
 
 	private async Task InitializeStartupAsync ()

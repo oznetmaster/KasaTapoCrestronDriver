@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin.
+// Copyright (c) 2026 Neil Colvin.
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 using Crestron.DeviceDrivers.EntityModel.Data;
@@ -429,8 +429,7 @@ internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaMa
 	private CancellationTokenSource? _sliderCommandCancellationSource { get; set; }
 	private bool _suppressPropertyNotifications { get; set; } = true;
 	private bool _isConfigured { get; set; }
-	private bool _childPublished { get; set; }
-	private bool _pendingStartupSnapshotAfterConnectedState { get; set; }
+	private bool _initialStateEstablished { get; set; }
 	private FullColorMembers? _registeredFullColorMembers { get; set; }
 	private IColorTemperatureLevelHolder? _registeredColorTemperatureMembers { get; set; }
 
