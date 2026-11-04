@@ -101,13 +101,16 @@ public sealed class OutletFeedbackTests
 
 		public async Task InitializeAsync (bool retainStartupEvents = false, bool runningBeforeState = false)
 			{
-			if (runningBeforeState) Outlet.NotifyChildRunning ("fixture-before-state");
+			if (runningBeforeState) { Outlet.NotifyChildRunning ("fixture-before-state"); Outlet.NotifyHostStateRead (); }
 			await Device.UpdateAsync ();
 			Assert.That (Outlet.TryAttachConnectedDevice (Device, "feedback-test"), Is.True);
 			await Outlet.SetConfiguredAsync (true, "feedback-test", default);
 			await Outlet.RefreshAsync (default);
 			if (!runningBeforeState) Assert.That (Events, Is.Empty, "Confirmed startup waits until the host is Running.");
 			Outlet.NotifyChildRunning ("fixture-after-state");
+			if (!runningBeforeState) Assert.That (Events, Is.Empty, "Running alone is not host state-read readiness.");
+			Outlet.NotifyHostStateRead ();
+			Outlet.NotifyHostStateRead ();
 			if (!retainStartupEvents) { Events.Clear (); SdkEvents.Clear (); }
 			}
 

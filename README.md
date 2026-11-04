@@ -115,8 +115,8 @@ Turned On** and **Outlet Turned Off** events to the tile's respective state-feed
 actions, where supported. Use actions that update the display without commanding the
 outlet again. Publishing `outletIsOn` does not automatically connect unrelated tiles.
 The unreleased update emits the matching outlet event at the first confirmed startup
-reading, once Home has marked the child Running, allowing this programming to initialize
-the tile as well. Cached readings that arrive earlier wait for that lifecycle point. The current
+reading, after the child is Running and Home has begun reading its state. Cached readings
+that arrive earlier remain pending; self-reads and repeated host reads do not repeat events. The current
 `outletIsOn` property remains readable; the tile's driver determines its action names.
 Lights likewise announce their confirmed startup power, level and active colour channels
 after processor colour/white baseline synchronization. An off dimmer reports 0%, even

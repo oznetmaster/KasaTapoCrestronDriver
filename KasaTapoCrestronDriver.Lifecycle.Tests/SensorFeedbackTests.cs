@@ -106,14 +106,16 @@ public sealed class SensorFeedbackTests
             await device.UpdateAsync();
             sensor.ApplyPushedState(device.GetChildDevice("sensor"), device);
         }
-        if (runningBeforeState) sensor.NotifyChildRunning("before-state");
+        if (runningBeforeState) { sensor.NotifyChildRunning("before-state"); sensor.NotifyHostStateRead(); }
         // Other data can arrive first. Never announce an unknown signal as false.
         await Push();
         Assert.That(events, Is.Zero);
         SetValue(initial); await Push(); await Push();
         if (!runningBeforeState) { Assert.That(events, Is.Zero, "Startup waits for the host's Running lifecycle."); sensor.ApplyConnectionState(false); }
         sensor.NotifyChildRunning("after-state");
-        if (!runningBeforeState) { Assert.That(events, Is.Zero, "Offline Running must wait for fresh confirmed telemetry."); await Push(); }
+        if (!runningBeforeState) { Assert.That(events, Is.Zero, "Offline Running must wait for fresh confirmed telemetry."); await Push(); Assert.That(events, Is.Zero, "The host must read the running state before startup events."); }
+        sensor.NotifyHostStateRead();
+        sensor.NotifyHostStateRead();
         sensor.NotifyChildRunning("duplicate-running");
         Assert.That(events, Is.EqualTo(1), "The first reported signal announces its confirmed state once, including inactive states.");
         expected = !initial; SetValue(expected); await Push(); await Push();

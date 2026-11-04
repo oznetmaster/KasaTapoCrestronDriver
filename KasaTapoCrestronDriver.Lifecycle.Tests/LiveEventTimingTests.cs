@@ -165,7 +165,7 @@ public sealed partial class LiveDriverEntityTests
                     Subscribe(entity, "temperatureWarningCleared", "temperatureWarningIsActive", false, published, h => entity.TemperatureWarningCleared += h);
                     Subscribe(entity, "humidityWarningDetected", "humidityWarningIsActive", true, published, h => entity.HumidityWarningDetected += h);
                     Subscribe(entity, "humidityWarningCleared", "humidityWarningIsActive", false, published, h => entity.HumidityWarningCleared += h);
-                    entity.NotifyChildPublished(); entity.NotifyChildRunning("live-listener"); entities.Add(entity);
+                    entity.NotifyChildPublished(); entity.NotifyChildRunning("live-listener"); if (entity is IConfirmedStartupEventEntity startup) startup.NotifyHostStateRead(); entities.Add(entity);
                 }
             }
             void Push() { foreach (var entity in entities) entity.ApplyPushedState(hub.GetChildDevice(entity.ChildId), hub); }
@@ -215,7 +215,7 @@ public sealed partial class LiveDriverEntityTests
         await entity.SetConfiguredAsync(true, "timing", default);
         await entity.RefreshAsync(default);
         entity.NotifyChildPublished();
-        entity.NotifyChildRunning("live-startup");
+        entity.NotifyChildRunning("live-startup"); entity.NotifyHostStateRead();
         var published = new ConcurrentDictionary<string, DriverEntityValue>();
         int events = 0;
         var callbackFailures = new ConcurrentQueue<string>();

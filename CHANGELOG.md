@@ -16,7 +16,7 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 
 - Convert the relative light level to percentage correctly when synchronizing the processor baseline, preventing a 60% light from being restored at 1%.
 
-- Publish the complete confirmed startup state and its matching state events once, including off/normal sensor states. Coordinate extension startup events with the host Running lifecycle so cached reads cannot announce them before event routing is ready. Preserve awaited processor colour/white baseline synchronization before light notifications and readiness; later unchanged polls remain quiet.
+- Publish the complete confirmed startup state and its matching state events once, including off/normal sensor states. Hold extension startup events until confirmed state, host Running and the first host-facing state read; self-reads do not release pending events. Preserve awaited processor colour/white baseline synchronization before light notifications and readiness; later unchanged polls remain quiet.
 
 - Stop forced light-state notifications on unchanged scheduled polls and shared parent updates, preventing native Home level programming from replaying. Publish retained colour channels once when a confirmed white/colour mode switch requires them.
 

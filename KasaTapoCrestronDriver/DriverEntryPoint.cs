@@ -25,6 +25,6 @@ public sealed class EntryPoint : DriverAssemblyEntryPoint
 		var platform = new KasaTapoCrestronDriver.PlatformDriver (args, resources);
 		var rootEntity = new ConfigurableDriverEntity (platform.ControllerId, platform, platform.ConfigurationController);
 
-		return new KasaTapoCrestronDriver.RegistrationTracingController (rootEntity, args);
+		return new KasaTapoCrestronDriver.RegistrationTracingController (rootEntity, args, hostStateRead: platform.NotifyChildHostStateRead);
 		}
 	}

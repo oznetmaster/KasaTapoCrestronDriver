@@ -15,12 +15,14 @@ namespace KasaTapoCrestronDriver;
 internal sealed class RegistrationTracingController : DispatchingDeviceController
 {
     private readonly Action<string> _trace;
+    private readonly Action<string>? _hostStateRead;
     private long _requestSequence;
 
     internal RegistrationTracingController(ConfigurableDriverEntity root, DriverControllerCreationArgs args,
-        Action<string>? trace = null) : base(root, args, null)
+        Action<string>? trace = null, Action<string>? hostStateRead = null) : base(root, args, null)
     {
         _trace = trace ?? (message => args.Logger.Log(args.DriverId, LogEntryLevel.Info, message));
+        _hostStateRead = hostStateRead;
         ControllerIdsChanged += OnControllerIdsChanged;
         Write(() => $"created; registry=[{Keys(base.ControllerIds)}]");
     }
@@ -31,8 +33,16 @@ internal sealed class RegistrationTracingController : DispatchingDeviceControlle
     public override DriverControllerStatus GetStatus(string controllerId) => Observe("GetStatus", controllerId,
         () => base.GetStatus(controllerId), status => $"status={status}");
 
-    public override DriverEntityState GetState(string controllerId) => Observe("GetState", controllerId,
-        () => base.GetState(controllerId), DescribeState);
+    public override DriverEntityState GetState(string controllerId)
+    {
+        var state = Observe("GetState", controllerId, () => base.GetState(controllerId), DescribeState);
+        // This is a host-facing read, distinct from entity self-reads. Release pending
+        // events after the complete state has been obtained, while the host's state-read
+        // operation still orders its subsequent event processing.
+        try { _hostStateRead?.Invoke(controllerId); }
+        catch (Exception ex) { Write(() => $"startup-state callback threw={ex.GetType().FullName}"); }
+        return state;
+    }
 
     public override ConfigurationStep GetFirstConfigurationStep(string controllerId) => Observe("GetFirstConfigurationStep", controllerId,
         () => base.GetFirstConfigurationStep(controllerId), step => $"step='{step?.Id}'");

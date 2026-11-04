@@ -24,7 +24,7 @@ namespace KasaTapoCrestronDriver;
 /// or share implementation with <see cref="KasaLightEntity"/>/<see cref="KasaOutletEntity"/>: each
 /// child kind has its own, simpler UI definition and lifecycle needs.
 /// </summary>
-internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity, IKasaHubChildEntity
+internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity, IKasaHubChildEntity, IConfirmedStartupEventEntity
 	{
 	private static readonly TimeSpan StartupConnectTimeout = TimeSpan.FromSeconds (20);
 	private static readonly TimeSpan DeviceConnectTimeout = StartupConnectTimeout;
@@ -47,6 +47,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	private bool _isConfigured;
 	private bool _childPublished;
 	private bool _childRunning;
+	private bool _hostStateRead;
 	private readonly object _stateEventLock = new ();
 	private readonly HashSet<string> _announcedSignals = new (StringComparer.Ordinal);
 	private int _stopState;
@@ -939,10 +940,25 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 			LogInfo ($"Sensor entity '{ControllerId}' NotifyChildRunning invoked, context='{context}'.");
 			LogCapabilityResolutionDiagnostics ($"NotifyChildRunning:{context}");
 			PublishStateSnapshot ();
-			if (OnlineIndicatorIsOnline && ReadyIndicatorIsReady && _lastChild is not null)
+			if (_hostStateRead && OnlineIndicatorIsOnline && ReadyIndicatorIsReady && _lastChild is not null)
 				{
 				// Re-evaluate only signal event baselines; the current full state is already
 				// confirmed. The per-signal announcement set prevents duplicate Running events.
+				var events = ApplyState (_lastChild);
+				PublishStateSnapshot ();
+				foreach (EventHandler handler in events) handler (this, EventArgs.Empty);
+				}
+			}
+		}
+
+	public void NotifyHostStateRead ()
+		{
+		lock (_stateEventLock)
+			{
+			if (_disposed || !_childRunning || _hostStateRead) return;
+			_hostStateRead = true;
+			if (OnlineIndicatorIsOnline && ReadyIndicatorIsReady && _lastChild is not null)
+				{
 				var events = ApplyState (_lastChild);
 				PublishStateSnapshot ();
 				foreach (EventHandler handler in events) handler (this, EventArgs.Empty);
@@ -1192,7 +1208,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		bool changed = !_announcedSignals.Contains (signal) || !previous.HasValue || previous.Value != current;
 		previous = current;
 		EventHandler? handler = current ? active : inactive;
-		if (_childRunning && changed)
+		if (_childRunning && _hostStateRead && changed)
 			{
 			_announcedSignals.Add (signal);
 			if (handler is not null) events.Add (handler);

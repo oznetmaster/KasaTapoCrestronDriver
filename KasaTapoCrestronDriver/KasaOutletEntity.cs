@@ -22,7 +22,7 @@ namespace KasaTapoCrestronDriver;
 /// definition and lifecycle needs. Per-child-kind UI definitions are expected for all future
 /// non-light device kinds as well.
 /// </summary>
-internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity, IKasaManagedChildEntity, IParentDeviceChild
+internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity, IKasaManagedChildEntity, IParentDeviceChild, IConfirmedStartupEventEntity
 	{
 	// Startup/reconnect timing mirrors KasaLightEntity's tuning: a cold TPAP PAKE handshake after
 	// a long-idle period can legitimately take this long, so both the connect and command phases
@@ -59,6 +59,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	private readonly SemaphoreSlim _commandGate = new (1, 1);
 	private bool _hasConfirmedOutletState;
 	private bool _childRunning;
+	private bool _hostStateRead;
 	private bool _startupStateAnnounced;
 
 	// Read-only diagnostics for automation: physical identity and completion include background retries.
@@ -534,7 +535,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			_childRunning = true;
 			LogInfo ($"Outlet entity '{ControllerId}' NotifyChildRunning invoked, context='{context}'.");
 			PublishStateSnapshot ();
-			if (!_startupStateAnnounced && _hasConfirmedOutletState && OnlineIndicatorIsOnline && ReadyIndicatorIsReady)
+			if (_hostStateRead && !_startupStateAnnounced && _hasConfirmedOutletState && OnlineIndicatorIsOnline && ReadyIndicatorIsReady)
 				AnnounceConfirmedOutletState ();
 			}
 		}
@@ -673,7 +674,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 				? device.IsOn
 				: device.GetChild (_descriptor.ChildId!)?.IsOn;
 			bool firstState = reportedIsOn.HasValue && !_hasConfirmedOutletState;
-			bool announceState = _childRunning && reportedIsOn.HasValue && (!_startupStateAnnounced || OutletIsOn != reportedIsOn.Value);
+			bool announceState = _childRunning && _hostStateRead && reportedIsOn.HasValue && (!_startupStateAnnounced || OutletIsOn != reportedIsOn.Value);
 			if (reportedIsOn.HasValue)
 				{
 				_hasConfirmedOutletState = true;
@@ -701,6 +702,20 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			// Startup and subsequent confirmed changes use the same matching state event.
 			// Command intent, missing readings and unchanged polls never create an event.
 			if (announceState) AnnounceConfirmedOutletState ();
+			}
+		}
+
+	public void NotifyHostStateRead ()
+		{
+		lock (_outletStateLock)
+			{
+			if (_disposed || !_childRunning || _hostStateRead) return;
+			_hostStateRead = true;
+			if (_hasConfirmedOutletState && OnlineIndicatorIsOnline && ReadyIndicatorIsReady)
+				{
+				PublishStateSnapshot ();
+				AnnounceConfirmedOutletState ();
+				}
 			}
 		}
 

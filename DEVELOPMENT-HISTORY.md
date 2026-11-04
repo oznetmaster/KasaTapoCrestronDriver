@@ -2,6 +2,12 @@
 
 See the [product changelog](CHANGELOG.md) for shipped changes. This document preserves test, CI and build history. Dated development entries describe work at that time, not a published product version or completed acceptance. Version headings identify the release alongside which development work was recorded; processor-test versions identify separate test packages.
 
+## 2026-11-04 — First host state-read startup handshake
+
+- Candidate 2.1.11 passed 369 automated checks after retaining and retrying one discovery-resolution failure. The isolated outlet startup programming check still failed; Running alone was therefore not accepted as proof that startup events reached Home programming.
+- Its four installed light baseline cases passed (white/on, colour/on, white/off and colour/off), preserving physical 60% stored brightness, correct 0% feedback when off, and matching stored/active tuning modes. Cleanup restored the bulb off and released the lease. Light runtime code remains unchanged in the next candidate.
+- Candidate 2.1.12 uses the supported host-facing GetState controller override to distinguish host reads from entity self-reads. Pending confirmed extension state events wait for a read after Running. Callback errors must not change the host's state-read result. This handshake remains subject to the isolated installed programming gate.
+
 ## 2026-11-04 — Extension startup lifecycle gate
 
 - Candidate 2.1.10 passed 337 workstation/processor/live suite checks and seven installed controls plus quiet polling. An isolated outlet startup witness then failed: initial extension events were raised before the host's Running lifecycle. The combined light/outlet witness was insufficient to certify individual startup event paths.

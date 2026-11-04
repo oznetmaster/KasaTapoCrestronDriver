@@ -88,4 +88,30 @@ public sealed class RegistrationTracingTests
 		Assert.That (controller.GetState ("child").PropertyValues["answer"].GetValue<long> (), Is.EqualTo (42L));
 		Assert.That (controller.GetStatus ("child"), Is.EqualTo (DriverControllerStatus.Running));
 		}
+	[TestCase (false)]
+	[TestCase (true)]
+	public void HostStateReadCallbackFollowsHostLookupAndCannotBreakItsResult (bool failCallback)
+		{
+		using var logger = new DriverLogger ("host-state-read-test");
+		using var child = new Child ();
+		int callbacks = 0;
+		string? observedId = null;
+		long observedAnswer = -1;
+		using var controller = new RegistrationTracingController (new ConfigurableDriverEntity ("child", child), Args (logger),
+			_ => { }, hostStateRead: id =>
+				{
+				callbacks++;
+				observedId = id;
+				observedAnswer = child.GetState ().PropertyValues["answer"].GetValue<long> ();
+				if (failCallback) throw new InvalidOperationException ("Startup subscriber failure");
+				});
+		child.GetState ();
+		Assert.That (callbacks, Is.Zero, "Self-reads must not acknowledge host state consumption.");
+		var state = controller.GetState ("child");
+		Assert.That (callbacks, Is.EqualTo (1));
+		Assert.That (observedId, Is.EqualTo ("child"));
+		Assert.That (observedAnswer, Is.EqualTo (42L));
+		Assert.That (state.PropertyValues["answer"].GetValue<long> (), Is.EqualTo (42L));
+		}
+
 	}
