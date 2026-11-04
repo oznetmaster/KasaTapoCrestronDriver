@@ -12,6 +12,8 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 
 ## Unreleased
 
+- Convert the relative light level to percentage correctly when synchronizing the processor baseline, preventing a 60% light from being restored at 1%.
+
 - Establish readable initial light properties without change notifications. Preserve awaited processor colour/white baseline synchronization before readiness; subsequent confirmed changes still notify Home.
 
 - Stop forced light-state notifications on unchanged scheduled polls and shared parent updates, preventing native Home level programming from replaying. Publish retained colour channels once when a confirmed white/colour mode switch requires them.

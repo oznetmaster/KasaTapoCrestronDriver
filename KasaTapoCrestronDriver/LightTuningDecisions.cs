@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin.
+// Copyright (c) 2026 Neil Colvin.
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 namespace KasaTapoCrestronDriver;
@@ -42,6 +42,12 @@ internal static class LightTuningDecisions
 	public static bool RequestsColorMode (double? hue, double? saturation)
 		{
 		return hue.HasValue || saturation.HasValue;
+		}
+
+	/// <summary>Converts the driver's relative dimmer level to the processor percentage scale.</summary>
+	public static int ToProcessorLevelPercent (double relativeLevel)
+		{
+		return (int)Math.Round (Math.Max (0d, Math.Min (1d, relativeLevel)) * 100d, MidpointRounding.AwayFromZero);
 		}
 
 	public static ProcessorLightTuningMode ToProcessorTuningMode (bool colorTemperatureUiModeActive)

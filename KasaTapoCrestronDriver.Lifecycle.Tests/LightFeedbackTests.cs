@@ -104,7 +104,7 @@ public sealed class LightFeedbackTests
         f.Light.NotifyChildPublished(); f.Light.NotifyChildRunning("fixture");
         await f.Light.RefreshAsync(default);
         Assert.That(f.Light.GetState().PropertyValues["light:isOn"].GetValue<bool>(), Is.EqualTo(on));
-        Assert.That(updates, Is.Empty);
+        Assert.That(updates, Is.EquivalentTo(new[]{"onlineIndicator:isOnline", "readyIndicator:isReady"}));
         f.Transport.On = !on;
         await f.Light.RefreshAsync(default);
         Assert.That(updates.Count(id => id == "light:isOn"), Is.EqualTo(1));

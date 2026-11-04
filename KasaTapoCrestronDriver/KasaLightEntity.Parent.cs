@@ -37,7 +37,8 @@ internal partial class KasaLightEntity : IParentDeviceChild
             if (establishingBaseline)
             {
                 _initialStateEstablished = true;
-                RaiseDefinitionChangedEvent();
+                PublishProperty("onlineIndicator:isOnline", new Crestron.DeviceDrivers.EntityModel.Data.DriverEntityValue(OnlineIndicatorIsOnline), "StartupAvailability");
+                PublishProperty("readyIndicator:isReady", new Crestron.DeviceDrivers.EntityModel.Data.DriverEntityValue(ReadyIndicatorIsReady), "StartupAvailability");
             }
         }
         finally { _suppressPropertyNotifications = previousSuppression; }

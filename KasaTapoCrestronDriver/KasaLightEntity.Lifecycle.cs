@@ -456,9 +456,11 @@ internal partial class KasaLightEntity
 			if (establishingBaseline)
 				{
 				_initialStateEstablished = true;
-				// Refresh the readable definition/state only after every startup value is set.
-				// This is initialization, not a ValuesChanged transition notification.
-				RaiseDefinitionChangedEvent ();
+				// Dynamic capabilities already announced their initial channel values. Re-announcing
+				// the definition here makes Home replay its native Level Changed programming.
+				// Only advertise availability after the complete baseline has been established.
+				PublishProperty ("onlineIndicator:isOnline", new DriverEntityValue (OnlineIndicatorIsOnline), "StartupAvailability");
+				PublishProperty ("readyIndicator:isReady", new DriverEntityValue (ReadyIndicatorIsReady), "StartupAvailability");
 				}
 			}
 		finally

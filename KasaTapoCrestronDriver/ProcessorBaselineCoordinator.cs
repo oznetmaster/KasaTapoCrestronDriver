@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin.
+// Copyright (c) 2026 Neil Colvin.
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 using System.Globalization;
@@ -156,7 +156,7 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 			int hueDegrees = (int)Math.Round (Math.Max (0d, Math.Min (1d, hue)) * 360d, MidpointRounding.AwayFromZero);
 			int saturationPercent = (int)Math.Round (Math.Max (0d, Math.Min (1d, saturation)) * 100d, MidpointRounding.AwayFromZero);
 			long temperature = Math.Max (1L, colorTemperature);
-			int levelPercent = (int)Math.Round (Math.Max (0d, Math.Min (100d, level)), MidpointRounding.AwayFromZero);
+			int levelPercent = LightTuningDecisions.ToProcessorLevelPercent (level);
 
 			if (!_baselineTuningModesByLoadId.TryGetValue (loadId, out string? cachedProcessorTuningMode))
 				{

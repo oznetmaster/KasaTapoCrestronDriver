@@ -128,13 +128,16 @@ public sealed class LightRefreshPublicationTests
         var descriptor = new ManagedLightDescriptor("fixture-light", "127.0.0.1", device.DeviceType, "Fixture light", "KL130", "fixture-bulb", ManagedLightKind.Color);
         using var light = new KasaLightEntity("fixture-light", descriptor, device.Configuration, null, settings, null, resources, null!, "initial-baseline-test");
         var updates = new List<string>();
+        int definitions = 0;
+        light.DefinitionChanged += (_, _) => definitions++;
         light.ValuesChanged += (_, e) => updates.AddRange(e.Update.Changes.Keys);
         Assert.That(light.TryAttachConnectedDevice(device, "fixture"), Is.True);
         await light.SetConfiguredAsync(true, "fixture", default);
         light.NotifyChildPublished();
         light.NotifyChildRunning("fixture");
         await light.RefreshAsync(default);
-        Assert.That(updates, Is.Empty, "Construction, initialization, publication and Running must not announce startup state as a change.");
+        Assert.That(updates.Where(id => id.StartsWith("light", StringComparison.Ordinal)), Is.Empty, "Construction, initialization, publication and Running must not announce startup light state as a change.");
+        Assert.That(definitions, Is.EqualTo(1), "Availability must not replay the initial channel definition.");
         var baseline = light.GetState().PropertyValues;
         Assert.That(baseline["onlineIndicator:isOnline"].GetValue<bool>(), Is.True);
         Assert.That(baseline["readyIndicator:isReady"].GetValue<bool>(), Is.True);
@@ -201,6 +204,17 @@ public sealed class LightRefreshPublicationTests
         Assert.That(ready["lightColor:hue"].GetValue<double>(), Is.EqualTo(actualHue));
         Assert.That(ready["lightColor:saturation"].GetValue<double>(), Is.EqualTo(actualSaturation));
         Assert.That(ready["lightEmulatedColorTemperature:level"].GetValue<long>(), Is.EqualTo(actualKelvin));
-        Assert.That(updates, Is.Empty);
+        Assert.That(updates, Is.EquivalentTo(new[]{"onlineIndicator:isOnline", "readyIndicator:isReady"}));
     }
+    [TestCase(-1d, 0)]
+    [TestCase(0d, 0)]
+    [TestCase(.01d, 1)]
+    [TestCase(.6d, 60)]
+    [TestCase(1d, 100)]
+    [TestCase(2d, 100)]
+    public void ProcessorBaselineUsesPercentageRatherThanRelativeUnits(double relative, int percentage)
+    {
+        Assert.That(LightTuningDecisions.ToProcessorLevelPercent(relative), Is.EqualTo(percentage));
+    }
+
 }

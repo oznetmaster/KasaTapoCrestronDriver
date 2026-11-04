@@ -280,9 +280,19 @@
       "channel": "public",
       "publicVersion": "2.1.8",
       "driverVersion": "2.1.008.0000",
+      "status": "withdrawn",
+      "date": "2026-11-04",
+      "purpose": "Unpublished lab candidate; silent driver light notifications still yielded native startup Level Changed, and live baseline correction exposed a relative-level/percentage conversion fault",
+      "packageSha256": "2e1a1d7cd7fbc06306a92b9842cc70ddc59d60b67ee6142647e936be712233b2"
+    },
+    {
+      "id": "public-2.1.9",
+      "channel": "public",
+      "publicVersion": "2.1.9",
+      "driverVersion": "2.1.009.0000",
       "status": "prepared",
       "date": "2026-11-04",
-      "purpose": "Unpublished lab candidate: silent initial light baseline, awaited processor colour/white baseline synchronization, confirmed changes only; acceptance pending"
+      "purpose": "Unpublished lab candidate: correct processor baseline level scale and avoid redundant startup channel-definition replay; acceptance pending"
     }
   ],
   "nugetDocumentationPatches": [
