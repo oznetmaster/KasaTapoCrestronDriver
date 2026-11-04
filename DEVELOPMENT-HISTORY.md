@@ -11,6 +11,14 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## Confirmed light and sensor feedback - 2026-11-04
+
+- Extend the outlet-feedback review to every declared programmable event. Keep desired light power/slider/channel requests separate from confirmed entity properties. Apply light feedback after successful readback, including confirmed off; intermediate writes and mutable client caches are not readback. Preserve the existing zero/full dimmer mapping, retained brightness, paired colour commands, startup replay protection and outlet behavior.
+- Establish six independent sensor signal baselines. Queue the twelve sensor transition events until all properties, status, icon, availability and any host snapshot have been published. Missing telemetry or a missing child does not clear the last confirmed signal. Button events retain historical-log suppression and buffered gesture replay, with availability/icon published first.
+- Add 28 desktop SDK regression cases. The complete desktop suite passes 112/112; the portable net472 suite passes 34/34 with no skips or failures. The production net472 driver and shared processor fixture sources compile. Tests use synthetic transports with the real SDK/client; this does not claim new physical-device or processor execution.
+- Update README and the Unreleased changelog. No product version bump, deployment, package publication or Crestron submission is part of this change.
+
+
 ## Public product documentation cleanup - 2026-11-03
 
 - At the maintainer's request, remove the redundant KasaTapo-2.1.5-Documentation.zip GitHub release asset. Point the release documentation link at the repository README and remove only that archive's checksum listing. Update the current release inventory to match the remaining assets; retain the original manifest and remote metadata in the private cleanup receipt.

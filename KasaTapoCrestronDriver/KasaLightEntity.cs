@@ -327,7 +327,7 @@ internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaMa
 			}
 		}
 
-	// Optimistic slider tracking: while a slider is dragged the light follows it live. Streamed values
+	// Slider command tracking: while a slider is dragged the light follows it live. Streamed values
 	// are dispatched to the device throttled by this minimum interval (tracks visibly without flooding
 	// the device); once the slider settles a single authoritative final sync (with refresh) is sent.
 	private static readonly TimeSpan SliderTrackingDispatchInterval = TimeSpan.FromMilliseconds (150);
@@ -431,7 +431,6 @@ internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaMa
 	private bool _isConfigured { get; set; }
 	private bool _childPublished { get; set; }
 	private bool _pendingStartupSnapshotAfterConnectedState { get; set; }
-	private bool _deferredDeviceStatePending { get; set; }
 	private FullColorMembers? _registeredFullColorMembers { get; set; }
 	private IColorTemperatureLevelHolder? _registeredColorTemperatureMembers { get; set; }
 

@@ -685,19 +685,21 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 			return;
 			}
 
+		if (child is null)
+			{
+			((IParentDeviceChild)this).ApplyConnectionState (false);
+			return;
+			}
+
 		UpdateDescriptorFromConnectedDevice (parentDevice);
 		_lastChild = child;
 		EnsureDoubleClickEnabled (child);
 		EnsureReportIntervalApplied (child);
-		bool stateChanged = HasChildStateChanged (child);
-		if (stateChanged)
-			{
-			ApplyState (child);
-			}
-
 		bool wasOnline = OnlineIndicatorIsOnline && ReadyIndicatorIsReady;
 		OnlineIndicatorIsOnline = true;
 		ReadyIndicatorIsReady = true;
+		bool stateChanged = HasChildStateChanged (child);
+		if (stateChanged) ApplyState (child);
 
 		if (_childPublished && (stateChanged || !wasOnline))
 			{
@@ -875,6 +877,7 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 				}
 
 			IReadOnlyList<ChildTriggerLogEntry> logs = child.TriggerLogs.Logs;
+			ButtonIcon = anyState || logs.Count > 0 ? "icGenericDeviceOn" : "icGenericDeviceOff";
 			LogInfo ($"Button entity '{ControllerId}' ApplyState: doubleClickEnabled={(child.DoubleClick.Enabled?.ToString () ?? "unreported")}, triggerLogCount={logs.Count}, lastSeenTimestamp={(_lastSeenTriggerTimestamp?.ToString () ?? "none")}, entries=[{FormatTriggerLogEntries (logs)}].");
 			if (logs.Count > 0)
 				{

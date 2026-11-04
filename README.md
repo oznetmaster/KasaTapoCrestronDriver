@@ -117,6 +117,23 @@ Initialize a third-party tile from the current `outletIsOn` value using the faci
 that tile provides; startup snapshots do not replay transition events. The tile's driver
 determines the available action names and initialization options.
 
+### Confirmed light and sensor feedback (unreleased)
+
+Light and dimmer power, brightness and colour feedback stays at the last confirmed device
+state until a successful readback. Slider commands still drive the device during a drag;
+the settled readback supplies feedback. An acknowledgement alone, a failed command or a
+failed read does not establish a new state. Crestron Home may render its own requested
+slider position while a command is pending.
+
+Sensor events fire after the reported properties, status, icon and availability have
+been updated. Each sensor signal's first valid reading establishes its baseline without
+firing a transition, including a signal that first arrives on a later poll. Initial active
+alarms remain visible in properties/status. Missing readings and disconnections preserve
+the last confirmed signal; a changed value on recovery generates one transition.
+
+Button events come from new device trigger-log entries, after gesture properties,
+availability and icon have been updated. Historical startup entries do not fire events.
+
 ### Known Issue: Configure Pro and Outlet â†” Light Conversion
 
 Converting a child device between **Outlet** and **Light** (in either direction) is fully supported and works correctly for actual device operation — the Room UI tile, on/off control, and (for lights) brightness/color controls all update correctly and immediately, and the change is fully persisted. However, Crestron Home's **Configure Pro** tool has two related display bugs around this conversion that are outside this driver's control:

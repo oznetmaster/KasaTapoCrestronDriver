@@ -352,24 +352,6 @@ internal partial class KasaLightEntity
 		LogEntityStateSnapshot ($"TryPublishDeferredStartupSnapshot.{context}");
 		}
 
-	private void TryApplyDeferredDeviceStateAfterSliderInteraction (string context)
-		{
-		if (!_deferredDeviceStatePending || IsSliderInteractionActive ())
-			{
-			return;
-			}
-
-		KasaDevice? connectedDevice = _connectedDevice;
-		if (connectedDevice is null)
-			{
-			return;
-			}
-
-		ApplyState (connectedDevice, allowDeferredDeviceStateDuringSliderInteraction: true);
-		LogEntityStateSnapshot ($"{context}.AfterDeferredApplyState");
-		LogInfo ($"Light entity '{ControllerId}' applied deferred device-driven state after slider interaction settled; context='{context}'.");
-		}
-
 	private static bool HasMaterialConfigurationChange (DeviceConfiguration previousConfiguration, DeviceConfiguration currentConfiguration)
 		{
 		if (!string.Equals (previousConfiguration.Host, currentConfiguration.Host, StringComparison.OrdinalIgnoreCase)
@@ -964,31 +946,11 @@ internal partial class KasaLightEntity
 						LogReportedState ("ExecuteDeviceCommandAsync.AfterCommand", device);
 						}
 
-					// The driver must never publish anything to the UI while the bulb is off - the only
-					// permitted off-state UI action is the baseline sync dispatched below. This refresh
-					// following a genuine power-off reads the bulb's real, settled state purely so that
-					// baseline sync has accurate live data to work with; it must not surface as UI
-					// property notifications, since in the overwhelming common case nothing about the
-					// bulb's retained brightness/hue/saturation genuinely changed just because it was
-					// turned off.
-					bool isGenuinePowerOffRefresh = synchronizeProcessorBaselineForPowerOffContext is not null;
-					bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
-					if (isGenuinePowerOffRefresh)
-						{
-						_suppressPropertyNotifications = true;
-						}
-
-					try
-						{
-						ApplyState (device);
-						}
-					finally
-						{
-						if (isGenuinePowerOffRefresh)
-							{
-							_suppressPropertyNotifications = previousSuppressPropertyNotifications;
-							}
-						}
+					// Client setters can update their cached state on acknowledgement. That cache
+					// is not readback: intermediate slider writes must never publish it. Publish
+					// confirmed power-off too; the command handler no longer publishes intent.
+					if (refreshAfterCommand)
+						ApplyState (device, allowDeferredDeviceStateDuringSliderInteraction: true);
 
 					OnlineIndicatorIsOnline = true;
 					ReadyIndicatorIsReady = true;

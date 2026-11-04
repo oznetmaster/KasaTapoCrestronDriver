@@ -10,6 +10,12 @@ project follows [Semantic Versioning](https://semver.org/).
 
 This changelog records shipped features, fixes, compatibility and runtime dependency changes. See [development and validation history](DEVELOPMENT-HISTORY.md) for tests, CI, build tooling and work not yet released.
 
+## Unreleased
+
+- Report light/dimmer power, brightness and colour changes only after device readback. Keep requested slider/channel values separate from confirmed feedback; ignored commands and failed reads retain the last confirmed state.
+- Publish all sensor state, status, icon and availability updates before transition events. Establish a separate first-reading baseline for each sensor signal, and preserve it across missing telemetry or connection loss.
+- Publish button availability and icon before observed gesture events while retaining historical-log suppression and buffered gesture replay.
+
 ## [2.1.5](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.5) — 2026-11-02
 
 - Publish outlet on/off events after confirmed device-state transitions, including changes detected from the Kasa/Tapo app or physical controls. Failed commands, unchanged readbacks and repeated polls no longer generate misleading events. Initial state is published without inventing a transition.

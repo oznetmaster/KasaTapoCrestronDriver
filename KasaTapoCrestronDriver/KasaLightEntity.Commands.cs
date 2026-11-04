@@ -59,95 +59,36 @@ internal partial class KasaLightEntity
 		private set => SetAndNotify ("readyIndicator:isReady", value, ref field);
 		}
 
-	// Individual channel command for full-color bulbs, paired with the lightColor:hue property. Crestron
-	// Home's classic per-channel lighting engine (IRpcLights.SetTunableChannelState) invokes this when
-	// the color wheel is dragged. Switches the bulb into color/HSV mode and re-dispatches the full
-	// hue/saturation/brightness state.
+	// Desired channel values are kept separately from confirmed entity properties. Paired
+	// hue/saturation commands must compose without publishing intent as device feedback.
+	private DesiredLightCommand? _requestedSliderCommand;
+
+	private DesiredLightCommand? GetRequestedSliderCommand ()
+		{
+		lock (_sliderGate) return _requestedSliderCommand;
+		}
+
 	private void LightColorSetHue (double hue)
 		{
 		double hueLevel = Clamp01 (hue);
 		LogCommandInvocation ("lightColor:setHue", $"hue={hueLevel:0.####}");
-
-		if (!LightIsOn)
-			{
-			// While off, this can be a passive Crestron Home Load-layer replay of a stored hue value
-			// against a bulb that is genuinely in white/CT mode (mirroring the dimmer replay pattern
-			// documented elsewhere in this file), not a genuine user color selection. The driver must
-			// never publish anything to the UI while the bulb is off - the only permitted off-state
-			// UI action is the baseline sync that happens immediately after a genuine on->off
-			// transition (see SynchronizeProcessorBaselineForPowerOff) - so only update this entity's
-			// own internal tracking fields here, silently (no SetAndNotify/publish), and do not touch
-			// the processor baseline.
-			bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
-			_suppressPropertyNotifications = true;
-			try
-				{
-				_isColorTemperatureUiModeActive = false;
-				LightColorHue = hueLevel;
-				}
-			finally
-				{
-				_suppressPropertyNotifications = previousSuppressPropertyNotifications;
-				}
-			return;
-			}
-
-		// While white/CT mode is active, ApplyStateCore intentionally leaves LightColorSaturation at
-		// its neutral placeholder (0) rather than the device's real retained value (see its remarks).
-		// If the user switches into color mode via the hue channel while that placeholder is still in
-		// effect, dispatching hue alongside saturation=0 produces a fully desaturated (i.e. white/gray)
-		// HSV command - the bulb never visibly changes color no matter what hue is selected, because
-		// zero saturation IS "no color". Seed a full-saturation default in that specific transition so
-		// the requested hue is actually visible; a genuine subsequent lightColor:setSaturation command
-		// from the UI still overrides this default normally. This only applies to a live, powered-on
-		// interaction (never the whileOff snapshot path above) so a passive replay while off cannot
-		// fabricate a color state for a bulb that is really in CT mode.
-		double saturationLevel = LightColorSaturation;
-		if (_isColorTemperatureUiModeActive && saturationLevel <= 0d)
-			{
-			saturationLevel = 1d;
-			}
-
-		// Baseline synchronization is intentionally not performed here: SynchronizeProcessorBaseline
-		// itself is a no-op whenever the light is already on (see its remarks), and this branch only
-		// ever runs once LightIsOn has been confirmed true above, so any call here would always be
-		// dead code. The console-level baseline is corrected at startup and immediately before the
-		// next genuine power-off instead (see SynchronizeProcessorBaselineForPowerOff).
-		_isColorTemperatureUiModeActive = false;
-		LightColorHue = hueLevel;
-		LightColorSaturation = saturationLevel;
-		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, LightDimmerLevel, hueLevel, saturationLevel, 0L));
+		// Ignore passive Load-layer colour replays while the light is confirmed off.
+		if (!LightIsOn) return;
+		DesiredLightCommand? requested = GetRequestedSliderCommand ();
+		double saturation = requested is { Mode: DesiredLightMode.Hsv } hsv ? hsv.Saturation : LightColorSaturation;
+		if (requested is not { Mode: DesiredLightMode.Hsv } && _isColorTemperatureUiModeActive && saturation <= 0d)
+			saturation = 1d;
+		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, requested?.Level ?? LightDimmerLevel, hueLevel, saturation, 0L));
 		}
 
 	private void LightColorSetSaturation (double saturation)
 		{
 		double saturationLevel = Clamp01 (saturation);
 		LogCommandInvocation ("lightColor:setSaturation", $"saturation={saturationLevel:0.####}");
-
-		if (!LightIsOn)
-			{
-			// See the identical remark in LightColorSetHue's whileOff branch: the driver must never
-			// publish anything to the UI while the bulb is off, so only update internal tracking
-			// fields silently here.
-			bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
-			_suppressPropertyNotifications = true;
-			try
-				{
-				_isColorTemperatureUiModeActive = false;
-				LightColorSaturation = saturationLevel;
-				}
-			finally
-				{
-				_suppressPropertyNotifications = previousSuppressPropertyNotifications;
-				}
-			return;
-			}
-
-		// See the identical remark in LightColorSetHue: this branch only runs once LightIsOn is
-		// already confirmed true, so SynchronizeProcessorBaseline would always be a no-op here.
-		_isColorTemperatureUiModeActive = false;
-		LightColorSaturation = saturationLevel;
-		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, LightDimmerLevel, LightColorHue, saturationLevel, 0L));
+		if (!LightIsOn) return;
+		DesiredLightCommand? requested = GetRequestedSliderCommand ();
+		double hue = requested is { Mode: DesiredLightMode.Hsv } hsv ? hsv.Hue : LightColorHue;
+		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, requested?.Level ?? LightDimmerLevel, hue, saturationLevel, 0L));
 		}
 
 	private void LightDimmerSetLevel (double level)
@@ -161,22 +102,12 @@ internal partial class KasaLightEntity
 		// state) - see the guard fields' remarks above. Applying these to the device was what dimmed
 		// an already-on/high-brightness bulb down to 1% immediately after every reload.
 		//
-		// Both halves of that replay pair must be caught here, not just the second: the
-		// lightDimmer:level slider representation cannot express "brightness while off" (level 0
-		// always means off in that UI/entity model - see the DimmableMembers/LightIsOn comment
-		// above), so the very fact that Crestron follows up level=0 with level=0.01 a moment later
-		// proves the first level=0 was never a real user power-off either - it is simply the first
-		// half of the same stale replay. Checking LightIsOn
-		// here (rather than requiring it to still be true) intentionally also matches immediately
-		// after we ourselves already let a replayed level=0 through and flipped LightIsOn to false, so
-		// this must key off the guard window rather than the current on/off state.
+		// Guard both halves of the stale replay without changing confirmed state.
 		if (_startupDimmerReplayGuardUntilUtc is DateTime guardUntilUtc)
 			{
 			if (DateTime.UtcNow <= guardUntilUtc && relativeLevel <= STARTUP_DIMMER_REPLAY_SUSPECT_LEVEL_THRESHOLD)
 				{
 				LogInfo ($"Light entity '{ControllerId}' ignoring suspected post-startup Load-layer dimmer replay: level={relativeLevel:0.####}, realLevel={_startupDimmerReplayRealLevel:0.####}.");
-				LightDimmerLevel = _startupDimmerReplayRealLevel;
-				LightIsOn = true;
 				PublishCurrentLightModeProperties ("lightDimmer:setLevel:ignoredStartupReplay", synchronizeProcessorBaseline: false);
 				return;
 				}
@@ -184,13 +115,6 @@ internal partial class KasaLightEntity
 			_startupDimmerReplayGuardUntilUtc = null;
 			}
 
-		// Capture whether the bulb was on BEFORE mutating LightDimmerLevel below: for dimmable-only
-		// bulbs (no OnOffMembers - see the LightIsOn getter's remarks), LightIsOn is derived live
-		// from LightDimmerLevel itself (> 0 = on), so assigning LightDimmerLevel first would make
-		// LightIsOn already read true by the time the off->on transition is checked below, causing
-		// a genuine level=1 power-on request to be misidentified as "already on" and fall through
-		// to the brightness dispatch path, which then explicitly sets the device to 100% brightness
-		// instead of preserving whatever brightness the bulb already retained while off.
 		bool wasOnBeforeThisCommand = LightIsOn;
 
 		// For dimmable bulbs the extreme dimmer levels are the power commands: level 0 = power off,
@@ -214,9 +138,7 @@ internal partial class KasaLightEntity
 		// immediately and authoritatively.
 		if (relativeLevel <= 0d)
 			{
-			LightDimmerLevel = relativeLevel;
 			CancelSliderInteraction ();
-			LightIsOn = false;
 
 			// Only a genuine on->off transition warrants baseline synchronization: the processor's
 			// stored baseline already reflects whatever mode was last actually applied, so replaying
@@ -230,24 +152,19 @@ internal partial class KasaLightEntity
 
 		if (relativeLevel >= 1d && !wasOnBeforeThisCommand)
 			{
-			// The incoming level=1 here is Crestron's own power-on gesture value (its dimmer slider
-			// UI always sends the "full" extreme to mean "turn on"), not a genuine 100% brightness
-			// request - see the remarks above. ExecutePowerAsync only calls TurnLightOnAsync and
-			// never touches brightness, so the device is actually about to come on at whatever
-			// brightness it already retained while off. Publishing the raw level=1 here would
-			// optimistically flash the UI to 100% for the ~1-2 seconds until refreshAfterCommand
-			// reads the real (lower) brightness back and republishes it - exactly the visible delay
-			// being reported. Publish the retained last-known real brightness instead so the UI
-			// reflects the true settled state immediately, with no flash.
-			LightDimmerLevel = GetEffectiveOnLevel ();
+			// Crestron's on gesture restores retained brightness. Only readback may
+			// publish that brightness or report the light as on.
 			CancelSliderInteraction ();
-			LightIsOn = true;
 			StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, true, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token, reassertColorModeAfterRefresh: true), "lightDimmer:setLevel:on");
 			return;
 			}
 
-		LightDimmerLevel = relativeLevel;
-		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Brightness, relativeLevel, 0d, 0d, 0L));
+		DesiredLightCommand? requested = GetRequestedSliderCommand ();
+		QueueSliderCommand (requested is { Mode: DesiredLightMode.Hsv } hsv
+			? new DesiredLightCommand (DesiredLightMode.Hsv, relativeLevel, hsv.Hue, hsv.Saturation, 0L)
+			: requested is { Mode: DesiredLightMode.ColorTemperature } white
+				? new DesiredLightCommand (DesiredLightMode.ColorTemperature, relativeLevel, 0d, 0d, white.ColorTemperature)
+				: new DesiredLightCommand (DesiredLightMode.Brightness, relativeLevel, 0d, 0d, 0L));
 		}
 
 	// Registered only for simple on/off bulbs (see OnOffMembers/ConfigureDynamicFeatures) - those
@@ -258,7 +175,6 @@ internal partial class KasaLightEntity
 		LogCommandInvocation ("light:off", "requested power off");
 
 		CancelSliderInteraction ();
-		LightIsOn = false;
 		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, false, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token), "light:off");
 		}
 
@@ -267,7 +183,6 @@ internal partial class KasaLightEntity
 		LogCommandInvocation ("light:on", "requested power on");
 
 		_lastPowerOnRequestedUtc = DateTime.UtcNow;
-		LightIsOn = true;
 		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => ExecutePowerAsync (device, true, cancellationToken), refreshAfterCommand: true, _lifetimeCancellationSource.Token), "light:on");
 		}
 
@@ -278,63 +193,11 @@ internal partial class KasaLightEntity
 			: "msSincePowerOn=<none>";
 		LogCommandInvocation (commandId, $"level={level}, uiModeWasActive={_isColorTemperatureUiModeActive}, {powerOnCorrelation}");
 		long temperatureLevel = Math.Max (1L, level);
-		if (!LightIsOn)
-			{
-			// The UI sends this immediately before its dimmer power-on command, as an artifact of
-			// Crestron's own Load layer driving the load's ColorTemp channel - not a genuine
-			// user-requested mode change. The bulb's actual last-known state may still be full
-			// color, so do NOT synchronize the processor baseline to White here: doing so caches a
-			// White baseline before the device is ever confirmed to have changed mode, which then
-			// causes the baseline coordinator to see a false "already matches" on the subsequent
-			// power-on and skip the real color-mode correction.
-			//
-			// Likewise, do NOT flip _isColorTemperatureUiModeActive (and therefore do NOT publish
-			// this as an active white-mode UI property) when the bulb's last confirmed real state
-			// (from ApplyStateCore, reflecting the actual device) is genuinely in color mode. This
-			// artifact fires unconditionally regardless of the bulb's real mode, so blindly trusting
-			// it here would incorrectly flip the UI to White for a bulb that is really in Color mode
-			// - the subsequent ExecuteDeviceCommandAsync.ReassertColorModeAfterPowerOn already
-			// restores the real mode once the device is queried after power-on, so there is nothing
-			// to gain by asserting White mode from this pre-power-on artifact alone. Only cache the
-			// UI-facing level for later use; the mode/baseline is settled once the light is actually
-			// turned on and its real state is read back.
-			//
-			// Crucially, do NOT call SetActiveColorTemperatureLevel here when confirmed color mode is
-			// active either: that call directly sets the lightEmulatedColorTemperature:level property
-			// via SetAndNotify, which pushes the new Kelvin value straight to the Crestron UI and is
-			// enough on its own to flip the on-screen slider to White/CCT - independent of whatever
-			// this driver's own _isColorTemperatureUiModeActive flag says afterward. Skipping the
-			// level update entirely (in addition to skipping the mode flag and publish) is required
-			// to fully suppress this artifact while the bulb is confirmed to be in color mode.
-			// The driver must never publish anything to the UI while the bulb is off - the only
-			// permitted off-state UI action is the baseline sync that runs immediately after a
-			// genuine on->off transition (see SynchronizeProcessorBaselineForPowerOff). Crestron's
-			// own Load layer optimistically renders its own UI slider from this artifact
-			// independent of anything this driver does, so racing to counter-publish here gains
-			// nothing: the real, settled color/CT mode is authoritatively restored once the light
-			// actually turns on, via ExecuteDeviceCommandAsync.ReassertColorModeAfterPowerOn
-			// re-applying it from live device state. Only cache the level internally, silently,
-			// for later use when the bulb is confirmed to be in white/CT mode.
-			if (_isColorTemperatureUiModeActive)
-				{
-				bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
-				_suppressPropertyNotifications = true;
-				try
-					{
-					SetActiveColorTemperatureLevel (temperatureLevel);
-					}
-				finally
-					{
-					_suppressPropertyNotifications = previousSuppressPropertyNotifications;
-					}
-				}
-			return;
-			}
+		// A colour-temperature command while off can be a passive Load-layer replay.
+		// It must not mutate confirmed properties or change the retained colour mode.
+		if (!LightIsOn) return;
 
-		_isColorTemperatureUiModeActive = true;
-		SetActiveColorTemperatureLevel (temperatureLevel);
-
-		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, GetEffectiveOnLevel (), 0d, 0d, temperatureLevel));
+		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, GetRequestedSliderCommand ()?.Level ?? GetEffectiveOnLevel (), 0d, 0d, temperatureLevel));
 		}
 
 	private void QueueSliderCommand (DesiredLightCommand command)
@@ -346,6 +209,7 @@ internal partial class KasaLightEntity
 			// next iteration. Only spin up a new worker (and its cancellation source) when none is
 			// currently running, so a drag is served by a single long-lived worker that tracks the
 			// light live instead of a fresh cancel-per-value debounce that only fires once on release.
+			_requestedSliderCommand = command;
 			_pendingSliderCommand = command;
 			if (!_sliderWorkerRunning)
 				{
@@ -397,10 +261,9 @@ internal partial class KasaLightEntity
 
 	private async Task ProcessSliderCommandAsync (CancellationToken cancellationToken)
 		{
-		bool reapplyResolvedState = false;
 		try
 			{
-			// Optimistic tracking loop: keep dispatching the latest slider value to the physical light
+			// Tracking loop: keep dispatching the latest slider value to the physical light
 			// as the drag progresses (throttled, no device refresh so we don't fight the incoming
 			// stream), and only exit when the slider has settled - i.e. no new value arrived during a
 			// full throttle interval. The final settled value is then dispatched authoritatively with a
@@ -431,7 +294,6 @@ internal partial class KasaLightEntity
 					if (settled)
 						{
 						_sliderWorkerRunning = false;
-						reapplyResolvedState = true;
 						}
 					}
 
@@ -474,18 +336,7 @@ internal partial class KasaLightEntity
 					_sliderWorkerRunning = false;
 					_sliderCommandCancellationSource.Dispose ();
 					_sliderCommandCancellationSource = null;
-					}
-				}
-
-			if (reapplyResolvedState)
-				{
-				try
-					{
-					TryApplyDeferredDeviceStateAfterSliderInteraction ("ProcessSliderCommandAsync");
-					}
-				catch (Exception ex)
-					{
-					_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Light entity '{ControllerId}' post-slider state apply failed: {ex}");
+					_requestedSliderCommand = null;
 					}
 				}
 			}
@@ -510,6 +361,7 @@ internal partial class KasaLightEntity
 		lock (_sliderGate)
 			{
 			_pendingSliderCommand = null;
+			_requestedSliderCommand = null;
 			_sliderWorkerRunning = false;
 			_sliderCommandCancellationSource?.Cancel ();
 			_sliderCommandCancellationSource?.Dispose ();

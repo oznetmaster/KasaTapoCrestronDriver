@@ -18,12 +18,9 @@ internal partial class KasaLightEntity
 		{
 		if (!allowDeferredDeviceStateDuringSliderInteraction && IsSliderInteractionActive ())
 			{
-			_deferredDeviceStatePending = true;
 			LogInfo ($"Light entity '{ControllerId}' deferring device-driven state apply while slider interaction is active.");
 			return;
 			}
-
-		_deferredDeviceStatePending = false;
 
 		// Do not force-republish state here: ApplyStateCore already publishes each property
 		// individually (via SetAndNotify) only when its value actually changes. The UI is the one
@@ -39,7 +36,8 @@ internal partial class KasaLightEntity
 
 	private void ApplyStateCore (KasaDevice device)
 		{
-		bool isOn = ResolvePowerState (device);
+		bool? reportedPower = GetReportedPowerState (device);
+		bool isOn = reportedPower ?? LightIsOn;
 		int? brightness = device.LightState?.Brightness;
 		int? hue = device.LightState?.Hue ?? device.LightState?.Hsv?.Hue;
 		int? saturation = device.LightState?.Saturation ?? device.LightState?.Hsv?.Saturation;
@@ -61,9 +59,10 @@ internal partial class KasaLightEntity
 				_lastKnownDeviceBrightnessLevel = Clamp01 (brightness.Value / 100d);
 				}
 
-			LightDimmerLevel = isOn && brightness.HasValue
-				? Clamp01 (brightness.Value / 100d)
-				: 0d;
+			if (reportedPower == false)
+				LightDimmerLevel = 0d;
+			else if (reportedPower == true && brightness.HasValue)
+				LightDimmerLevel = Clamp01 (brightness.Value / 100d);
 			}
 
 		if (_supportsColorTemperature && hasActiveColorTemperature)
@@ -659,18 +658,15 @@ internal partial class KasaLightEntity
 		return 1d;
 		}
 
-	private bool ResolvePowerState (KasaDevice device)
-		{
-		string? childId = ChildId;
-		if (!string.IsNullOrWhiteSpace (childId))
-			{
-			string resolvedChildId = childId!;
-			return device.GetChild (resolvedChildId)?.IsOn ?? false;
-			}
+	private bool ResolvePowerState (KasaDevice device) => GetReportedPowerState (device) ?? LightIsOn;
 
+	private bool? GetReportedPowerState (KasaDevice device)
+		{
+		if (!string.IsNullOrWhiteSpace (ChildId))
+			return device.GetChild (ChildId!)?.IsOn;
 		return Kind == ManagedLightKind.OnOff
-			? device.IsOn ?? false
-			: device.LightState?.IsOn ?? device.IsOn ?? false;
+			? device.IsOn
+			: device.LightState?.IsOn ?? device.IsOn;
 		}
 
 	private static int ToBrightnessPercent (double relativeLevel) => Math.Max (1, (int)Math.Round (Clamp01 (relativeLevel) * 100d, MidpointRounding.AwayFromZero));
