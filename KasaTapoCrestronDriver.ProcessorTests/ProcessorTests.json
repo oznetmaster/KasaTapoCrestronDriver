@@ -17,7 +17,13 @@
     {
       "Id": "kasatapodriver-live",
       "Name": "KasaTapoCrestronDriver Tests — Live device state",
-      "FilterXml": "<filter><class>KasaTapoCrestronDriver.Tests.LiveDriverEntityTests</class></filter>",
+      "FilterXml": "<filter><and><class>KasaTapoCrestronDriver.Tests.LiveDriverEntityTests</class><not><cat>PhysicalTriggers</cat></not></and></filter>",
+      "ManualOnly": true
+    },
+    {
+      "Id": "kasatapodriver-physical-events",
+      "Name": "KasaTapoCrestronDriver Tests — Physical event timing",
+      "FilterXml": "<filter><and><class>KasaTapoCrestronDriver.Tests.LiveDriverEntityTests</class><cat>PhysicalTriggers</cat></and></filter>",
       "ManualOnly": true
     }
   ]

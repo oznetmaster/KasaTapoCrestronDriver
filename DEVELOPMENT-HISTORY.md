@@ -11,6 +11,15 @@ See the [product changelog](CHANGELOG.md) for shipped changes. This document pre
 
 <!-- development-history -->
 
+## Live feedback timing validation - 2026-11-04
+
+- Add explicit live timing cases that forward real network traffic and temporarily withhold actual readbacks. An independent client verifies physical actuation while entity feedback/events remain unchanged; releasing the readback permits confirmed publication. Test KP115 and one named Demo KP303 socket, plus legacy KL130 and SMART L530 bulbs. Restore outlet states and leave tested bulbs off. SMART roles use verified discovery identities when aliases are not advertised.
+- Workstation: all four automatic timing cases pass. A separate real H100 listener also passes after observing the user's S200B single press, T110 open/close and T100 motion detected/cleared. Callback checks verify state/status/icon/availability publication before events. Preserve initial binding/guard failures separately from the corrected passing run.
+- Lab processor .244: 34 portable and 112 lifecycle cases pass under the processor runtime; all nine automatic live cases pass, including the same four real-device timing cases. A separate physical-trigger suite observes no new required transitions before its window expires and fails. A repeat window also expires after the user defers further physical operations. Keep both failures; processor physical sensor/button acceptance remains incomplete.
+- Both workflows confirm removal of their temporary instances and release of their processor leases. Preserve their exact packages and private raw results. Test-host Debug packages 1.3.000.0009 and 1.3.000.0010 are independent of the product version; the product driver was not deployed, versioned, published or submitted. Runtime source remains the confirmed-feedback fix at ddba04bb8ef34b2527488fc2e186291bed1d5899.
+- Physical battery, leak and comfort-warning transitions were not forced. All six sensor pairs and all five button events retain repeatable workstation/processor fixture coverage. These tests exercise actual driver entities inside the SDK test host; installed-driver Home programming and third-party tile configuration are outside this validation.
+
+
 ## Confirmed light and sensor feedback - 2026-11-04
 
 - Extend the outlet-feedback review to every declared programmable event. Keep desired light power/slider/channel requests separate from confirmed entity properties. Apply light feedback after successful readback, including confirmed off; intermediate writes and mutable client caches are not readback. Preserve the existing zero/full dimmer mapping, retained brightness, paired colour commands, startup replay protection and outlet behavior.

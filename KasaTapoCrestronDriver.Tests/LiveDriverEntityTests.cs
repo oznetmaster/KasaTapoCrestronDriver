@@ -10,7 +10,7 @@ namespace KasaTapoCrestronDriver.Tests;
 
 // A separate manual suite. Demo light power control requires an additional explicit opt-in.
 [TestFixture, Category ("Processor"), Category ("Live"), NonParallelizable, FixtureLifeCycle (LifeCycle.SingleInstance)]
-public sealed class LiveDriverEntityTests
+public sealed partial class LiveDriverEntityTests
 	{
 	private LiveSettings _settings = null!;
 	private IReadOnlyList<DiscoveryResult> _discovered = null!;
@@ -33,6 +33,7 @@ public sealed class LiveDriverEntityTests
 		if (seconds < 1 || seconds > 120) throw new InvalidDataException ("Invalid live discovery timeout.");
 		_timeout = TimeSpan.FromSeconds (seconds);
 		_discovered = await Discover.DiscoverAsync (_timeout).ConfigureAwait (false);
+        foreach (var found in _discovered) TestContext.Progress.WriteLine($"Discovery: alias={found.Alias}, model={found.Model}, host={found.Host}");
 		}
 
 	private LiveTarget Target (string role)
