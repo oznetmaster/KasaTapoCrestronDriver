@@ -82,7 +82,7 @@ public sealed partial class LiveDriverEntityTests
     [Test, Category("PhysicalTriggers")]
     public async Task Hub_PhysicalEventsFollowObservedStatePublication()
     {
-        int seconds = int.Parse(TestContext.Parameters.Get("HubObservationSeconds", "180"));
+        int seconds = int.Parse(TestContext.Parameters.Get("HubObservationSeconds", "300"));
         Assert.That(seconds, Is.InRange(15, 600));
         var expected = TestContext.Parameters.Get("ExpectedPhysicalEvents", "buttonTriggered,contactOpened,contactClosed,motionDetectedEvent,motionCleared").Split(',');
         using var selected = await Connect("hub");
@@ -99,13 +99,23 @@ public sealed partial class LiveDriverEntityTests
         {
             subscribe((_, _) => {
                 transport.Mark("event:" + eventName);
-                if (sensor.GetState().PropertyValues[property].GetValue<bool>() != value
+                // Read the confirmed signal directly. GetState rebuilds the entire SDK definition,
+                // which is not a callback-safe observation for this standalone live test entity.
+                bool current = property switch {
+                    "contactIsOpen" => sensor.ContactIsOpen, "motionDetected" => sensor.MotionDetected,
+                    "leakDetected" => sensor.LeakDetected, "batteryIsLow" => sensor.BatteryIsLow,
+                    "temperatureWarningIsActive" => sensor.TemperatureWarningIsActive,
+                    "humidityWarningIsActive" => sensor.HumidityWarningIsActive,
+                    _ => throw new InvalidOperationException("Unknown sensor signal: " + property)
+                };
+                if (current != value
                     || !published.TryGetValue(property, out var update) || update.GetValue<bool>() != value
                     || !published.TryGetValue("sensorIcon", out var icon) || icon.GetValue<string>() != sensor.SensorIcon
                     || !published.TryGetValue("sensorStatus", out var status) || status.GetValue<string>() != sensor.SensorStatus
                     || !sensor.OnlineIndicatorIsOnline || !sensor.ReadyIndicatorIsReady)
                     failures.Enqueue(eventName + " preceded state/status/icon/availability publication.");
                 seen.AddOrUpdate(eventName, 1, (_, n) => n + 1);
+                TestContext.Progress.WriteLine("OBSERVED PHYSICAL EVENT: " + eventName);
             });
         }
         try
@@ -131,6 +141,7 @@ public sealed partial class LiveDriverEntityTests
                             || !published.TryGetValue("buttonIcon", out var icon) || icon.GetValue<string>() != entity.ButtonIcon)
                             failures.Enqueue("Button event preceded gesture/icon/availability publication.");
                         seen.AddOrUpdate("buttonTriggered", 1, (_, n) => n + 1);
+                        TestContext.Progress.WriteLine("OBSERVED PHYSICAL EVENT: buttonTriggered");
                     };
                     entity.SinglePressed += (_, _) => { transport.Mark("event:buttonSinglePressed"); seen.AddOrUpdate("buttonSinglePressed", 1, (_, n) => n + 1); };
                     entity.DoublePressed += (_, _) => { transport.Mark("event:buttonDoublePressed"); seen.AddOrUpdate("buttonDoublePressed", 1, (_, n) => n + 1); };
