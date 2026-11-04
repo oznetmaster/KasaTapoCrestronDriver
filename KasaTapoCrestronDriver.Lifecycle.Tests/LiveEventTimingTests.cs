@@ -170,7 +170,10 @@ public sealed partial class LiveDriverEntityTests
             }
             void Push() { foreach (var entity in entities) entity.ApplyPushedState(hub.GetChildDevice(entity.ChildId), hub); }
             Push();
-            Assert.That(seen, Is.Empty, "Initial real readings/logs must establish baselines.");
+            Assert.That(seen.Keys.Any(e => e.StartsWith("button", StringComparison.Ordinal)), Is.False, "Historical button gestures must remain suppressed.");
+            Assert.That(failures, Is.Empty, "Initial sensor state events must follow complete property publication.");
+            foreach (var item in seen) TestContext.Progress.WriteLine($"Observed startup state: {item.Key} x{item.Value}");
+            seen.Clear(); // Startup state events are not evidence of the requested physical actions.
             TestContext.Progress.WriteLine("LIVE HUB LISTENER READY: operate button/contact/motion now.");
             var until = DateTime.UtcNow.AddSeconds(seconds);
             while (DateTime.UtcNow < until && !expected.All(seen.ContainsKey))

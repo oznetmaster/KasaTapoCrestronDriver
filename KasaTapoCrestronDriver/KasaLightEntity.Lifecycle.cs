@@ -121,14 +121,13 @@ internal partial class KasaLightEntity
 
 	public void NotifyChildPublished ()
 		{
-		// Home reads the initialized property baseline through GetState. Publication is
-		// not a physical state change and must not replay level/state notifications.
+		// Initialization publishes the confirmed startup snapshot once. Publication
+		// must not replay that snapshot or duplicate its state notifications.
 		}
 
 	public void NotifyChildRunning (string context)
 		{
-		// Running does not change any confirmed light value. In particular, do not force
-		// the initial level through ValuesChanged: Home turns that into native events.
+		// Running does not change any confirmed value or repeat the startup snapshot.
 		}
 
 	public void ApplyRuntimeConfiguration (PlatformSharedConfigurationSnapshot previousConfiguration, PlatformSharedConfigurationSnapshot currentConfiguration)
@@ -459,11 +458,10 @@ internal partial class KasaLightEntity
 			if (establishingBaseline)
 				{
 				_initialStateEstablished = true;
-				// Dynamic registration already announced the initial channel definition.
-				// Readiness changes availability, not the definition or the light channels.
-				// Home can independently raise native events when binding/connecting a Load.
-				PublishProperty ("onlineIndicator:isOnline", new DriverEntityValue (OnlineIndicatorIsOnline), "StartupAvailability");
-				PublishProperty ("readyIndicator:isReady", new DriverEntityValue (ReadyIndicatorIsReady), "StartupAvailability");
+				// Announce the complete confirmed startup state once, only after the awaited
+				// processor baseline and availability are ready. Native Home state events
+				// can then initialize programming from these same confirmed values.
+				PublishStateSnapshot ();
 				}
 			}
 		finally

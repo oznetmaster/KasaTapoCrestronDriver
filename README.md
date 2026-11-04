@@ -103,7 +103,8 @@ state directly. From version 2.1.5, `outletTurnedOn` and `outletTurnedOff`
 fire once per confirmed transition, after the state, status and icon have been updated.
 Issuing a command, receiving an acknowledgement without a matching state change, or
 repeating an unchanged poll does not generate a transition event. The first successful
-read establishes the initial state without generating an on/off event.
+read establishes the initial state. In the unreleased update, it also emits the matching
+on/off event once, after the complete state and availability have been published.
 
 For changes made in the Kasa/Tapo app or at the physical device, enable **Enable Light
 Polling**; outlets also use **Light Poll Interval (Seconds)** (15 seconds by default).
@@ -113,9 +114,13 @@ Third-party tiles need their own feedback programming: connect this outlet's **O
 Turned On** and **Outlet Turned Off** events to the tile's respective state-feedback
 actions, where supported. Use actions that update the display without commanding the
 outlet again. Publishing `outletIsOn` does not automatically connect unrelated tiles.
-Initialize a third-party tile from the current `outletIsOn` value using the facilities
-that tile provides; startup snapshots do not replay transition events. Lights likewise establish their initial readable power, level and colour channels without change notifications; their processor colour/white baseline is synchronized before readiness. Only subsequent confirmed changes generate notifications. The tile's driver
-determines the available action names and initialization options.
+The unreleased update emits the matching outlet event at the first confirmed startup
+reading, allowing this programming to initialize the tile as well. The current
+`outletIsOn` property remains readable; the tile's driver determines its action names.
+Lights likewise announce their confirmed startup power, level and active colour channels
+after processor colour/white baseline synchronization. An off dimmer reports 0%, even
+when the bulb retains a nonzero brightness internally. Later unchanged polls do not
+repeat these notifications. Home can also issue native light events while binding a load.
 
 ### Confirmed light and sensor feedback (unreleased)
 
@@ -126,9 +131,9 @@ failed read does not establish a new state. Crestron Home may render its own req
 slider position while a command is pending.
 
 Sensor events fire after the reported properties, status, icon and availability have
-been updated. Each sensor signal's first valid reading establishes its baseline without
-firing a transition, including a signal that first arrives on a later poll. Initial active
-alarms remain visible in properties/status. Missing readings and disconnections preserve
+been updated. Each sensor signal's first valid reading emits its matching state event
+once, including inactive/normal states and a signal first reported on a later poll.
+Unknown or missing readings do not invent a state event. Missing readings and disconnections preserve
 the last confirmed signal; a changed value on recovery generates one transition.
 
 Button events come from new device trigger-log entries, after gesture properties,

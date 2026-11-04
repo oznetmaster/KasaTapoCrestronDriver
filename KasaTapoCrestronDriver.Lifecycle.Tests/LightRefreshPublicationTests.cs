@@ -116,7 +116,7 @@ public sealed class LightRefreshPublicationTests
     [TestCase(true, 0)]
     [TestCase(false, 4000)]
     [TestCase(true, 4000)]
-    public async Task InitializationSetsReadableBaselineWithoutChangeNotifications(bool on, int kelvin)
+    public async Task InitializationPublishesCompleteConfirmedStateOnce(bool on, int kelvin)
     {
         var transport = new Transport { On = on, Kelvin = kelvin };
         using var device = new KasaDevice(new DeviceConfiguration("127.0.0.1"), transport);
@@ -130,13 +130,21 @@ public sealed class LightRefreshPublicationTests
         var updates = new List<string>();
         int definitions = 0;
         light.DefinitionChanged += (_, _) => definitions++;
-        light.ValuesChanged += (_, e) => updates.AddRange(e.Update.Changes.Keys);
+        light.ValuesChanged += (_, e) => {
+            updates.AddRange(e.Update.Changes.Keys);
+            var state = light.GetState().PropertyValues;
+            Assert.That(state["onlineIndicator:isOnline"].GetValue<bool>() && state["readyIndicator:isReady"].GetValue<bool>(), Is.True);
+            Assert.That(state["lightDimmer:level"].GetValue<double>(), Is.EqualTo(transport.On ? .6 : 0), "Even the first notification sees the complete confirmed state.");
+        };
         Assert.That(light.TryAttachConnectedDevice(device, "fixture"), Is.True);
         await light.SetConfiguredAsync(true, "fixture", default);
         light.NotifyChildPublished();
         light.NotifyChildRunning("fixture");
         await light.RefreshAsync(default);
-        Assert.That(updates.Where(id => id.StartsWith("light", StringComparison.Ordinal)), Is.Empty, "Construction, initialization, publication and Running must not announce startup light state as a change.");
+        Assert.That(updates.Count(id => id == "lightDimmer:level"), Is.EqualTo(1), "Publish the initial confirmed level once; publication, Running and unchanged polling must not repeat it.");
+        Assert.That(updates.Contains("lightEmulatedColorTemperature:level"), Is.EqualTo(kelvin > 0));
+        Assert.That(updates.Contains("lightColor:hue"), Is.EqualTo(kelvin == 0));
+        Assert.That(updates.Contains("lightColor:saturation"), Is.EqualTo(kelvin == 0));
         Assert.That(definitions, Is.EqualTo(1), "Availability must not replay the initial channel definition.");
         var baseline = light.GetState().PropertyValues;
         Assert.That(baseline["onlineIndicator:isOnline"].GetValue<bool>(), Is.True);
@@ -146,7 +154,7 @@ public sealed class LightRefreshPublicationTests
         Assert.That(baseline["lightColor:hue"].GetValue<double>(), Is.EqualTo(kelvin > 0 ? 0 : 210d / 359d).Within(.001));
         transport.On = !on;
         await light.RefreshAsync(default);
-        Assert.That(updates.Count(id => id == "lightDimmer:level"), Is.EqualTo(1), "A subsequent confirmed transition must still be published once.");
+        Assert.That(updates.Count(id => id == "lightDimmer:level"), Is.EqualTo(2), "A subsequent confirmed transition must still be published once.");
     }
 
     [TestCase(false, 0)]
@@ -195,7 +203,7 @@ public sealed class LightRefreshPublicationTests
             Assert.That(actualHue, Is.EqualTo(kelvin > 0 ? 0 : 210d / 359d).Within(.001));
             Assert.That(actualSaturation, Is.EqualTo(kelvin > 0 ? 0 : .8));
             Assert.That(actualKelvin, Is.EqualTo(kelvin > 0 ? kelvin : 2500));
-            Assert.That(updates, Is.Empty, "Correcting the processor baseline must not emit initial driver transitions.");
+            Assert.That(updates, Is.Empty, "Startup notifications must wait until the processor baseline completes.");
         }
         finally { release.TrySetResult(true); await initialize; }
         var ready = light.GetState().PropertyValues;
@@ -205,7 +213,10 @@ public sealed class LightRefreshPublicationTests
         Assert.That(ready["lightColor:hue"].GetValue<double>(), Is.EqualTo(actualHue));
         Assert.That(ready["lightColor:saturation"].GetValue<double>(), Is.EqualTo(actualSaturation));
         Assert.That(ready["lightEmulatedColorTemperature:level"].GetValue<long>(), Is.EqualTo(actualKelvin));
-        Assert.That(updates, Is.EquivalentTo(new[]{"onlineIndicator:isOnline", "readyIndicator:isReady"}));
+        var expected = new List<string> { "onlineIndicator:isOnline", "readyIndicator:isReady", "lightDimmer:level" };
+        if (kelvin > 0) expected.Add("lightEmulatedColorTemperature:level");
+        else { expected.Add("lightColor:hue"); expected.Add("lightColor:saturation"); }
+        Assert.That(updates, Is.EquivalentTo(expected), "Only the confirmed active colour mode is announced at startup.");
     }
     [TestCase(-1d, 0)]
     [TestCase(0d, 0)]

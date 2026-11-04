@@ -58,6 +58,7 @@ public sealed class OutletFeedbackTests
 		public readonly KasaDevice Device;
 		public readonly KasaOutletEntity Outlet;
 		public readonly List<bool> Events = new ();
+		private readonly Dictionary<string, Crestron.DeviceDrivers.EntityModel.Data.DriverEntityValue> _published = new ();
 		public readonly List<object> SdkEvents = new ();
 		private readonly ManagedParentDevicePoller? _poller;
 		private readonly DriverLogger _logger = new ("outlet-feedback-test");
@@ -76,6 +77,7 @@ public sealed class OutletFeedbackTests
 				parentPolling ? DeviceType.Strip : DeviceType.Plug, "Fixture outlet", parentPolling ? "KP303" : "HS100",
 				"feedback-fixture", ManagedLightKind.OnOff, childId: parentPolling ? "a" : null, childKind: ManagedChildKind.Outlet);
 			Outlet = new KasaOutletEntity ("feedback-outlet", descriptor, Device.Configuration, null, settings, resources, null!, "test", DriverTestPaths.DataDirectory, _poller);
+			Outlet.ValuesChanged += (_, e) => { foreach (var p in e.Update.Changes) if (p.Value.Value is {} value) _published[p.Key] = value; };
 			Outlet.OutletTurnedOn += (_, _) => RecordEvent (true);
 			Outlet.OutletTurnedOff += (_, _) => RecordEvent (false);
 			Outlet.EventRaised += (_, e) => { lock (SdkEvents) SdkEvents.Add (e); };
@@ -86,16 +88,24 @@ public sealed class OutletFeedbackTests
 			Assert.That (Outlet.OutletIsOn, Is.EqualTo (isOn), "State must be published before its event.");
 			Assert.That (Outlet.OutletStatus, Is.EqualTo (isOn ? "On" : "Off"));
 			Assert.That (Outlet.OutletIcon, Is.EqualTo (isOn ? "icGenericDeviceOn" : "icGenericDeviceOff"));
+			Assert.That (Outlet.OnlineIndicatorIsOnline && Outlet.ReadyIndicatorIsReady, Is.True, "Availability must precede state events, including startup.");
+			Assert.That (_published["outletIsOn"].GetValue<bool> (), Is.EqualTo (isOn));
+			Assert.That (_published["outletStatus"].GetValue<string> (), Is.EqualTo (Outlet.OutletStatus));
+			Assert.That (_published["outletIcon"].GetValue<string> (), Is.EqualTo (Outlet.OutletIcon));
+			Assert.That (_published["onlineIndicatorIsOnline"].GetValue<bool> (), Is.True);
+			Assert.That (_published["readyIndicatorIsReady"].GetValue<bool> (), Is.True);
+			Assert.That (_published["hasEnergyReporting"].GetValue<bool> (), Is.EqualTo (Outlet.HasEnergyReporting));
 			lock (Events)
 				Events.Add (isOn);
 			}
 
-		public async Task InitializeAsync ()
+		public async Task InitializeAsync (bool retainStartupEvents = false)
 			{
 			await Device.UpdateAsync ();
 			Assert.That (Outlet.TryAttachConnectedDevice (Device, "feedback-test"), Is.True);
 			await Outlet.SetConfiguredAsync (true, "feedback-test", default);
 			await Outlet.RefreshAsync (default);
+			if (!retainStartupEvents) { Events.Clear (); SdkEvents.Clear (); }
 			}
 
 		public async Task WaitForCommandsAsync (int completed)
@@ -123,16 +133,16 @@ public sealed class OutletFeedbackTests
 	[TestCase (true, false)]
 	[TestCase (false, true)]
 	[TestCase (true, true)]
-	public async Task InitialStateAndSnapshotsDoNotInventTransitions (bool initialOn, bool parentPolling)
+	public async Task InitialStateEmitsMatchingEventOnceAndSnapshotsDoNotRepeatIt (bool initialOn, bool parentPolling)
 		{
 		using var fixture = new Fixture (initialOn, parentPolling);
-		await fixture.InitializeAsync ();
+		await fixture.InitializeAsync (retainStartupEvents: true);
 		fixture.Outlet.NotifyChildPublished ();
 		fixture.Outlet.NotifyChildRunning ("test");
 		await fixture.Outlet.RefreshAsync (default);
 		Assert.That (fixture.Outlet.GetState ().PropertyValues["outletIsOn"].GetValue<bool> (), Is.EqualTo (initialOn));
-		Assert.That (fixture.Events, Is.Empty);
-		Assert.That (fixture.SdkEvents, Is.Empty);
+		Assert.That (fixture.Events, Is.EqualTo (new[] { initialOn }));
+		Assert.That (fixture.SdkEvents, Has.Count.EqualTo (1));
 		}
 
 	[TestCase (false)]

@@ -658,46 +658,44 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 
 	private void ApplyState (KasaDevice device)
 		{
-		// A missing state is not confirmation that the outlet is off.
-		bool? reportedIsOn = string.IsNullOrWhiteSpace (_descriptor.ChildId)
-			? device.IsOn
-			: device.GetChild (_descriptor.ChildId!)?.IsOn;
-		if (reportedIsOn.HasValue)
-			ApplyConfirmedOutletState (reportedIsOn.Value);
-		// Parent aggregate energy must not be displayed as one socket's consumption.
-		_energyAvailable = string.IsNullOrWhiteSpace (_descriptor.ChildId) && (device.Energy?.IsAvailable ?? false);
-		HasEnergyReporting = _energyAvailable;
-		if (_energyAvailable)
-			{
-			OutletEnergyCurrentPowerWatts = device.Energy!.CurrentPowerWatts ?? 0d;
-			OutletEnergyTodayKilowattHours = device.Energy!.TodayKilowattHours ?? 0d;
-			OutletEnergyMonthKilowattHours = device.Energy!.MonthKilowattHours ?? 0d;
-			OutletEnergyTotalKilowattHours = device.Energy!.TotalKilowattHours ?? 0d;
-			OutletEnergyVoltageVolts = device.Energy!.VoltageVolts ?? 0d;
-			OutletEnergyCurrentAmps = device.Energy!.CurrentAmps ?? 0d;
-			}
-		EnsureUiDefinitionMatchesEnergyCapability ();
-		}
-
-	private void ApplyConfirmedOutletState (bool isOn)
-		{
 		lock (_outletStateLock)
 			{
-			bool changed = _hasConfirmedOutletState && OutletIsOn != isOn;
-			_hasConfirmedOutletState = true;
-			OutletIsOn = isOn;
-			OutletStatus = isOn ? "On" : "Off";
-			OutletIcon = isOn ? "icGenericDeviceOn" : "icGenericDeviceOff";
-
-			// The first read establishes the startup baseline. Later confirmed transitions
-			// include app/button changes, command readbacks and recovery after an outage.
-			// Do not announce command intent as device feedback or replay unchanged polls.
-			if (changed)
+			// A missing state is not confirmation that the outlet is off.
+			bool? reportedIsOn = string.IsNullOrWhiteSpace (_descriptor.ChildId)
+				? device.IsOn
+				: device.GetChild (_descriptor.ChildId!)?.IsOn;
+			bool firstState = reportedIsOn.HasValue && !_hasConfirmedOutletState;
+			bool announceState = reportedIsOn.HasValue && (firstState || OutletIsOn != reportedIsOn.Value);
+			if (reportedIsOn.HasValue)
 				{
-				if (isOn)
-					OutletTurnedOn?.Invoke (this, EventArgs.Empty);
-				else
-					OutletTurnedOff?.Invoke (this, EventArgs.Empty);
+				_hasConfirmedOutletState = true;
+				OutletIsOn = reportedIsOn.Value;
+				OutletStatus = reportedIsOn.Value ? "On" : "Off";
+				OutletIcon = reportedIsOn.Value ? "icGenericDeviceOn" : "icGenericDeviceOff";
+				}
+			// Parent aggregate energy must not be displayed as one socket's consumption.
+			_energyAvailable = string.IsNullOrWhiteSpace (_descriptor.ChildId) && (device.Energy?.IsAvailable ?? false);
+			HasEnergyReporting = _energyAvailable;
+			if (_energyAvailable)
+				{
+				OutletEnergyCurrentPowerWatts = device.Energy!.CurrentPowerWatts ?? 0d;
+				OutletEnergyTodayKilowattHours = device.Energy!.TodayKilowattHours ?? 0d;
+				OutletEnergyMonthKilowattHours = device.Energy!.MonthKilowattHours ?? 0d;
+				OutletEnergyTotalKilowattHours = device.Energy!.TotalKilowattHours ?? 0d;
+				OutletEnergyVoltageVolts = device.Energy!.VoltageVolts ?? 0d;
+				OutletEnergyCurrentAmps = device.Energy!.CurrentAmps ?? 0d;
+				}
+			EnsureUiDefinitionMatchesEnergyCapability ();
+			OnlineIndicatorIsOnline = true;
+			ReadyIndicatorIsReady = true;
+			// Include unchanged/default-valued fields in the first confirmed snapshot.
+			if (firstState) PublishStateSnapshot ();
+			// Startup and subsequent confirmed changes use the same matching state event.
+			// Command intent, missing readings and unchanged polls never create an event.
+			if (announceState)
+				{
+				if (reportedIsOn!.Value) OutletTurnedOn?.Invoke (this, EventArgs.Empty);
+				else OutletTurnedOff?.Invoke (this, EventArgs.Empty);
 				}
 			}
 		}

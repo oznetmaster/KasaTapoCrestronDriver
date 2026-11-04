@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin. See LICENSE in the repository root.
+// Copyright (c) 2026 Neil Colvin. See LICENSE in the repository root.
 using Crestron.DeviceDrivers.EntityModel.Data;
 using Crestron.DeviceDrivers.SDK;
 using KasaTapoClient;
@@ -38,7 +38,7 @@ public sealed class SensorFeedbackTests
     [TestCase("temperature", true)]
     [TestCase("humidity", false)]
     [TestCase("humidity", true)]
-    public async Task TransitionsRequireTwoReportedValuesAndPublishCompleteStateFirst(string signal, bool initial)
+    public async Task FirstReportedStateAndTransitionsPublishCompleteStateBeforeMatchingEvent(string signal, bool initial)
     {
         var transport = new Transport();
         var config = new DeviceConfiguration("127.0.0.1", connectionOptions: new DeviceConnectionOptions(
@@ -94,20 +94,21 @@ public sealed class SensorFeedbackTests
             await device.UpdateAsync();
             sensor.ApplyPushedState(device.GetChildDevice("sensor"), device);
         }
-        // Other data may arrive before this signal. Its first non-null value is still a baseline.
+        // Other data can arrive first. Never announce an unknown signal as false.
         await Push();
+        Assert.That(events, Is.Zero);
         SetValue(initial); await Push(); await Push();
-        Assert.That(events, Is.Zero, "Startup reports must not invent transitions, even if initially active.");
+        Assert.That(events, Is.EqualTo(1), "The first reported signal announces its confirmed state once, including inactive states.");
         expected = !initial; SetValue(expected); await Push(); await Push();
-        Assert.That(events, Is.EqualTo(1));
+        Assert.That(events, Is.EqualTo(2));
         SetValue(null); await Push();
-        Assert.That(events, Is.EqualTo(1), "Missing telemetry is not a clearing event.");
+        Assert.That(events, Is.EqualTo(2), "Missing telemetry is not a clearing event.");
         sensor.ApplyPushedState(null, device);
         Assert.That(sensor.OnlineIndicatorIsOnline, Is.False);
-        Assert.That(events, Is.EqualTo(1), "A missing child is not a clearing event.");
+        Assert.That(events, Is.EqualTo(2), "A missing child is not a clearing event.");
         ((IParentDeviceChild)sensor).ApplyConnectionState(false);
         expected = initial; SetValue(expected); await Push(); await Push();
-        Assert.That(events, Is.EqualTo(2), "Recovery must compare against the last confirmed value once.");
+        Assert.That(events, Is.EqualTo(3), "Recovery must compare against the last confirmed value once.");
     }
     [Test]
     public async Task ButtonGesturesPublishAvailabilityIconAndPerGestureStateBeforeEvents()

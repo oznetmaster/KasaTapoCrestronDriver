@@ -302,7 +302,7 @@
       "driverVersion": "2.1.010.0000",
       "status": "prepared",
       "date": "2026-11-04",
-      "purpose": "Unpublished source candidate: prevent recovery polling from making an incomplete initial light baseline ready; native Home startup event investigation remains open"
+      "purpose": "Unpublished candidate: publish confirmed startup states and matching events once, retain awaited processor baseline synchronization and suppress unchanged-poll replay"
     }
   ],
   "nugetDocumentationPatches": [

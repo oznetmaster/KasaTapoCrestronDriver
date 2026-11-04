@@ -2,6 +2,14 @@
 
 See the [product changelog](CHANGELOG.md) for shipped changes. This document preserves test, CI and build history. Dated development entries describe work at that time, not a published product version or completed acceptance. Version headings identify the release alongside which development work was recorded; processor-test versions identify separate test packages.
 
+## 2026-11-04 — Confirmed startup state event policy
+
+- Revised startup policy after installed Home observation and user review: announce the first confirmed state and its matching state event once, including off and inactive/normal states. Later unchanged reads do not repeat events. Historical button gestures remain suppressed.
+- Preserve awaited light processor-baseline synchronization before initial notifications/readiness, the relative-level to percentage correction, and the recovery-poll startup guard. An off dimmer publishes 0% while retaining the physical bulb's stored brightness.
+- Move outlet state events after energy, status, icon and availability updates; regression callbacks verify complete published state before startup and later events. Sensor coverage checks first-active/first-inactive states, late first telemetry, missing state and recovery for all six event pairs.
+- Previous silent-startup candidate evidence is retained as historical investigation; those startup expectations were superseded by this policy, not counted as current acceptance failures.
+
+
 ## Where changes belong
 
 - Product changelog and product release notes: shipped behavior, API, compatibility, fixes and runtime dependencies. Mention validation briefly when it helps explain a fix.

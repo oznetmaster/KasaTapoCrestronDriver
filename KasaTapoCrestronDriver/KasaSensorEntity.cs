@@ -1166,7 +1166,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	private static void QueueConfirmedTransition (ref bool? previous, bool current,
 		EventHandler? active, EventHandler? inactive, List<EventHandler> events)
 		{
-		bool changed = previous.HasValue && previous.Value != current;
+		bool changed = !previous.HasValue || previous.Value != current;
 		previous = current;
 		EventHandler? handler = current ? active : inactive;
 		if (changed && handler is not null) events.Add (handler);
