@@ -318,7 +318,7 @@ public sealed partial class LiveDriverEntityTests
                 Assert.That(Level(), Is.EqualTo(baseline), "Physical power changed, but unconsumed readback must not change feedback.");
                 Assert.That(levelNotifications, Is.EqualTo(count));
                 transport.ReleaseRead!.TrySetResult(true);
-                await WaitUntil(() => (Level() > 0) == on);
+                await WaitUntil(() => (Level() > 0) == on && Volatile.Read(ref levelNotifications) > count);
                 Assert.That(levelNotifications, Is.GreaterThan(count));
                 Assert.That(observer.Light.State.Brightness, Is.EqualTo(original.Brightness));
             }
