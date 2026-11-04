@@ -215,3 +215,9 @@ Validated newly packed local archives; the original defective published archives
 - One preflight attempt fails before acquiring resources because its test instance name is 33 characters (maximum 32); preserve that failure. The corrected-name retry above passes. Generated test-host manifest changes are restored afterward.
 - Native Home Level Changed during driver reload remains an unresolved separate acceptance requirement. Initial SDK light channel notifications are suppressed, but Home emits native events while binding and changing availability. The retained startup replay guard can also reassert confirmed channels to repair Home's stale replay; do not claim every possible startup notification path is silent. Do not remove the baseline/replay protections merely to make the event witness quiet.
 - Final independent reads confirm both Demo KL130 and Demo L530 are off. Candidate 2.1.9 remains installed on the lab; 2.1.10 is a source reservation, not an installed Release package. No source push, public publication or Crestron submission is performed in this validation pass.
+
+## Native Home initialization-event investigation - 2026-11-04
+
+- Read-only investigation confirms that Crestron Home can produce its native Level Changed programming event when a light is initialized or reconnected, even when the reported level is unchanged. This is separate from the driver's own transition-event suppression.
+- The investigation changes no driver runtime code, firmware, installed devices or programming. Detailed third-party implementation evidence remains private and is excluded from repository history.
+- Preserve the validated light baseline protections. Fully quiet native Home initialization remains a platform integration limitation requiring separate resolution before claiming that acceptance requirement as passed.
