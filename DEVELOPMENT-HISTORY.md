@@ -2,6 +2,12 @@
 
 See the [product changelog](CHANGELOG.md) for shipped changes. This document preserves test, CI and build history. Dated development entries describe work at that time, not a published product version or completed acceptance. Version headings identify the release alongside which development work was recorded; processor-test versions identify separate test packages.
 
+## 2026-11-04 — Extension startup lifecycle gate
+
+- Candidate 2.1.10 passed 337 workstation/processor/live suite checks and seven installed controls plus quiet polling. An isolated outlet startup witness then failed: initial extension events were raised before the host's Running lifecycle. The combined light/outlet witness was insufficient to certify individual startup event paths.
+- Candidate 2.1.11 retains that evidence, coordinates extension startup events with both confirmed state and Running, and coalesces pre-Running readings to the latest confirmed state. Missing telemetry and an offline Running callback wait for fresh confirmation; repeated Running callbacks do not repeat state events.
+- The 146-case lifecycle regression suite covers both startup orderings for outlet and sensor signals, plus offline startup recovery. Initial light reporting and awaited processor-baseline protection remain unchanged.
+
 ## 2026-11-04 — Confirmed startup state event policy
 
 - Revised startup policy after installed Home observation and user review: announce the first confirmed state and its matching state event once, including off and inactive/normal states. Later unchanged reads do not repeat events. Historical button gestures remain suppressed.

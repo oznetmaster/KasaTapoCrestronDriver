@@ -300,9 +300,20 @@
       "channel": "public",
       "publicVersion": "2.1.10",
       "driverVersion": "2.1.010.0000",
+      "status": "withdrawn",
+      "date": "2026-11-04",
+      "purpose": "Unpublished lab candidate: source/processor fixtures passed, but isolated installed extension startup event did not reach Home programming before Running",
+      "packageSha256": "05e44a68d363633b272b381e04b2e528284c1d5ffe6ba52cf21cb4ea188247fb",
+      "sourceCommit": "f3e991efb186deb0d4120d7739b6ad9418d62bad"
+    },
+    {
+      "id": "public-2.1.11",
+      "channel": "public",
+      "publicVersion": "2.1.11",
+      "driverVersion": "2.1.011.0000",
       "status": "prepared",
       "date": "2026-11-04",
-      "purpose": "Unpublished candidate: publish confirmed startup states and matching events once, retain awaited processor baseline synchronization and suppress unchanged-poll replay"
+      "purpose": "Unpublished candidate: coordinate confirmed extension startup states with host Running before matching state events"
     }
   ],
   "nugetDocumentationPatches": [

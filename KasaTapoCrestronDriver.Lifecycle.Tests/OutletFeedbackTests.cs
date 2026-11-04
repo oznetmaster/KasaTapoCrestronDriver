@@ -99,12 +99,15 @@ public sealed class OutletFeedbackTests
 				Events.Add (isOn);
 			}
 
-		public async Task InitializeAsync (bool retainStartupEvents = false)
+		public async Task InitializeAsync (bool retainStartupEvents = false, bool runningBeforeState = false)
 			{
+			if (runningBeforeState) Outlet.NotifyChildRunning ("fixture-before-state");
 			await Device.UpdateAsync ();
 			Assert.That (Outlet.TryAttachConnectedDevice (Device, "feedback-test"), Is.True);
 			await Outlet.SetConfiguredAsync (true, "feedback-test", default);
 			await Outlet.RefreshAsync (default);
+			if (!runningBeforeState) Assert.That (Events, Is.Empty, "Confirmed startup waits until the host is Running.");
+			Outlet.NotifyChildRunning ("fixture-after-state");
 			if (!retainStartupEvents) { Events.Clear (); SdkEvents.Clear (); }
 			}
 
@@ -129,14 +132,18 @@ public sealed class OutletFeedbackTests
 			}
 		}
 
-	[TestCase (false, false)]
-	[TestCase (true, false)]
-	[TestCase (false, true)]
-	[TestCase (true, true)]
-	public async Task InitialStateEmitsMatchingEventOnceAndSnapshotsDoNotRepeatIt (bool initialOn, bool parentPolling)
+	[TestCase (false, false, false)]
+	[TestCase (false, false, true)]
+	[TestCase (false, true, false)]
+	[TestCase (false, true, true)]
+	[TestCase (true, false, false)]
+	[TestCase (true, false, true)]
+	[TestCase (true, true, false)]
+	[TestCase (true, true, true)]
+	public async Task InitialStateEmitsMatchingEventOnceAndSnapshotsDoNotRepeatIt (bool initialOn, bool parentPolling, bool runningBeforeState)
 		{
 		using var fixture = new Fixture (initialOn, parentPolling);
-		await fixture.InitializeAsync (retainStartupEvents: true);
+		await fixture.InitializeAsync (retainStartupEvents: true, runningBeforeState: runningBeforeState);
 		fixture.Outlet.NotifyChildPublished ();
 		fixture.Outlet.NotifyChildRunning ("test");
 		await fixture.Outlet.RefreshAsync (default);

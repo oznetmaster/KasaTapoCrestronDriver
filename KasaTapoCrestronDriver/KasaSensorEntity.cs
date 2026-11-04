@@ -46,6 +46,9 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	private KasaDevice? _connectedDevice;
 	private bool _isConfigured;
 	private bool _childPublished;
+	private bool _childRunning;
+	private readonly object _stateEventLock = new ();
+	private readonly HashSet<string> _announcedSignals = new (StringComparer.Ordinal);
 	private int _stopState;
 	private bool _disposed;
 	private bool _capabilitiesResolved;
@@ -805,6 +808,14 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	/// </summary>
 	public void ApplyPushedState (ChildDevice? child, KasaDevice parentDevice)
 		{
+		lock (_stateEventLock)
+			{
+			ApplyPushedStateCore (child, parentDevice);
+			}
+		}
+
+	private void ApplyPushedStateCore (ChildDevice? child, KasaDevice parentDevice)
+		{
 		if (_disposed)
 			{
 			return;
@@ -819,10 +830,10 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		UpdateDescriptorFromConnectedDevice (parentDevice);
 		_lastChild = child;
 		EnsureReportIntervalApplied (child);
-		bool stateChanged = HasChildStateChanged (child);
-		IReadOnlyList<EventHandler> events = stateChanged ? ApplyState (child) : Array.Empty<EventHandler> ();
-
 		bool wasOnline = OnlineIndicatorIsOnline && ReadyIndicatorIsReady;
+		bool stateChanged = HasChildStateChanged (child);
+		// Recovery must also announce startup signals held while the host was offline.
+		IReadOnlyList<EventHandler> events = stateChanged || !wasOnline ? ApplyState (child) : Array.Empty<EventHandler> ();
 		OnlineIndicatorIsOnline = true;
 		ReadyIndicatorIsReady = true;
 
@@ -832,7 +843,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 			}
 
 		// All properties, availability, status and icon precede transition events.
-		foreach (EventHandler handler in events) handler (this, EventArgs.Empty);
+		if (_childRunning) foreach (EventHandler handler in events) handler (this, EventArgs.Empty);
 		}
 
 	// Compares the freshly pushed child's typed state records (now value-comparable per KasaClient
@@ -922,9 +933,21 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 			return;
 			}
 
-		LogInfo ($"Sensor entity '{ControllerId}' NotifyChildRunning invoked, context='{context}'.");
-		LogCapabilityResolutionDiagnostics ($"NotifyChildRunning:{context}");
-		PublishStateSnapshot ();
+		lock (_stateEventLock)
+			{
+			_childRunning = true;
+			LogInfo ($"Sensor entity '{ControllerId}' NotifyChildRunning invoked, context='{context}'.");
+			LogCapabilityResolutionDiagnostics ($"NotifyChildRunning:{context}");
+			PublishStateSnapshot ();
+			if (OnlineIndicatorIsOnline && ReadyIndicatorIsReady && _lastChild is not null)
+				{
+				// Re-evaluate only signal event baselines; the current full state is already
+				// confirmed. The per-signal announcement set prevents duplicate Running events.
+				var events = ApplyState (_lastChild);
+				PublishStateSnapshot ();
+				foreach (EventHandler handler in events) handler (this, EventArgs.Empty);
+				}
+			}
 		}
 
 	// DIAGNOSTIC (temporary): capability resolution is the one thing a Sensor child has that the
@@ -1083,7 +1106,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 					{
 					BatteryStatusLabel = batteryLow.Value ? "Low" : "Normal";
 					}
-				QueueConfirmedTransition (ref _confirmedBatteryLow, batteryLow.Value, _batteryLowEvent, _batteryNormal, events);
+				QueueConfirmedTransition ("BatteryLow", ref _confirmedBatteryLow, batteryLow.Value, _batteryLowEvent, _batteryNormal, events);
 				}
 
 			double? temperature = child.Temperature.Temperature;
@@ -1100,7 +1123,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 			if (temperatureWarning.HasValue)
 				{
 				TemperatureWarningIsActive = temperatureWarning.Value;
-				QueueConfirmedTransition (ref _confirmedTemperatureWarning, temperatureWarning.Value, _temperatureWarningDetected, _temperatureWarningCleared, events);
+				QueueConfirmedTransition ("TemperatureWarning", ref _confirmedTemperatureWarning, temperatureWarning.Value, _temperatureWarningDetected, _temperatureWarningCleared, events);
 				}
 
 			int? humidity = child.Humidity.Humidity;
@@ -1116,7 +1139,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 			if (humidityWarning.HasValue)
 				{
 				HumidityWarningIsActive = humidityWarning.Value;
-				QueueConfirmedTransition (ref _confirmedHumidityWarning, humidityWarning.Value, _humidityWarningDetected, _humidityWarningCleared, events);
+				QueueConfirmedTransition ("HumidityWarning", ref _confirmedHumidityWarning, humidityWarning.Value, _humidityWarningDetected, _humidityWarningCleared, events);
 				}
 
 			bool? isOpen = child.Contact.IsOpen;
@@ -1125,7 +1148,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 				HasContact = true;
 				ContactIsOpen = isOpen.Value;
 				ContactStatusLabel = isOpen.Value ? "Open" : "Closed";
-				QueueConfirmedTransition (ref _confirmedContactOpen, isOpen.Value, _contactOpened, _contactClosed, events);
+				QueueConfirmedTransition ("ContactOpen", ref _confirmedContactOpen, isOpen.Value, _contactOpened, _contactClosed, events);
 
 				anyState = true;
 				}
@@ -1141,7 +1164,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 					UpdateLastMotionTimestamp (DateTime.Now);
 					}
 
-				QueueConfirmedTransition (ref _confirmedMotionDetected, motionDetected.Value, _motionDetectedEvent, _motionCleared, events);
+				QueueConfirmedTransition ("MotionDetected", ref _confirmedMotionDetected, motionDetected.Value, _motionDetectedEvent, _motionCleared, events);
 
 				anyState = true;
 				}
@@ -1152,7 +1175,7 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 				HasLeak = true;
 				LeakDetected = leakAlert.Value;
 				LeakStatusLabel = leakAlert.Value ? "Leak Detected" : "Dry";
-				QueueConfirmedTransition (ref _confirmedLeakDetected, leakAlert.Value, _leakDetectedEvent, _leakCleared, events);
+				QueueConfirmedTransition ("LeakDetected", ref _confirmedLeakDetected, leakAlert.Value, _leakDetectedEvent, _leakCleared, events);
 
 				anyState = true;
 				}
@@ -1163,13 +1186,17 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		return events;
 		}
 
-	private static void QueueConfirmedTransition (ref bool? previous, bool current,
+	private void QueueConfirmedTransition (string signal, ref bool? previous, bool current,
 		EventHandler? active, EventHandler? inactive, List<EventHandler> events)
 		{
-		bool changed = !previous.HasValue || previous.Value != current;
+		bool changed = !_announcedSignals.Contains (signal) || !previous.HasValue || previous.Value != current;
 		previous = current;
 		EventHandler? handler = current ? active : inactive;
-		if (changed && handler is not null) events.Add (handler);
+		if (_childRunning && changed)
+			{
+			_announcedSignals.Add (signal);
+			if (handler is not null) events.Add (handler);
+			}
 		}
 
 	// Prioritizes leak detection and low battery above all else (conditions that demand immediate

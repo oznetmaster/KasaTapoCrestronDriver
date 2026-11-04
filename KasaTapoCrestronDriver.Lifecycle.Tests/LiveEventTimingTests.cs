@@ -147,7 +147,7 @@ public sealed partial class LiveDriverEntityTests
                     entity.DoublePressed += (_, _) => { transport.Mark("event:buttonDoublePressed"); seen.AddOrUpdate("buttonDoublePressed", 1, (_, n) => n + 1); };
                     entity.Held += (_, _) => { transport.Mark("event:buttonHeld"); seen.AddOrUpdate("buttonHeld", 1, (_, n) => n + 1); };
                     entity.Released += (_, _) => { transport.Mark("event:buttonReleased"); seen.AddOrUpdate("buttonReleased", 1, (_, n) => n + 1); };
-                    entity.NotifyChildPublished(); entities.Add(entity);
+                    entity.NotifyChildPublished(); entity.NotifyChildRunning("live-listener"); entities.Add(entity);
                 }
                 else
                 {
@@ -165,7 +165,7 @@ public sealed partial class LiveDriverEntityTests
                     Subscribe(entity, "temperatureWarningCleared", "temperatureWarningIsActive", false, published, h => entity.TemperatureWarningCleared += h);
                     Subscribe(entity, "humidityWarningDetected", "humidityWarningIsActive", true, published, h => entity.HumidityWarningDetected += h);
                     Subscribe(entity, "humidityWarningCleared", "humidityWarningIsActive", false, published, h => entity.HumidityWarningCleared += h);
-                    entity.NotifyChildPublished(); entities.Add(entity);
+                    entity.NotifyChildPublished(); entity.NotifyChildRunning("live-listener"); entities.Add(entity);
                 }
             }
             void Push() { foreach (var entity in entities) entity.ApplyPushedState(hub.GetChildDevice(entity.ChildId), hub); }
@@ -215,6 +215,7 @@ public sealed partial class LiveDriverEntityTests
         await entity.SetConfiguredAsync(true, "timing", default);
         await entity.RefreshAsync(default);
         entity.NotifyChildPublished();
+        entity.NotifyChildRunning("live-startup");
         var published = new ConcurrentDictionary<string, DriverEntityValue>();
         int events = 0;
         var callbackFailures = new ConcurrentQueue<string>();

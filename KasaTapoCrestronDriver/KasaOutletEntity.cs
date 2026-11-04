@@ -58,6 +58,8 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	private readonly object _outletStateLock = new ();
 	private readonly SemaphoreSlim _commandGate = new (1, 1);
 	private bool _hasConfirmedOutletState;
+	private bool _childRunning;
+	private bool _startupStateAnnounced;
 
 	// Read-only diagnostics for automation: physical identity and completion include background retries.
 	[EntityProperty (Id = "controlDeviceId")]
@@ -527,8 +529,14 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			return;
 			}
 
-		LogInfo ($"Outlet entity '{ControllerId}' NotifyChildRunning invoked, context='{context}'.");
-		PublishStateSnapshot ();
+		lock (_outletStateLock)
+			{
+			_childRunning = true;
+			LogInfo ($"Outlet entity '{ControllerId}' NotifyChildRunning invoked, context='{context}'.");
+			PublishStateSnapshot ();
+			if (!_startupStateAnnounced && _hasConfirmedOutletState && OnlineIndicatorIsOnline && ReadyIndicatorIsReady)
+				AnnounceConfirmedOutletState ();
+			}
 		}
 
 	public void PublishStateSnapshot ()
@@ -665,7 +673,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 				? device.IsOn
 				: device.GetChild (_descriptor.ChildId!)?.IsOn;
 			bool firstState = reportedIsOn.HasValue && !_hasConfirmedOutletState;
-			bool announceState = reportedIsOn.HasValue && (firstState || OutletIsOn != reportedIsOn.Value);
+			bool announceState = _childRunning && reportedIsOn.HasValue && (!_startupStateAnnounced || OutletIsOn != reportedIsOn.Value);
 			if (reportedIsOn.HasValue)
 				{
 				_hasConfirmedOutletState = true;
@@ -692,12 +700,17 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			if (firstState) PublishStateSnapshot ();
 			// Startup and subsequent confirmed changes use the same matching state event.
 			// Command intent, missing readings and unchanged polls never create an event.
-			if (announceState)
-				{
-				if (reportedIsOn!.Value) OutletTurnedOn?.Invoke (this, EventArgs.Empty);
-				else OutletTurnedOff?.Invoke (this, EventArgs.Empty);
-				}
+			if (announceState) AnnounceConfirmedOutletState ();
 			}
+		}
+
+	private void AnnounceConfirmedOutletState ()
+		{
+		// Wait for both confirmed state and the host's Running lifecycle. A synchronous
+		// cached read can otherwise fire before Home wires extension event programming.
+		_startupStateAnnounced = true;
+		if (OutletIsOn) OutletTurnedOn?.Invoke (this, EventArgs.Empty);
+		else OutletTurnedOff?.Invoke (this, EventArgs.Empty);
 		}
 
 	// The entity always starts with the basic (no-navigation, empty-layout) UI definition -

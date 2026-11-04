@@ -26,19 +26,31 @@ public sealed class SensorFeedbackTests
         public Task<string> SendManyAsync(IReadOnlyList<string> json, CancellationToken token) => SendAsync("", token);
     }
 
-    [TestCase("battery", false)]
-    [TestCase("battery", true)]
-    [TestCase("contact", false)]
-    [TestCase("contact", true)]
-    [TestCase("motion", false)]
-    [TestCase("motion", true)]
-    [TestCase("leak", false)]
-    [TestCase("leak", true)]
-    [TestCase("temperature", false)]
-    [TestCase("temperature", true)]
-    [TestCase("humidity", false)]
-    [TestCase("humidity", true)]
-    public async Task FirstReportedStateAndTransitionsPublishCompleteStateBeforeMatchingEvent(string signal, bool initial)
+    [TestCase("battery", false, false)]
+    [TestCase("battery", false, true)]
+    [TestCase("battery", true, false)]
+    [TestCase("battery", true, true)]
+    [TestCase("contact", false, false)]
+    [TestCase("contact", false, true)]
+    [TestCase("contact", true, false)]
+    [TestCase("contact", true, true)]
+    [TestCase("motion", false, false)]
+    [TestCase("motion", false, true)]
+    [TestCase("motion", true, false)]
+    [TestCase("motion", true, true)]
+    [TestCase("leak", false, false)]
+    [TestCase("leak", false, true)]
+    [TestCase("leak", true, false)]
+    [TestCase("leak", true, true)]
+    [TestCase("temperature", false, false)]
+    [TestCase("temperature", false, true)]
+    [TestCase("temperature", true, false)]
+    [TestCase("temperature", true, true)]
+    [TestCase("humidity", false, false)]
+    [TestCase("humidity", false, true)]
+    [TestCase("humidity", true, false)]
+    [TestCase("humidity", true, true)]
+    public async Task FirstReportedStateAndTransitionsPublishCompleteStateBeforeMatchingEvent(string signal, bool initial, bool runningBeforeState)
     {
         var transport = new Transport();
         var config = new DeviceConfiguration("127.0.0.1", connectionOptions: new DeviceConnectionOptions(
@@ -94,10 +106,15 @@ public sealed class SensorFeedbackTests
             await device.UpdateAsync();
             sensor.ApplyPushedState(device.GetChildDevice("sensor"), device);
         }
+        if (runningBeforeState) sensor.NotifyChildRunning("before-state");
         // Other data can arrive first. Never announce an unknown signal as false.
         await Push();
         Assert.That(events, Is.Zero);
         SetValue(initial); await Push(); await Push();
+        if (!runningBeforeState) { Assert.That(events, Is.Zero, "Startup waits for the host's Running lifecycle."); sensor.ApplyConnectionState(false); }
+        sensor.NotifyChildRunning("after-state");
+        if (!runningBeforeState) { Assert.That(events, Is.Zero, "Offline Running must wait for fresh confirmed telemetry."); await Push(); }
+        sensor.NotifyChildRunning("duplicate-running");
         Assert.That(events, Is.EqualTo(1), "The first reported signal announces its confirmed state once, including inactive states.");
         expected = !initial; SetValue(expected); await Push(); await Push();
         Assert.That(events, Is.EqualTo(2));
