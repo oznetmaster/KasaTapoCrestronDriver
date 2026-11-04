@@ -16,11 +16,13 @@ public sealed class LightRefreshPublicationTests
 {
     sealed class Transport : IDeviceTransport
     {
+        public int Reads;
         public bool On = true;
         public int Brightness = 60, Kelvin, Hue = 210, Saturation = 80;
         public Task<string> SendAsync(string json, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref Reads);
             Assert.That(json, Does.Not.Contain("\"set_").And.Not.Contain("transition_light_state"), "A refresh must not write to the bulb.");
             return Task.FromResult(JsonSerializer.Serialize(new { system = new { get_sysinfo = new {
                 alias = "Fixture bulb", model = "KL130", deviceId = "fixture-bulb", light_state = new {
@@ -31,7 +33,7 @@ public sealed class LightRefreshPublicationTests
     }
 
     [Test]
-    public async Task PollingRefreshAndSnapshotPublishExternalWhiteColorAndPowerState()
+    public async Task PollingRefreshPublishesOnlyChangedStateAndConfirmedModeSwitches()
     {
         var transport = new Transport();
         using var device = new KasaDevice(new DeviceConfiguration("127.0.0.1"), transport);
@@ -49,10 +51,7 @@ public sealed class LightRefreshPublicationTests
         light.ValuesChanged += (_, e) => { foreach (var entry in e.Update.Changes) if (entry.Value.Value is {} value) updates[entry.Key] = value; };
         async Task Poll()
         {
-            // The actual polling loop performs both operations. RefreshAsync alone
-            // is not its publication contract and cannot establish an app defect.
             await light.RefreshAsync(default);
-            light.PublishStateSnapshot();
         }
 
         transport.Kelvin = 6100;
@@ -67,15 +66,49 @@ public sealed class LightRefreshPublicationTests
         Assert.That(updates.ContainsKey("lightColor:hue"), Is.True, "Returning to the same stored hue still changes the active mode.");
         Assert.That(updates.ContainsKey("lightColor:saturation"), Is.True);
         Assert.That(updates.ContainsKey("lightEmulatedColorTemperature:level"), Is.False, "Do not assert white mode with inactive colour temperature.");
-        var publishedHue = updates["lightColor:hue"].GetValue<double>();
+
 
         updates.Clear();
         await Poll();
-        Assert.That(updates["lightColor:hue"].GetValue<double>(), Is.EqualTo(publishedHue), "An unchanged snapshot must preserve the previously published hue.");
+        Assert.That(updates, Is.Empty, "An unchanged poll must not replay level or colour notifications into Home programming.");
         Assert.That(updates.ContainsKey("lightEmulatedColorTemperature:level"), Is.False, "The repeated snapshot must keep the active colour mode.");
+
+        transport.Kelvin = 6100;
+        await Poll();
+        Assert.That(updates["lightEmulatedColorTemperature:level"].GetValue<long>(), Is.EqualTo(6100), "Returning to the same retained white value must still assert the confirmed mode switch.");
+        Assert.That(updates.ContainsKey("lightDimmer:level"), Is.False, "A mode change must not replay unchanged brightness.");
 
         transport.On = false;
         await Poll();
         Assert.That(updates["lightDimmer:level"].GetValue<double>(), Is.Zero, "External power-off must also notify the host.");
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task ScheduledPollingDoesNotRepublishUnchangedLightProperties(bool on)
+    {
+        var transport = new Transport { On = on };
+        using var device = new KasaDevice(new DeviceConfiguration("127.0.0.1"), transport);
+        await device.UpdateAsync();
+        var settings = new PlatformSharedConfiguration();
+        settings.Update("", "", TimeSpan.FromSeconds(5), false, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30), false, "", "", "");
+        using var logger = new DriverLogger("poll-loop-test");
+        var resources = new DriverImplementationResources { Logger = logger, InitLogger = logger.GetComponentLogger("test", "poll-loop") };
+        var descriptor = new ManagedLightDescriptor("fixture-light", "127.0.0.1", device.DeviceType, "Fixture light", "KL130", "fixture-bulb", ManagedLightKind.Color);
+        using var light = new KasaLightEntity("fixture-light", descriptor, device.Configuration, null, settings, null, resources, null!, "poll-loop-test");
+        Assert.That(light.TryAttachConnectedDevice(device, "fixture"), Is.True);
+        await light.SetConfiguredAsync(true, "fixture", default);
+        light.NotifyChildPublished();
+        var updates = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        light.ValuesChanged += (_, e) => { foreach (var entry in e.Update.Changes) if (entry.Key.StartsWith("light", StringComparison.Ordinal)) updates.Enqueue(entry.Key); };
+        int baseline = Volatile.Read(ref transport.Reads);
+        var previous = settings.Snapshot();
+        settings.Update("", "", TimeSpan.FromSeconds(5), true, TimeSpan.FromMilliseconds(50), TimeSpan.FromSeconds(30), false, "", "", "");
+        light.ApplyRuntimeConfiguration(previous, settings.Snapshot());
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (Volatile.Read(ref transport.Reads) < baseline + 3) await Task.Delay(10, timeout.Token);
+        await Task.Delay(100, timeout.Token);
+        light.Stop();
+        Assert.That(updates, Is.Empty, "Actual scheduled polls must not replay native light events for unchanged values.");
     }
 }

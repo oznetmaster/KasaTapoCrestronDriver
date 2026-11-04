@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin.
+// Copyright (c) 2026 Neil Colvin.
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 using System.Collections;
@@ -43,6 +43,7 @@ internal partial class KasaLightEntity
 		int? saturation = device.LightState?.Saturation ?? device.LightState?.Hsv?.Saturation;
 		int? colorTemperature = device.LightState?.ColorTemperature;
 		bool hasActiveColorTemperature = HasCurrentColorTemperatureState (device.LightState);
+		bool previousColorTemperatureUiMode = _isColorTemperatureUiModeActive;
 
 		LightIsOn = isOn;
 
@@ -102,6 +103,11 @@ internal partial class KasaLightEntity
 					}
 				}
 			}
+
+		// A mode switch can reuse the retained channel values. Publish those channels once,
+		// without republishing the unchanged dimmer level on every normal poll.
+		if (!_suppressPropertyNotifications && previousColorTemperatureUiMode != _isColorTemperatureUiModeActive)
+			PublishColorModeStateProperties ("ApplyState:confirmedModeChanged");
 
 		OnStateApplied (device);
 		}
@@ -570,16 +576,7 @@ internal partial class KasaLightEntity
 				await device.UpdateAsync (cancellationToken).ConfigureAwait (false);
 				RefreshDescriptorFromConnectedDevice (device, "RefreshAsync.AfterUpdate");
 				LogReportedState ("RefreshAsync.AfterUpdate", device);
-				bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
-				_suppressPropertyNotifications = true;
-				try
-					{
-					ApplyState (device);
-					}
-				finally
-					{
-					_suppressPropertyNotifications = previousSuppressPropertyNotifications;
-					}
+				ApplyState (device);
 			}, cancellationToken).ConfigureAwait (false);
 
 		OnlineIndicatorIsOnline = true;
@@ -598,16 +595,7 @@ internal partial class KasaLightEntity
 				RefreshDescriptorFromConnectedDevice (reconnectedDevice, "ReconnectRefresh.AfterConnect");
 				LogReportedState ("ReconnectRefresh.AfterConnect", reconnectedDevice);
 
-				bool previousSuppressPropertyNotifications = _suppressPropertyNotifications;
-				_suppressPropertyNotifications = true;
-				try
-					{
-					ApplyState (reconnectedDevice);
-					}
-				finally
-					{
-					_suppressPropertyNotifications = previousSuppressPropertyNotifications;
-					}
+				ApplyState (reconnectedDevice);
 			}, cancellationToken).ConfigureAwait (false);
 		}
 

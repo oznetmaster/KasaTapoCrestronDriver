@@ -12,6 +12,8 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 
 ## Unreleased
 
+- Stop forced light-state notifications on unchanged scheduled polls and shared parent updates, preventing native Home level programming from replaying. Publish retained colour channels once when a confirmed white/colour mode switch requires them.
+
 - Report light/dimmer power, brightness and colour changes only after device readback. Keep requested slider/channel values separate from confirmed feedback; ignored commands and failed reads retain the last confirmed state.
 - Publish all sensor state, status, icon and availability updates before transition events. Establish a separate first-reading baseline for each sensor signal, and preserve it across missing telemetry or connection loss.
 - Publish button availability and icon before observed gesture events while retaining historical-log suppression and buffered gesture replay.

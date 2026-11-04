@@ -260,9 +260,19 @@
       "channel": "public",
       "publicVersion": "2.1.6",
       "driverVersion": "2.1.006.0000",
+      "status": "withdrawn",
+      "date": "2026-11-04",
+      "purpose": "Unpublished lab candidate; installed Home tests exposed repeated native light events from unchanged polling snapshots",
+      "packageSha256": "6061f1d4ee2c47f4b5f1dcfb3a9f472ded28076abd60430b316c8a21c30576e1"
+    },
+    {
+      "id": "public-2.1.7",
+      "channel": "public",
+      "publicVersion": "2.1.7",
+      "driverVersion": "2.1.007.0000",
       "status": "prepared",
       "date": "2026-11-04",
-      "purpose": "Release candidate for confirmed light, sensor and button event ordering; lab acceptance pending; not published"
+      "purpose": "Unpublished Release candidate including confirmed event ordering and suppression of unchanged native light polling notifications; lab acceptance pending"
     }
   ],
   "nugetDocumentationPatches": [

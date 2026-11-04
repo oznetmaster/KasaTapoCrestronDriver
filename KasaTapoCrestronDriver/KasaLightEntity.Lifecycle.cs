@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Neil Colvin.
+// Copyright (c) 2026 Neil Colvin.
 // Licensed under the MIT License with Commons Clause. See LICENSE file in the project root for full license information.
 
 using System.Diagnostics;
@@ -413,7 +413,6 @@ internal partial class KasaLightEntity
 			if (_sharedConfiguration.EnableLightPolling)
 				{
 				await RefreshAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
-				PublishStateSnapshot ();
 				}
 			else if (!OnlineIndicatorIsOnline)
 				{
@@ -427,7 +426,6 @@ internal partial class KasaLightEntity
 				try
 					{
 					await RefreshAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
-					PublishStateSnapshot ();
 					}
 				catch (OperationCanceledException)
 					{

@@ -29,7 +29,7 @@ internal partial class KasaLightEntity : IParentDeviceChild
         ApplyState(parentDevice);
         OnlineIndicatorIsOnline = true;
         ReadyIndicatorIsReady = true;
-        if (_childPublished) PublishStateSnapshot();
+
     }
 
     void IParentDeviceChild.ApplyConnectionState(bool online)
@@ -37,6 +37,6 @@ internal partial class KasaLightEntity : IParentDeviceChild
         if (_disposed || !_isConfigured || Volatile.Read(ref _stopState) != 0) return;
         OnlineIndicatorIsOnline = online;
         ReadyIndicatorIsReady = online;
-        if (_childPublished) PublishStateSnapshot();
+
     }
 }
