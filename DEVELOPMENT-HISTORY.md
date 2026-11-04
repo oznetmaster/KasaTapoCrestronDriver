@@ -2,6 +2,15 @@
 
 See the [product changelog](CHANGELOG.md) for shipped changes. This document preserves test, CI and build history. Dated development entries describe work at that time, not a published product version or completed acceptance. Version headings identify the release alongside which development work was recorded; processor-test versions identify separate test packages.
 
+## 2026-11-04 — Outlet polling notification volume
+
+- A customer screenshot and log excerpt show Home's received/cache/handle/skip property pipeline repeatedly processing the outlet's full snapshot. The customer's test package was built in Release; its ordinary outlet debug calls were already compiled out. The snapshot notification path is separate from those calls.
+- Remove unconditional snapshots after scheduled polls, shared-parent updates and command completion. Retain complete startup/lifecycle snapshots, changed telemetry and availability notifications, and confirmed transition events. Compile routine registration, shared-parent and processor-baseline informational diagnostics out of Release.
+- The notification change passed 381 checks at source `5ac2fdc2794d473d33a204c5ba392ffd57bfc5a6`: 186 workstation, 186 processor and nine processor live-device checks. Live plug/strip assertions verify quiet unchanged state alongside confirmed command/external-change feedback. Final logging-only source `b69ce3e4d26f1a83b8da8d6b0acc6ed0152baefc` passed another 152 Release lifecycle checks and two isolated installed Home startup programming witnesses, Outlet On and Outlet Off.
+- Candidate 2.1.14 is installed only on the lab processor; all 37 identities/placements and exact stored bytes were verified. Programming, source/witness states and polling settings were restored, leases released, and both Demo bulbs independently read back off. No full Home/processor reboot was performed and no public distribution was made.
+- The lab application log file did not append during a bounded 40-second baseline, so no byte/line reduction is claimed from that capture. Home can still log genuine changed values. Customer confirmation of the final log volume remains outstanding.
+- Frozen candidate 2.1.13 is preserved as superseded; no frozen or distributed package was overwritten. Candidate 2.1.14 SHA-256: `2e179ad50b61110ab644bfbf7b45d5964c869630b0b33d913b352ac6591627ab`.
+
 ## 2026-11-04 — Deferred startup acceptance completed
 
 - Candidate 2.1.12, runtime source `e576ff2de4b233a20d39b5a8dfdbb41dd224928f`, passed 373 checks: 182 workstation fixtures, 182 processor fixtures and nine processor live-device tests. A live test race was corrected to await notification completion as well as the readable confirmed level; the original failure remains retained.

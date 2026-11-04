@@ -110,6 +110,11 @@ For changes made in the Kasa/Tapo app or at the physical device, enable **Enable
 Polling**; outlets also use **Light Poll Interval (Seconds)** (15 seconds by default).
 Feedback arrives after a successful poll rather than immediately from the app.
 
+In the unreleased update, ordinary outlet polls notify Home only when confirmed values
+change; complete snapshots remain part of startup and lifecycle reporting. This avoids
+replaying unchanged UI, state, energy and availability properties on every poll.
+Home may still log real property changes independently of the driver logging option.
+
 Third-party tiles need their own feedback programming: connect this outlet's **Outlet
 Turned On** and **Outlet Turned Off** events to the tile's respective state-feedback
 actions, where supported. Use actions that update the display without commanding the

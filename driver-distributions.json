@@ -356,9 +356,23 @@
       "channel": "public",
       "publicVersion": "2.1.14",
       "driverVersion": "2.1.014.0000",
-      "status": "reserved",
+      "status": "prepared",
       "date": "2026-11-04",
-      "purpose": "Unpublished quiet-poll candidate with Release informational diagnostics compiled out across controller, shared-parent and processor-baseline paths"
+      "purpose": "Unpublished quiet-poll candidate with Release informational diagnostics compiled out across controller, shared-parent and processor-baseline paths",
+      "sourceCommit": "b69ce3e4d26f1a83b8da8d6b0acc6ed0152baefc",
+      "packageSha256": "2e179ad50b61110ab644bfbf7b45d5964c869630b0b33d913b352ac6591627ab",
+      "labValidation": {
+        "date": "2026-11-04",
+        "releaseLifecyclePassed": 152,
+        "inheritedWorkstationProcessorLivePassed": 381,
+        "installedStartupEvents": [
+          "outletTurnedOn",
+          "outletTurnedOff"
+        ],
+        "deviceIdentitiesPreserved": 37,
+        "logByteReductionMeasured": false,
+        "demoBulbsRestoredOff": true
+      }
     }
   ],
   "nugetDocumentationPatches": [
