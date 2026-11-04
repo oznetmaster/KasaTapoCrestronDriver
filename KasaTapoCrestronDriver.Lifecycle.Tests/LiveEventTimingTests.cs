@@ -267,7 +267,7 @@ public sealed partial class LiveDriverEntityTests
             await entity.RefreshAsync(default);
             Assert.That(events, Is.EqualTo(2));
             Assert.That(callbackFailures, Is.Empty);
-            notified.Clear();
+            while (notified.TryDequeue(out _)) { }
             for (int i = 0; i < 3; i++) await entity.RefreshAsync(default);
             string[] stableProperties = { "extension:uiDefinition", "deviceLabel", "controlDeviceId", "outletIsOn", "outletIcon", "outletStatus", "hasEnergyReporting", "onlineIndicatorIsOnline", "onlineIndicator:isOnline", "readyIndicatorIsReady", "readyIndicator:isReady" };
             Assert.That(notified.Where(id => stableProperties.Contains(id)), Is.Empty, "Real device polls must not replay unchanged outlet properties. Energy telemetry may change.");
