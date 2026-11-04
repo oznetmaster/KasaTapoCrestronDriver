@@ -254,6 +254,15 @@
         "customerConfirmedTestVersion": "2.1.004.0001",
         "productionCSharpUnchangedSinceCustomerTest": true
       }
+    },
+    {
+      "id": "public-2.1.6",
+      "channel": "public",
+      "publicVersion": "2.1.6",
+      "driverVersion": "2.1.006.0000",
+      "status": "prepared",
+      "date": "2026-11-04",
+      "purpose": "Release candidate for confirmed light, sensor and button event ordering; lab acceptance pending; not published"
     }
   ],
   "nugetDocumentationPatches": [
