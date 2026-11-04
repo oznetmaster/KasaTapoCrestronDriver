@@ -324,7 +324,21 @@
       "driverVersion": "2.1.012.0000",
       "status": "prepared",
       "date": "2026-11-04",
-      "purpose": "Unpublished candidate: wait for confirmed state, Running and the first host state read before extension startup events"
+      "purpose": "Unpublished lab-validated candidate: deferred confirmed extension startup events released on first host state read after Running",
+      "sourceCommit": "e576ff2de4b233a20d39b5a8dfdbb41dd224928f",
+      "packageSha256": "6ffe6fd14cb64ed203aee503da52d35145ca98722f135b2f2deaa9d8764b5aae",
+      "labValidation": {
+        "date": "2026-11-04",
+        "automatedPassed": 373,
+        "driverReloadStartupEvents": [
+          "outletTurnedOn",
+          "outletTurnedOff",
+          "motionCleared"
+        ],
+        "fullHomeRestartTested": false,
+        "lightBaselineCasesPassed": 4,
+        "demoBulbsRestoredOff": true
+      }
     }
   ],
   "nugetDocumentationPatches": [

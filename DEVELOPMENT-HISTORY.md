@@ -2,6 +2,14 @@
 
 See the [product changelog](CHANGELOG.md) for shipped changes. This document preserves test, CI and build history. Dated development entries describe work at that time, not a published product version or completed acceptance. Version headings identify the release alongside which development work was recorded; processor-test versions identify separate test packages.
 
+## 2026-11-04 — Deferred startup acceptance completed
+
+- Candidate 2.1.12, runtime source `e576ff2de4b233a20d39b5a8dfdbb41dd224928f`, passed 373 checks: 182 workstation fixtures, 182 processor fixtures and nine processor live-device tests. A live test race was corrected to await notification completion as well as the readable confirmed level; the original failure remains retained.
+- The installed package passed three isolated Home programming witnesses across driver-tree reloads: initial Outlet On, initial Outlet Off and initial Motion Cleared. Source states were continuously observed unchanged, saved sequence programming was verified after reload, and the programmed action executed for each initial state. All 37 device identities remained preserved during deployment.
+- The four light baseline cases from 2.1.11 remain applicable: all light runtime and baseline-coordinator sources are unchanged, and the new host-read callback applies only to extension startup event entities. They cover white/colour, on/off, preserved physical brightness, zero off feedback, and both stored and active processor modes.
+- Temporary event programming and source/witness states were restored, all operation leases released, and both Demo KL130 and Demo L530 independently read back off. Evidence is private. These installed startup witnesses cover driver reloads; a full Crestron Home or processor restart was not performed. No public distribution was made.
+- Frozen package SHA-256: `6ffe6fd14cb64ed203aee503da52d35145ca98722f135b2f2deaa9d8764b5aae`.
+
 ## 2026-11-04 — First host state-read startup handshake
 
 - Candidate 2.1.11 passed 369 automated checks after retaining and retrying one discovery-resolution failure. The isolated outlet startup programming check still failed; Running alone was therefore not accepted as proof that startup events reached Home programming.
