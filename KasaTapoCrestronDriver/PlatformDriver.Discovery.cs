@@ -840,7 +840,9 @@ public sealed partial class PlatformDriver
 
 	private void LogInfoCore (string message)
 		{
+#if DEBUG
 		_logger?.Log (_driverLogId, LogEntryLevel.Info, message);
+#endif
 		}
 
 	private static bool IsDebugLoggingEnabled ()

@@ -345,9 +345,20 @@
       "channel": "public",
       "publicVersion": "2.1.13",
       "driverVersion": "2.1.013.0000",
+      "status": "withdrawn",
+      "date": "2026-11-04",
+      "purpose": "Unpublished lab candidate; 381 checks and exact-byte lab deployment passed. Superseded before distribution to also compile out shared-parent and processor-baseline informational diagnostics in Release.",
+      "packageSha256": "9787358656817e2a623bf7a01cb284998abc9b5f0750455d4edd1fb8409124f1",
+      "sourceCommit": "5ac2fdc2794d473d33a204c5ba392ffd57bfc5a6"
+    },
+    {
+      "id": "public-2.1.14",
+      "channel": "public",
+      "publicVersion": "2.1.14",
+      "driverVersion": "2.1.014.0000",
       "status": "reserved",
       "date": "2026-11-04",
-      "purpose": "Unpublished lab candidate: retain confirmed feedback and deferred startup announcements while suppressing redundant outlet snapshots and default Release registration traces"
+      "purpose": "Unpublished quiet-poll candidate with Release informational diagnostics compiled out across controller, shared-parent and processor-baseline paths"
     }
   ],
   "nugetDocumentationPatches": [

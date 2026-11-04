@@ -351,6 +351,7 @@ internal sealed class ManagedParentDevicePoller : IDisposable
         // underneath an in-flight SDK operation; cancellation drains those operations.
     }
 
+    [System.Diagnostics.Conditional("DEBUG")]
     private void LogInfo(string message) => _logger?.Log(_driverLogId, LogEntryLevel.Info, $"ManagedParentDevicePoller[{_hostKey}]: {message}");
     private void LogError(string message) => _logger?.Log(_driverLogId, LogEntryLevel.Error, $"ManagedParentDevicePoller[{_hostKey}]: {message}");
 }
