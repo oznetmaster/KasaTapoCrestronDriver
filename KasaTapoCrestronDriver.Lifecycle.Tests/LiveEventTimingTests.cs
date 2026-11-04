@@ -217,11 +217,12 @@ public sealed partial class LiveDriverEntityTests
         entity.NotifyChildPublished();
         entity.NotifyChildRunning("live-startup"); entity.NotifyHostStateRead();
         var published = new ConcurrentDictionary<string, DriverEntityValue>();
+        var notified = new ConcurrentQueue<string>();
         int events = 0;
         var callbackFailures = new ConcurrentQueue<string>();
         entity.ValuesChanged += (_, e) => {
             foreach (var pair in e.Update.Changes) if (pair.Value.Value is {} value) {
-                published[pair.Key] = value; transport.Mark("property:" + pair.Key);
+                published[pair.Key] = value; notified.Enqueue(pair.Key); transport.Mark("property:" + pair.Key);
             }
         };
         void Event(bool on)
@@ -266,6 +267,11 @@ public sealed partial class LiveDriverEntityTests
             await entity.RefreshAsync(default);
             Assert.That(events, Is.EqualTo(2));
             Assert.That(callbackFailures, Is.Empty);
+            notified.Clear();
+            for (int i = 0; i < 3; i++) await entity.RefreshAsync(default);
+            string[] stableProperties = { "extension:uiDefinition", "deviceLabel", "controlDeviceId", "outletIsOn", "outletIcon", "outletStatus", "hasEnergyReporting", "onlineIndicatorIsOnline", "onlineIndicator:isOnline", "readyIndicatorIsReady", "readyIndicator:isReady" };
+            Assert.That(notified.Where(id => stableProperties.Contains(id)), Is.Empty, "Real device polls must not replay unchanged outlet properties. Energy telemetry may change.");
+            Assert.That(events, Is.EqualTo(2));
         }
         finally
         {
