@@ -339,6 +339,15 @@
         "lightBaselineCasesPassed": 4,
         "demoBulbsRestoredOff": true
       }
+    },
+    {
+      "id": "public-2.1.13",
+      "channel": "public",
+      "publicVersion": "2.1.13",
+      "driverVersion": "2.1.013.0000",
+      "status": "reserved",
+      "date": "2026-11-04",
+      "purpose": "Unpublished lab candidate: retain confirmed feedback and deferred startup announcements while suppressing redundant outlet snapshots and default Release registration traces"
     }
   ],
   "nugetDocumentationPatches": [
