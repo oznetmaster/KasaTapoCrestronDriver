@@ -14,14 +14,17 @@ namespace KasaTapoCrestronDriver;
 // this controller, so these calls can be distinguished from driver self-calls.
 internal sealed class RegistrationTracingController : DispatchingDeviceController
 {
-    private readonly Action<string> _trace;
+    private readonly Action<string>? _trace;
     private readonly Action<string>? _hostStateRead;
     private long _requestSequence;
 
     internal RegistrationTracingController(ConfigurableDriverEntity root, DriverControllerCreationArgs args,
         Action<string>? trace = null, Action<string>? hostStateRead = null) : base(root, args, null)
     {
-        _trace = trace ?? (message => args.Logger.Log(args.DriverId, LogEntryLevel.Info, message));
+        _trace = trace;
+#if DEBUG
+        _trace ??= message => args.Logger.Log(args.DriverId, LogEntryLevel.Info, message);
+#endif
         _hostStateRead = hostStateRead;
         ControllerIdsChanged += OnControllerIdsChanged;
         Write(() => $"created; registry=[{Keys(base.ControllerIds)}]");
@@ -93,6 +96,7 @@ internal sealed class RegistrationTracingController : DispatchingDeviceControlle
 
     private void Write(Func<string> message)
     {
+        if (_trace is null) return;
         // Diagnostics must not change a host call's result, even if logging fails.
         try { _trace?.Invoke($"REGISTRATION-TRACE: {message()}"); }
         catch { }

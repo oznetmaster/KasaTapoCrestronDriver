@@ -28,7 +28,6 @@ internal sealed partial class KasaOutletEntity : IParentDeviceChild
         ApplyState(parentDevice);
         OnlineIndicatorIsOnline = true;
         ReadyIndicatorIsReady = true;
-        if (_childPublished) PublishStateSnapshot();
     }
 
     void IParentDeviceChild.ApplyConnectionState(bool online)
@@ -36,6 +35,5 @@ internal sealed partial class KasaOutletEntity : IParentDeviceChild
         if (_disposed || !_isConfigured || Volatile.Read(ref _stopState) != 0) return;
         OnlineIndicatorIsOnline = online;
         ReadyIndicatorIsReady = online;
-        if (_childPublished) PublishStateSnapshot();
     }
 }

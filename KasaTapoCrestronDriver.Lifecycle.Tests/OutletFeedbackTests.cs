@@ -18,6 +18,8 @@ public sealed class OutletFeedbackTests
 	private sealed class Transport (bool initialOn, bool strip) : IDeviceTransport
 		{
 		public bool IsOn = initialOn;
+		public int Reads;
+		public int? PowerMilliwatts;
 		public bool IgnoreCommands;
 		public bool FailCommands;
 		public bool FailReads;
@@ -41,6 +43,7 @@ public sealed class OutletFeedbackTests
 					IsOn = relay["state"]!.GetValue<int> () != 0;
 				return "{\"system\":{\"set_relay_state\":{\"err_code\":0}}}";
 				}
+			Interlocked.Increment (ref Reads);
 			if (FailReads || Interlocked.Decrement (ref ReadFailuresRemaining) >= 0)
 				throw new IOException ("Simulated failed readback.");
 			string children = strip ? ",\"children\":[{\"id\":\"a\",\"alias\":\"Socket A\",\"state\":" + (IsOn ? 1 : 0) + "}]" : "";
@@ -49,7 +52,9 @@ public sealed class OutletFeedbackTests
 			}
 
 		public Task<string> SendManyAsync (IReadOnlyList<string> commands, CancellationToken token) =>
-			Task.FromResult ("{\"emeter\":{\"err_code\":-1}}");
+			Task.FromResult (PowerMilliwatts.HasValue
+				? "{\"emeter\":{\"get_realtime\":{\"power_mw\":" + PowerMilliwatts.Value + ",\"voltage_mv\":230000,\"current_ma\":159,\"total_wh\":1250}}}"
+				: "{\"emeter\":{\"err_code\":-1}}");
 		}
 
 	private sealed class Fixture : IDisposable
@@ -58,6 +63,8 @@ public sealed class OutletFeedbackTests
 		public readonly KasaDevice Device;
 		public readonly KasaOutletEntity Outlet;
 		public readonly List<bool> Events = new ();
+		public readonly List<string> PublishedIds = new ();
+		public readonly PlatformSharedConfiguration Settings = new ();
 		private readonly Dictionary<string, Crestron.DeviceDrivers.EntityModel.Data.DriverEntityValue> _published = new ();
 		public readonly List<object> SdkEvents = new ();
 		private readonly ManagedParentDevicePoller? _poller;
@@ -67,7 +74,7 @@ public sealed class OutletFeedbackTests
 			{
 			Transport = new Transport (initialOn, parentPolling);
 			Device = new KasaDevice (new DeviceConfiguration ("127.0.0.1"), Transport);
-			var settings = new PlatformSharedConfiguration ();
+			var settings = Settings;
 			settings.Update ("", "", TimeSpan.FromSeconds (5), false, TimeSpan.FromSeconds (15), TimeSpan.FromSeconds (30), false, "", "", "");
 			if (parentPolling)
 				_poller = new ManagedParentDevicePoller ("feedback-fixture", Device.Configuration, settings, null, "test", true,
@@ -77,7 +84,7 @@ public sealed class OutletFeedbackTests
 				parentPolling ? DeviceType.Strip : DeviceType.Plug, "Fixture outlet", parentPolling ? "KP303" : "HS100",
 				"feedback-fixture", ManagedLightKind.OnOff, childId: parentPolling ? "a" : null, childKind: ManagedChildKind.Outlet);
 			Outlet = new KasaOutletEntity ("feedback-outlet", descriptor, Device.Configuration, null, settings, resources, null!, "test", DriverTestPaths.DataDirectory, _poller);
-			Outlet.ValuesChanged += (_, e) => { foreach (var p in e.Update.Changes) if (p.Value.Value is {} value) _published[p.Key] = value; };
+			Outlet.ValuesChanged += (_, e) => { foreach (var p in e.Update.Changes) { PublishedIds.Add (p.Key); if (p.Value.Value is {} value) _published[p.Key] = value; } };
 			Outlet.OutletTurnedOn += (_, _) => RecordEvent (true);
 			Outlet.OutletTurnedOff += (_, _) => RecordEvent (false);
 			Outlet.EventRaised += (_, e) => { lock (SdkEvents) SdkEvents.Add (e); };
@@ -133,6 +140,67 @@ public sealed class OutletFeedbackTests
 			Device.Dispose ();
 			_logger.Dispose ();
 			}
+		}
+
+	[TestCase (false)]
+	[TestCase (true)]
+	public async Task RepeatedConfirmedRefreshesPublishOnlyChanges (bool parentPolling)
+		{
+		using var fixture = new Fixture (false, parentPolling);
+		await fixture.InitializeAsync ();
+		fixture.Outlet.NotifyChildPublished ();
+		fixture.PublishedIds.Clear ();
+		int reads = fixture.Transport.Reads;
+		for (int i = 0; i < 5; i++) await fixture.Outlet.RefreshAsync (default);
+		Assert.That (fixture.Transport.Reads, Is.GreaterThan (reads), "Quiet notifications must not disable polling.");
+		Assert.That (fixture.PublishedIds, Is.Empty, "Unchanged polls must not replay UI, state, energy or availability.");
+		fixture.Transport.IsOn = true;
+		await fixture.Outlet.RefreshAsync (default);
+		Assert.That (fixture.PublishedIds, Does.Contain ("outletIsOn"));
+		Assert.That (fixture.Events, Is.EqualTo (new[] { true }));
+		fixture.PublishedIds.Clear ();
+		await fixture.Outlet.RefreshAsync (default);
+		Assert.That (fixture.PublishedIds, Is.Empty);
+		}
+
+	[Test]
+	public async Task EnergyChangesPublishTelemetryWithoutRepeatingSwitchStateOrEvent ()
+		{
+		using var fixture = new Fixture (false, false);
+		fixture.Transport.PowerMilliwatts = 36500;
+		await fixture.InitializeAsync ();
+		Assert.That (fixture.Outlet.HasEnergyReporting, Is.True);
+		Assert.That (fixture.Outlet.OutletEnergyCurrentPowerWatts, Is.EqualTo (36.5));
+		fixture.Outlet.NotifyChildPublished ();
+		fixture.PublishedIds.Clear ();
+		for (int i = 0; i < 5; i++) await fixture.Outlet.RefreshAsync (default);
+		Assert.That (fixture.PublishedIds, Is.Empty, "Unchanged energy readings must remain quiet too.");
+		fixture.Transport.PowerMilliwatts = 41000;
+		await fixture.Outlet.RefreshAsync (default);
+		Assert.That (fixture.Outlet.OutletEnergyCurrentPowerWatts, Is.EqualTo (41));
+		Assert.That (fixture.PublishedIds, Is.EqualTo (new[] { "outletEnergyCurrentPowerWatts" }));
+		Assert.That (fixture.Events, Is.Empty);
+		fixture.PublishedIds.Clear ();
+		await fixture.Outlet.RefreshAsync (default);
+		Assert.That (fixture.PublishedIds, Is.Empty);
+		}
+
+	[Test]
+	public async Task ScheduledPollingReadsDeviceWithoutReplayingSnapshot ()
+		{
+		using var fixture = new Fixture (false, false);
+		await fixture.InitializeAsync ();
+		fixture.Outlet.NotifyChildPublished ();
+		fixture.PublishedIds.Clear ();
+		fixture.Settings.Update ("", "", TimeSpan.FromSeconds (5), true, TimeSpan.FromMilliseconds (100), TimeSpan.FromSeconds (30), false, "", "", "");
+		int reads = fixture.Transport.Reads;
+		var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+		int generation = (int) typeof (KasaOutletEntity).GetField ("_pollingGeneration", flags)!.GetValue (fixture.Outlet)!;
+		await (Task) typeof (KasaOutletEntity).GetMethod ("RunPollingCycleAsync", flags)!.Invoke (fixture.Outlet, new object[] { generation })!;
+		fixture.Outlet.Stop ();
+		Assert.That (fixture.Transport.Reads, Is.GreaterThan (reads));
+		Assert.That (fixture.PublishedIds, Is.Empty);
+		Assert.That (fixture.Events, Is.Empty);
 		}
 
 	[TestCase (false, false, false)]

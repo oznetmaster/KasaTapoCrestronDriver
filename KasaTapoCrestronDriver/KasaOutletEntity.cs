@@ -943,7 +943,6 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 				ApplyState (device);
 				OnlineIndicatorIsOnline = true;
 				ReadyIndicatorIsReady = true;
-				PublishStateSnapshot ();
 				return;
 				}
 			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -988,8 +987,9 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 
 			if (_sharedConfiguration.EnableLightPolling)
 				{
+				// Refresh publishes confirmed changes. A full snapshot here repeats every
+				// property notification on every poll, even when the outlet is unchanged.
 				await RefreshAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
-				PublishStateSnapshot ();
 				}
 
 			if (_disposed || Volatile.Read (ref _stopState) != 0 || generation != Volatile.Read (ref _pollingGeneration))

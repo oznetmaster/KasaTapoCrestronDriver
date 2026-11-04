@@ -12,6 +12,8 @@ This changelog records shipped features, fixes, compatibility and runtime depend
 
 ## Unreleased
 
+- Stop replaying full outlet property snapshots on scheduled polls, shared-parent updates and command completion. Continue polling and publish changed energy/state/availability values and confirmed On/Off events; retain complete lifecycle/startup snapshots. Disable default controller-registration tracing in Release builds.
+
 - Keep recovery polling from marking a light ready while its initial processor-baseline synchronization is still pending.
 
 - Convert the relative light level to percentage correctly when synchronizing the processor baseline, preventing a 60% light from being restored at 1%.
