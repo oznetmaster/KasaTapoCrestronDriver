@@ -1,29 +1,29 @@
 {
   "schemaVersion": 1,
-  "publicVersion": "2.1.5",
-  "driverVersion": "2.1.005.0000",
-  "runtimeSourceCommit": "cc324f6fd01415354f6c09f88c8e8f3a96e13802",
-  "documentationSourceCommit": "cc324f6fd01415354f6c09f88c8e8f3a96e13802",
+  "publicVersion": "2.1.14",
+  "driverVersion": "2.1.014.0000",
+  "runtimeSourceCommit": "b69ce3e4d26f1a83b8da8d6b0acc6ed0152baefc",
+  "documentationSourceCommit": "c0022d1a7743058c05ad87c73b8a31e0824ed499",
   "files": [
     {
       "name": "NeilColvin_Platform_KasaTapo_IP_V2.pkg",
-      "bytes": 5390486,
-      "sha256": "28c778c7b0c56c93181805e6731e979e6a44ea585ff92f9b15e8bc20da74b0d0"
+      "bytes": 3494110,
+      "sha256": "2e179ad50b61110ab644bfbf7b45d5964c869630b0b33d913b352ac6591627ab"
     },
     {
-      "name": "CrestronHomeDriver.TpLink.KasaTapoPlatform.2.1.5.nupkg",
-      "bytes": 5400091,
-      "sha256": "fcadbd83e9ba837158ea8fcbb747a7ba2d6ad34ab292c0a4a37c7387d2aa89ee"
+      "name": "CrestronHomeDriver.TpLink.KasaTapoPlatform.2.1.14.nupkg",
+      "bytes": 3504684,
+      "sha256": "aa89b13b6c0a77624de46c75949c8cd6b27c65722c371d70fd9da1a3c2192625"
     },
     {
-      "name": "KasaTapo-2.1.5-Windows.zip",
-      "bytes": 8516229,
-      "sha256": "d0f9ab0bedac15ecca84c15389c770f0c9b0da30f2bd2104a061abd696081ebf"
+      "name": "KasaTapo-2.1.14-Windows.zip",
+      "bytes": 6621017,
+      "sha256": "d051ce099c4e510affbf4052b981ce923cd736623ad87999ee80f4a438232005"
     },
     {
-      "name": "KasaTapo-2.1.5-SHA256SUMS.txt",
-      "bytes": 319,
-      "sha256": "888ea4a379c9a2e9baba3a5401c5a7e1f42eef229079bb771b3cba7a11671a51"
+      "name": "KasaTapo-2.1.14-SHA256SUMS.txt",
+      "bytes": 324,
+      "sha256": "bc177964ef3c2a761478deb92c39e8234a285a64b3e759d08645049f29cf66e7"
     }
   ]
 }
