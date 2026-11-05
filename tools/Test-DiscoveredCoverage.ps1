@@ -74,7 +74,7 @@ if ($Stage -eq 'Desktop') {
     Copy-Item $dump.FullName "$evidence/discovery.dump"
     $inventory = @(Read-TestTree "$evidence/discovery.dump" -AdapterDump)
     foreach ($category in $RequiredCategories) {
-        $selected = @($inventory | Where-Object { if ($category -eq 'live') { $candidate.Live } elseif ($category -eq 'processor') { $candidate.Processor -and !$candidate.Live } else { !$candidate.Processor -and !$candidate.Live } })
+        $selected = @($inventory | Where-Object { if ($category -eq 'live') { $_.Live } elseif ($category -eq 'processor') { $_.Processor -and !$_.Live } else { !$_.Processor -and !$_.Live } })
         if (!$selected.Count) { throw "Expected a nonempty $category suite." }
     }
     $filter = if ($ExcludeProcessor) { 'TestCategory!=Live&TestCategory!=Processor' } else { 'TestCategory!=Live' }
@@ -95,10 +95,10 @@ if ($Stage -eq 'Desktop') {
         Assert-TestOutcome $match[0] $AllowProcessorSkips.IsPresent
         $observed += $identity
     }
-    Assert-SameTests @($inventory | Where-Object { !$candidate.Live -and (!$ExcludeProcessor -or !$candidate.Processor) } | ForEach-Object Name) $observed 'Desktop execution'
+    Assert-SameTests @($inventory | Where-Object { !$_.Live -and (!$ExcludeProcessor -or !$_.Processor) } | ForEach-Object Name) $observed 'Desktop execution'
     if ($CompareProcessorInventory) {
         $sourceCases = @(Get-Content $CompareProcessorInventory -Raw | ConvertFrom-Json)
-        Assert-SameTests @($sourceCases | Where-Object { $candidate.Processor -and !$candidate.Live } | ForEach-Object Name) $observed 'Desktop processor harness'
+        Assert-SameTests @($sourceCases | Where-Object { $_.Processor -and !$_.Live } | ForEach-Object Name) $observed 'Desktop processor harness'
     }
     $inventory | Select-Object Name,Live,Processor,PhysicalTriggers | ConvertTo-Json -Depth 4 | Set-Content "$evidence/inventory.json" -Encoding utf8
     Write-Host "Verified $($observed.Count) test results against discovery; $(@($inventory | Where-Object Live).Count) live tests discovered only."
@@ -130,7 +130,7 @@ if ($Stage -eq 'Desktop') {
             foreach ($case in $cases) { Assert-TestOutcome $case $true }
             $executed += $cases.Name
         }
-        Assert-SameTests @($inventory | Where-Object { !$candidate.Live } | ForEach-Object Name) $executed 'Packaged execution'
+        Assert-SameTests @($inventory | Where-Object { !$_.Live } | ForEach-Object Name) $executed 'Packaged execution'
     }
     Write-Host 'Packaged discovery matches source test identities; both executions are complete.'
 } else { throw 'Choose Desktop or Package validation.' }
