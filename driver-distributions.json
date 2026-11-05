@@ -387,6 +387,19 @@
       "nugetServerSha256": "42e56f8923d3eb132c4a77e1ef3a4903fa4cdbe53160b6886a7e536e9181b4f7",
       "publicReadbackVerified": true,
       "nugetSearchIndexed": true
+    },
+    {
+      "id": "john-voltage-test-2.1.014.0001",
+      "channel": "test",
+      "publicVersion": null,
+      "driverVersion": "2.1.014.0001",
+      "status": "reserved",
+      "date": "2026-11-05",
+      "purpose": "Customer test for John: round outlet voltage to 0.1 V before property comparison/notification; polling, other telemetry and confirmed On/Off feedback unchanged",
+      "sourceCommit": "274afd58a84e289fb98f02ee544ae86c410ad993",
+      "packageSha256": null,
+      "url": null,
+      "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.014.0001/"
     }
   ],
   "nugetDocumentationPatches": [
