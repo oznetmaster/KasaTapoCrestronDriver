@@ -2,6 +2,13 @@
 
 See the [product changelog](CHANGELOG.md) for shipped changes. This document preserves test, CI and build history. Dated development entries describe work at that time, not a published product version or completed acceptance. Version headings identify the release alongside which development work was recorded; processor-test versions identify separate test packages.
 
+## 2026-11-05 — Unreleased outlet voltage precision
+
+- Round the driver-facing outlet voltage to one decimal place (0.1 V) before storing/comparing/publishing it. Raw library readings are unchanged. Values within the same rounded tenth do not notify; a different rounded tenth does. This is reporting precision, not a minimum raw-change deadband, so crossing a rounding boundary may still notify for a smaller raw fluctuation.
+- Leave current, power, accumulated energy, polling intervals, startup announcements and confirmed on/off feedback unchanged. This does not disable Crestron Home's own property-processing logs.
+- Four SDK notification regressions failed before the correction. All 156 Release desktop lifecycle cases pass afterwards, including startup rounding, an unchanged rounded reading, the midpoint boundary, increasing/decreasing voltage and no repeated switch/other-telemetry notifications. No new live-device or processor execution is claimed for this source-only change.
+- The published/submitted 2.1.14 package and its frozen evidence remain unchanged. This correction requires a future build; no new version or release is created by this change.
+
 ## 2026-11-05 — 2.1.14 public patch release
 
 - Promoted the exact installed/lab-validated driver package to GitHub, NuGet and the Windows uploader without rebuilding the runtime. Public `.pkg` SHA-256: `2e179ad50b61110ab644bfbf7b45d5964c869630b0b33d913b352ac6591627ab`. Submission-only help PDFs and the redundant documentation ZIP are absent from public assets; Crestron submissions remain separate.

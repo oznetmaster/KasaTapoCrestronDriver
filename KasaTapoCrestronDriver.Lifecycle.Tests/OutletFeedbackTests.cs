@@ -20,6 +20,7 @@ public sealed class OutletFeedbackTests
 		public bool IsOn = initialOn;
 		public int Reads;
 		public int? PowerMilliwatts;
+		public int VoltageMillivolts = 230000;
 		public bool IgnoreCommands;
 		public bool FailCommands;
 		public bool FailReads;
@@ -53,7 +54,7 @@ public sealed class OutletFeedbackTests
 
 		public Task<string> SendManyAsync (IReadOnlyList<string> commands, CancellationToken token) =>
 			Task.FromResult (PowerMilliwatts.HasValue
-				? "{\"emeter\":{\"get_realtime\":{\"power_mw\":" + PowerMilliwatts.Value + ",\"voltage_mv\":230000,\"current_ma\":159,\"total_wh\":1250}}}"
+				? "{\"emeter\":{\"get_realtime\":{\"power_mw\":" + PowerMilliwatts.Value + ",\"voltage_mv\":" + VoltageMillivolts + ",\"current_ma\":159,\"total_wh\":1250}}}"
 				: "{\"emeter\":{\"err_code\":-1}}");
 		}
 
@@ -183,6 +184,29 @@ public sealed class OutletFeedbackTests
 		fixture.PublishedIds.Clear ();
 		await fixture.Outlet.RefreshAsync (default);
 		Assert.That (fixture.PublishedIds, Is.Empty);
+		}
+
+	[TestCase (120041, 120049, 120.0, false)]
+	[TestCase (120041, 120050, 120.1, true)]
+	[TestCase (120041, 120100, 120.1, true)]
+	[TestCase (120141, 120041, 120.0, true)]
+	public async Task VoltagePublishesAtOneDecimalPlaceWithoutRepeatingOtherFeedback (int initialMillivolts, int nextMillivolts, double expectedVolts, bool voltageChanges)
+		{
+		using var fixture = new Fixture (false, false);
+		fixture.Transport.PowerMilliwatts = 36500;
+		fixture.Transport.VoltageMillivolts = initialMillivolts;
+		await fixture.InitializeAsync ();
+		Assert.That (fixture.Outlet.OutletEnergyVoltageVolts, Is.EqualTo (initialMillivolts == 120141 ? 120.1 : 120.0));
+		fixture.PublishedIds.Clear ();
+		fixture.Transport.VoltageMillivolts = nextMillivolts;
+		await fixture.Outlet.RefreshAsync (default);
+		Assert.That (fixture.Outlet.OutletEnergyVoltageVolts, Is.EqualTo (expectedVolts));
+		Assert.That (fixture.Outlet.GetState ().PropertyValues["outletEnergyVoltageVolts"].GetValue<double> (), Is.EqualTo (expectedVolts));
+		Assert.That (fixture.PublishedIds, Is.EqualTo (voltageChanges ? new[] { "outletEnergyVoltageVolts" } : Array.Empty<string> ()));
+		Assert.That (fixture.Events, Is.Empty, "Voltage changes must not raise switch-state events.");
+		fixture.PublishedIds.Clear ();
+		await fixture.Outlet.RefreshAsync (default);
+		Assert.That (fixture.PublishedIds, Is.Empty, "An unchanged rounded reading must remain quiet.");
 		}
 
 	[Test]

@@ -156,7 +156,8 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	public double OutletEnergyVoltageVolts
 		{
 		get;
-		private set => SetAndNotify ("outletEnergyVoltageVolts", value, ref field);
+		// Publish mains voltage at 0.1 V precision so sub-display fluctuations stay quiet.
+		private set => SetAndNotify ("outletEnergyVoltageVolts", Math.Round (value, 1, MidpointRounding.AwayFromZero), ref field);
 		}
 
 	[EntityProperty (Id = "outletEnergyCurrentAmps")]
