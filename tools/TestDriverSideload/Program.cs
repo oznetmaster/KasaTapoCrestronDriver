@@ -76,7 +76,7 @@ internal static class Program
         }
     }
 
-internal sealed class UploadForm : Form
+internal sealed partial class UploadForm : Form
     {
     private readonly Payload _payload;
     private readonly TextBox _host = new TextBox (), _user = new TextBox { Text = "admin" }, _password = new TextBox { UseSystemPasswordChar = true };
@@ -122,6 +122,7 @@ internal sealed class UploadForm : Form
         var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight };
         buttons.Controls.Add (_upload);
         buttons.Controls.Add (_licences);
+        AddDiagnosticCollectionButton (buttons);
         Wide (buttons, 7, 46);
         Wide (_progress, 8, 22);
         Wide (_status, 9, 110);
@@ -145,6 +146,7 @@ internal sealed class UploadForm : Form
             { MessageBox.Show (this, "Enter the processor IP address or hostname, username and password.", Text); return; }
         int port = (int)_port.Value;
         _busy = true;
+        SetDiagnosticCollectionEnabled (false);
         _upload.Enabled = _host.Enabled = _user.Enabled = _password.Enabled = _port.Enabled = false;
         _progress.Value = 0;
         try
@@ -177,6 +179,7 @@ internal sealed class UploadForm : Form
             password = "";
             _password.Clear ();
             _busy = false;
+            SetDiagnosticCollectionEnabled (true);
             _upload.Enabled = !_submitted;
             _host.Enabled = _user.Enabled = _password.Enabled = _port.Enabled = true;
             }

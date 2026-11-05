@@ -279,6 +279,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 		_driverLogId = driverLogId;
 
 		UpdateDescriptor (descriptor, configuration);
+		TraceOutlet ("constructed");
 
 		// Outlet is a Crestron extension device type (unlike Light, which is native), so it
 		// requires its own packaged UI definition/translation assets. Mirrors the per-kind
@@ -374,6 +375,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	public void UpdateConfiguration (DeviceConfiguration configuration)
 		{
 		_configuration = configuration;
+		TraceOutlet ("configuration-updated");
 		_parentPoller?.UpdateConfiguration (configuration);
 		}
 
@@ -418,6 +420,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			}
 
 		_isConfigured = configured;
+		TraceOutlet (configured ? "configured" : "unconfigured");
 		LogInfo ($"Outlet entity '{ControllerId}' SetConfigured: configured={configured}, context='{context}'.");
 
 		if (!configured)
@@ -445,6 +448,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			}
 
 		_isConfigured = configured;
+		TraceOutlet (configured ? "configured" : "unconfigured");
 		LogInfo ($"Outlet entity '{ControllerId}' SetConfiguredAsync: configured={configured}, context='{context}'.");
 
 		if (!configured)
@@ -482,6 +486,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			return;
 			}
 
+		TraceOutlet ("stop");
 		_parentPoller?.UnregisterChild (this);
 		_lifetimeCancellationSource.Cancel ();
 		Interlocked.Increment (ref _pollingGeneration);
@@ -498,6 +503,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 		Stop ();
 		_lifetimeCancellationSource.Dispose ();
 		_disposed = true;
+		TraceOutlet ("disposed");
 		}
 
 	public void NotifyChildPublished ()
@@ -597,6 +603,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	private void PublishProperty (string propertyId, DriverEntityValue value, string context)
 		{
 		NotifyPropertyChanged (propertyId, DriverEntityValueUpdate.Create (value));
+		TraceOutlet ("published:" + propertyId + ":" + context);
 		if (propertyId == "onlineIndicatorIsOnline")
 			NotifyPropertyChanged ("onlineIndicator:isOnline", DriverEntityValueUpdate.Create (value));
 		else if (propertyId == "readyIndicatorIsReady")
@@ -616,6 +623,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 
 	private void SetAndNotify (string propertyId, double value, ref double field)
 		{
+		TraceNumericDecision (propertyId, field, value, !(Math.Abs (field - value) < 0.0001d));
 		if (Math.Abs (field - value) < 0.0001d)
 			{
 			return;
@@ -643,11 +651,18 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			await _parentPoller.RefreshAsync (cancellationToken).ConfigureAwait (false);
 			return;
 			}
+#if OUTLET_DIAGNOSTICS
+        var diagnosticRefreshStart = Stopwatch.GetTimestamp ();
+#endif
+		TraceOutlet ("refresh-start");
 		try
 			{
 			KasaDevice device = await EnsureConnectedAsync (cancellationToken).ConfigureAwait (false);
 			await device.UpdateAsync (cancellationToken).ConfigureAwait (false);
 			ApplyState (device);
+#if OUTLET_DIAGNOSTICS
+            TraceOutlet ("refresh-success", durationMs: (Stopwatch.GetTimestamp () - diagnosticRefreshStart) * 1000d / Stopwatch.Frequency);
+#endif
 			OnlineIndicatorIsOnline = true;
 			ReadyIndicatorIsReady = true;
 			}
@@ -660,6 +675,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			}
 		catch (Exception ex)
 			{
+			TraceOutlet ("refresh-failure", ex);
 			OnlineIndicatorIsOnline = false;
 			ReadyIndicatorIsReady = false;
 			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Outlet entity '{ControllerId}' refresh failed: {ex}");
@@ -695,6 +711,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 				OutletEnergyVoltageVolts = device.Energy!.VoltageVolts ?? 0d;
 				OutletEnergyCurrentAmps = device.Energy!.CurrentAmps ?? 0d;
 				}
+			TraceSample (device);
 			EnsureUiDefinitionMatchesEnergyCapability ();
 			OnlineIndicatorIsOnline = true;
 			ReadyIndicatorIsReady = true;
@@ -778,6 +795,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			}
 		catch (Exception ex)
 			{
+			TraceOutlet ("startup-failure", ex);
 			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Outlet entity '{ControllerId}' startup initialization failed: {ex}");
 			}
 		}
@@ -818,6 +836,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			: configuration;
 
 		KasaDevice connectedDevice;
+		TraceOutlet ("connect-start");
 		try
 			{
 			connectedDevice = await Discover.GetOrConnectSharedAsync (startupConfiguration, updateState: true, cancellationToken: connectCancellationSource.Token).ConfigureAwait (false);
@@ -826,7 +845,13 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			{
 			throw new TimeoutException ($"Outlet entity '{ControllerId}' connect timed out after {DeviceConnectTimeout.TotalSeconds:0} seconds.");
 			}
+		catch (Exception ex)
+            {
+            TraceOutlet ("connect-failure", ex);
+            throw;
+            }
 
+		TraceOutlet ("connect-success");
 		_connectedDevice = connectedDevice;
 		UpdateDescriptorFromConnectedDevice (connectedDevice);
 		return connectedDevice;

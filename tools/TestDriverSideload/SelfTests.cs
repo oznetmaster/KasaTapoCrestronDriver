@@ -64,6 +64,24 @@ internal static class SelfTests
             Version = "0.0.0.0", DriverId = payload.Metadata.DriverId, Sha256 = payload.Metadata.Sha256 };
         Reject (() => new Payload (bytes.ToArray (), wrong));
         Check (true, "incorrect version label is rejected");
+
+#if OUTLET_DIAGNOSTICS
+        string report = Path.Combine(Path.GetTempPath(), "kasa-report-" + Guid.NewGuid().ToString("N") + ".zip");
+        try {
+            var capture = new Remote();
+            capture.Files[DiagnosticDownload.DirectoryPath + "/capture.jsonl"] = System.Text.Encoding.UTF8.GetBytes("{\"Event\":\"test\"}\n");
+            capture.Files["/user/private-config.json"] = new byte[] { 1, 2, 3 };
+            Check(DiagnosticDownload.Run(capture, report, payload.Metadata.Version) == 1 && capture.Writes.Count == 0, "diagnostic collection is read-only");
+            using (var zip = System.IO.Compression.ZipFile.OpenRead(report))
+                Check(zip.Entries.Count == 2 && zip.GetEntry("capture.jsonl") != null && zip.GetEntry("collection.json") != null, "only bounded captures and collection metadata included");
+            File.Delete(report);
+            Reject(() => DiagnosticDownload.Run(new Remote(), report, payload.Metadata.Version));
+            Check(!File.Exists(report), "missing capture does not produce a misleading report");
+            capture.Files[DiagnosticDownload.DirectoryPath + "/capture.jsonl"] = new byte[DiagnosticDownload.Limit + 1];
+            Reject(() => DiagnosticDownload.Run(capture, report, payload.Metadata.Version));
+            Check(!File.Exists(report) && capture.Writes.Count == 0, "oversized capture rejected without processor writes");
+        } finally { if (File.Exists(report)) File.Delete(report); }
+#endif
         return new JavaScriptSerializer ().Serialize (new { Passed = checks.Count, Checks = checks });
         }
     }

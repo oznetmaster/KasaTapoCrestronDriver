@@ -13,6 +13,9 @@ Licensed under the MIT License with Commons Clause. See LICENSE in the repositor
     <RunSettingsFilePath>$(MSBuildProjectDirectory)\..\.runsettings</RunSettingsFilePath>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(OutletDiagnosticBuild)' == 'true'">
+    <DefineConstants>$(DefineConstants);OUTLET_DIAGNOSTICS</DefineConstants>
+  </PropertyGroup>
   <!-- The net472 SDK needs processor-only ManagedUtilitiesCE to construct entities.
        Exercise the actual sensor sources with the SDK's desktop-compatible target here;
        the existing net472 suite continues to verify the production build. -->

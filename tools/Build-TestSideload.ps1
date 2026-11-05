@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory)][string]$OutputDirectory,
     [Parameter(Mandatory)][string]$NoticesPath,
     [switch]$NormalBuild,
+    [switch]$OutletDiagnosticBuild,
     [string]$RegisterPath = (Join-Path $PSScriptRoot '../driver-distributions.json')
 )
 $ErrorActionPreference = 'Stop'
@@ -32,7 +33,7 @@ $metadataPath = Join-Path $output 'embedded-payload.json'
 @{ FileName = [IO.Path]::GetFileName($package); Model = $info.baseModel; DriverId = $info.driverId; Version = $info.driverVersion; Sha256 = $hash } |
     ConvertTo-Json | Set-Content -LiteralPath $metadataPath -Encoding utf8NoBOM
 $project = Join-Path $PSScriptRoot 'TestDriverSideload/TestDriverSideload.csproj'
-dotnet build $project -c Release "-p:PayloadPath=$package" "-p:PayloadMetadataPath=$metadataPath" "-p:NoticesPath=$notices" -p:NuGetAudit=false
+dotnet build $project -c Release "-p:OutletDiagnosticBuild=$($OutletDiagnosticBuild.IsPresent.ToString().ToLowerInvariant())" "-p:PayloadPath=$package" "-p:PayloadMetadataPath=$metadataPath" "-p:NoticesPath=$notices" -p:NuGetAudit=false
 if ($LASTEXITCODE -ne 0) { throw 'Sideloader build failed.' }
 $built = Join-Path $PSScriptRoot 'TestDriverSideload/bin/Release/net472/KasaTapo-Test-Installer.exe'
 $destination = Join-Path $output ("KasaTapo-Upload-" + $info.driverVersion + '.exe')

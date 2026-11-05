@@ -34,6 +34,7 @@
 
   <Import Project="DriverVersion.props" />
 
+
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
 	 <DefineConstants>TRACE;DEBUG</DefineConstants>
 	 <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -42,6 +43,10 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
 	 <DefineConstants>TRACE;RELEASE</DefineConstants>
 	 <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(OutletDiagnosticBuild)' == 'true'">
+    <DefineConstants>$(DefineConstants);OUTLET_DIAGNOSTICS</DefineConstants>
   </PropertyGroup>
 
   <!-- KasaTapoCrestronDriver.Tests references this project with AdditionalProperties=SkipMergeDependencies=true

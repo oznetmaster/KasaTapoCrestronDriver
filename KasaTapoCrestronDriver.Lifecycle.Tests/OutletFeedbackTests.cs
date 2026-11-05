@@ -352,4 +352,49 @@ public sealed class OutletFeedbackTests
 		await fixture.Outlet.RefreshAsync (default);
 		Assert.That (fixture.Events, Is.EqualTo (new[] { true }), "Recovery must compare against the last confirmed state.");
 		}
+#if OUTLET_DIAGNOSTICS
+    [Test]
+    public void DiagnosticFailureIdentifiesTheInstanceAndDoesNotSerializeExceptionMessages()
+    {
+        using var fixture = new Fixture(false, false);
+        var records = new List<OutletDiagnosticRecord>();
+        fixture.Outlet.DiagnosticObserverForTests = r => records.Add(r);
+        fixture.Outlet.Stop();
+        var method = typeof(KasaOutletEntity).GetMethod("TraceOutlet", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        method.Invoke(fixture.Outlet, new object?[] { "connect-failure", new InvalidDataException("The TPAP discover response did not contain a tpap object. SECRET_PASSWORD"), null });
+        var record = records.Last();
+        Assert.That(record.Controller, Is.EqualTo("feedback-outlet"));
+        Assert.That(record.Host, Is.EqualTo("127.0.0.1"));
+        Assert.That(record.Stopped, Is.True);
+        Assert.That(record.Instance, Is.EqualTo(records.First().Instance));
+        Assert.That(record.ErrorReason, Is.EqualTo("MissingTpapDiscoveryObject"));
+        Assert.That(System.Text.Json.JsonSerializer.Serialize(record), Does.Not.Contain("SECRET_PASSWORD"));
+    }
+    [Test]
+    public async Task DiagnosticCaptureExplainsRawRoundedAndUnchangedReadingsWithoutChangingFeedback()
+    {
+        using var fixture = new Fixture(false, false);
+        fixture.Transport.PowerMilliwatts = 1234;
+        fixture.Transport.VoltageMillivolts = 120041;
+        var records = new List<OutletDiagnosticRecord>();
+        fixture.Outlet.DiagnosticObserverForTests = r => records.Add(r);
+        await fixture.InitializeAsync(); records.Clear();
+        await fixture.Outlet.RefreshAsync(default);
+        var sample = records.Single(r => r.Event == "confirmed-sample");
+        Assert.That(sample.Raw!.Voltage, Is.EqualTo(120.041));
+        Assert.That(sample.Published!.Voltage, Is.EqualTo(120.0));
+        Assert.That(records.Single(r => r.Event == "numeric-decision" && r.Property == "outletEnergyVoltageVolts").Changed, Is.False);
+        Assert.That(records.Any(r => r.Event.StartsWith("published:outletEnergyVoltageVolts:")), Is.False);
+        Assert.That(fixture.Events, Is.Empty);
+        records.Clear(); fixture.Transport.VoltageMillivolts = 120051;
+        await fixture.Outlet.RefreshAsync(default);
+        var decision = records.Single(r => r.Event == "numeric-decision" && r.Property == "outletEnergyVoltageVolts");
+        Assert.That(decision.Previous, Is.EqualTo(120.0)); Assert.That(decision.Value, Is.EqualTo(120.1)); Assert.That(decision.Changed, Is.True);
+        Assert.That(records.Count(r => r.Event.StartsWith("published:outletEnergyVoltageVolts:")), Is.EqualTo(1));
+        Assert.That(fixture.Events, Is.Empty);
+        fixture.Outlet.Stop();
+        Assert.That(records.Last(r => r.Event == "stop").Stopped, Is.True);
+    }
+#endif
+
 	}

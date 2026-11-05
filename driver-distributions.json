@@ -419,6 +419,16 @@
       "verifiedAtUtc": "2026-11-05T13:06:35.998261+00:00",
       "publicReadbackVerified": true,
       "pagesWorkflowRun": 42032578517
+    },
+    {
+      "id": "john-outlet-diagnostics-2.1.014.0002",
+      "channel": "test",
+      "publicVersion": null,
+      "driverVersion": "2.1.014.0002",
+      "status": "reserved",
+      "date": "2026-11-05",
+      "purpose": "Bounded customer-only typed telemetry/publication and connection/lifecycle capture; no extra polling or physical commands",
+      "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.014.0002/"
     }
   ],
   "nugetDocumentationPatches": [
