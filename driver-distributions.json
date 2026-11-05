@@ -393,13 +393,32 @@
       "channel": "test",
       "publicVersion": null,
       "driverVersion": "2.1.014.0001",
-      "status": "reserved",
+      "status": "distributed",
       "date": "2026-11-05",
       "purpose": "Customer test for John: round outlet voltage to 0.1 V before property comparison/notification; polling, other telemetry and confirmed On/Off feedback unchanged",
-      "sourceCommit": "274afd58a84e289fb98f02ee544ae86c410ad993",
-      "packageSha256": null,
-      "url": null,
-      "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.014.0001/"
+      "sourceCommit": "c36246a57fbf2fb1344cf366d94aa85bf778abbf",
+      "packageSha256": "c630c83313f63bcb49711047c172f787846d39a615d6b98dc57224c27212472c",
+      "url": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.014.0001/",
+      "plannedUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.014.0001/",
+      "uploaderSha256": "5befd24aae3500da59316c4b8ae263f3124766284681ff12b227118213839120",
+      "downloadSha256": "104e85cd9a0f5b2c6bff4d5b7a6236bc6a0552c70f1d291cdd8f90d2d1986000",
+      "pagesCommit": "ca9a4c161bd08596f6b4b198a6b5be538b72eefc",
+      "uploaderSourceCommit": "c36246a57fbf2fb1344cf366d94aa85bf778abbf",
+      "labValidation": {
+        "date": "2026-11-05",
+        "workstationPassed": 190,
+        "readOnlyLivePassed": true,
+        "exactPackageInstalled": true,
+        "processorVoltageReadback": true,
+        "deviceIdentitiesAndPlacementsPreserved": 37,
+        "uploaderSelfTestsPassed": 10,
+        "leaseReleased": true,
+        "rebootPerformed": false,
+        "powerCommandsIssued": false
+      },
+      "verifiedAtUtc": "2026-11-05T13:06:35.998261+00:00",
+      "publicReadbackVerified": true,
+      "pagesWorkflowRun": 42032578517
     }
   ],
   "nugetDocumentationPatches": [

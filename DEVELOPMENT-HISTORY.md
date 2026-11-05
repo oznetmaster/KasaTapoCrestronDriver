@@ -2,6 +2,13 @@
 
 See the [product changelog](CHANGELOG.md) for shipped changes. This document preserves test, CI and build history. Dated development entries describe work at that time, not a published product version or completed acceptance. Version headings identify the release alongside which development work was recorded; processor-test versions identify separate test packages.
 
+## 2026-11-05 — Customer voltage-precision test 2.1.014.0001
+
+- Prepared a Release customer-only build from 2.1.14 with only the one-decimal voltage setter plus version/date metadata changed. No polling redesign, interval/request change, dependency update or other telemetry rounding is included. No GitHub/NuGet release or Crestron submission replacement is made.
+- The normalized package and dependency notices pass verification. Its Windows uploader passes all ten self-tests and isolated dependency loading; extracted payload bytes match exactly. The unique four-part test version is registered so the next public release must exceed it.
+- Exact package SHA-256: `c630c83313f63bcb49711047c172f787846d39a615d6b98dc57224c27212472c`. It was installed in place on the lab platform, preserving all 37 inventory identities/placements and verifying stored bytes. Four subsequent processor reads exposed Demo KP115 voltage as 242.6 V with unchanged power. No power commands or processor reboot were issued; the lease was released. Earlier source tests comprise 156 lifecycle, 34 portable and the read-only real-plug check recorded below.
+- The customer letter explains rounded-value notifications, retained polling/other telemetry/On-Off feedback, and the required upload-then-update steps. It asks for Home/Kasa feedback and log-growth observations; no measured log reduction on the customer's processor is claimed.
+
 ## 2026-11-05 — Unreleased outlet voltage precision
 
 - Round the driver-facing outlet voltage to one decimal place (0.1 V) before storing/comparing/publishing it. Raw library readings are unchanged. Values within the same rounded tenth do not notify; a different rounded tenth does. This is reporting precision, not a minimum raw-change deadband, so crossing a rounding boundary may still notify for a smaller raw fluctuation.
