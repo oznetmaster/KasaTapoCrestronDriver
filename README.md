@@ -28,17 +28,17 @@ TP-Link, Kasa, and Tapo are trademarks of their respective owners. This project 
 
 ---
 
-## GitHub and NuGet release 2.1.5
+## GitHub and NuGet release 2.1.14
 
-The GitHub/NuGet release is **2.1.5**, with Crestron driver version **2.1.005.0000**. This is higher than customer test build **2.1.004.0001**. The Crestron catalog entry above is separate from GitHub/NuGet publication. NuGet 2.1.3 was a documentation-only wrapper containing the unchanged 2.1.2 driver.
+The GitHub/NuGet patch release is **2.1.14**, with Crestron driver version **2.1.014.0000**. It supersedes 2.1.5 and customer test 2.1.004.0001. Intermediate numbers were reserved for unpublished lab candidates; they were not public releases. The Crestron catalog entry above is separate from GitHub/NuGet publication.
 
-This patch fixes plain-outlet feedback. `outletTurnedOn` and `outletTurnedOff` now follow confirmed device-state transitions, including Kasa/Tapo app or physical-control changes detected by polling. Commands that fail, acknowledgements without a state change, and unchanged polls no longer generate misleading transition events. The first successful read publishes initial state without inventing a transition.
+This update removes repeated full outlet snapshots from ordinary polling, shared-parent updates and command completion. Polling continues, confirmed On/Off events still update third-party tiles, and changed energy readings remain available. Release builds suppress routine driver informational/debug diagnostics and retain warning/error reporting. Crestron Home can still log genuine property changes through its own diagnostics.
 
-Third-party toggle tiles still require event-to-feedback programming using their own state/display actions; see [Outlet feedback and third-party tiles](#outlet-feedback-and-third-party-tiles). Enable **Enable Light Polling** for external changes. Outlets use **Light Poll Interval (Seconds)**, normally 15 seconds.
+Light/dimmer, outlet and sensor events follow confirmed device feedback after their related properties are published. Startup publishes confirmed values and announces their matching state events once; extension events wait for Home to begin reading the running child. Existing automations using these events can therefore run when initial state is confirmed after a reload. Button gesture history is not replayed. Processor light baselines retain the correct brightness and active colour/white mode; an off dimmer reports 0% even if the bulb stores a nonzero brightness.
 
-The fix was confirmed by a customer on a CP4-R with 10-second polling and both Ultamation and Control Programming LLC toggle tiles. That report covers Crestron Home control and feedback for Kasa-app changes. The plug model and a physical-button test were not specified. Automated SDK tests separately cover standalone plugs, strip sockets, command failures, retries, unchanged state and startup behavior.
+Third-party toggle tiles still require event-to-feedback programming using their own state/display actions; see [Outlet feedback and third-party tiles](#outlet-feedback-and-third-party-tiles). Enable **Enable Light Polling** for external changes. Outlets use **Light Poll Interval (Seconds)**, normally 15 seconds; an existing 10-second setting can be retained.
 
-Existing device identities and programmable IDs are retained. Light/dimmer control paths and the 2.1.4 SMART-dimmer power fix are retained; KasaTapoClient remains at 2.0.1 and Crestron.DeviceDrivers.DevKit remains at 29.0.10.
+Existing device identities and programmable IDs are retained. KasaTapoClient remains at 2.0.1 and Crestron.DeviceDrivers.DevKit remains at 29.0.10. See the [release notes](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/RELEASE-NOTES.md) for validation scope and upgrade instructions.
 
 Import the package, then update the existing platform driver in Home Setup or Configure Pro. Importing alone does not update the active driver. Removing and re-adding the platform or its children is not a routine update step. Contact [support](https://oznetmaster.github.io/support/) before deleting configured devices, which can affect rooms, scenes and programming.
 
@@ -103,14 +103,14 @@ state directly. From version 2.1.5, `outletTurnedOn` and `outletTurnedOff`
 fire once per confirmed transition, after the state, status and icon have been updated.
 Issuing a command, receiving an acknowledgement without a matching state change, or
 repeating an unchanged poll does not generate a transition event. The first successful
-read establishes the initial state. In the unreleased update, it also emits the matching
+read establishes the initial state. From version 2.1.14, it also emits the matching
 on/off event once, after the complete state and availability have been published.
 
 For changes made in the Kasa/Tapo app or at the physical device, enable **Enable Light
 Polling**; outlets also use **Light Poll Interval (Seconds)** (15 seconds by default).
 Feedback arrives after a successful poll rather than immediately from the app.
 
-In the unreleased update, ordinary outlet polls notify Home only when confirmed values
+From version 2.1.14, ordinary outlet polls notify Home only when confirmed values
 change; complete snapshots remain part of startup and lifecycle reporting. This avoids
 replaying unchanged UI, state, energy and availability properties on every poll.
 Home may still log real property changes independently of the driver logging option.
@@ -119,7 +119,7 @@ Third-party tiles need their own feedback programming: connect this outlet's **O
 Turned On** and **Outlet Turned Off** events to the tile's respective state-feedback
 actions, where supported. Use actions that update the display without commanding the
 outlet again. Publishing `outletIsOn` does not automatically connect unrelated tiles.
-The unreleased update emits the matching outlet event at the first confirmed startup
+Version 2.1.14 emits the matching outlet event at the first confirmed startup
 reading, after the child is Running and Home has begun reading its state. Cached readings
 that arrive earlier remain pending; self-reads and repeated host reads do not repeat events. The current
 `outletIsOn` property remains readable; the tile's driver determines its action names.
@@ -128,7 +128,7 @@ after processor colour/white baseline synchronization. An off dimmer reports 0%,
 when the bulb retains a nonzero brightness internally. Later unchanged polls do not
 repeat these notifications. Home can also issue native light events while binding a load.
 
-### Confirmed light and sensor feedback (unreleased)
+### Confirmed light and sensor feedback
 
 Light and dimmer power, brightness and colour feedback stays at the last confirmed device
 state until a successful readback. Slider commands still drive the device during a drag;
