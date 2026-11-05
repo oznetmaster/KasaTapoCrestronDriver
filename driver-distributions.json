@@ -356,7 +356,7 @@
       "channel": "public",
       "publicVersion": "2.1.14",
       "driverVersion": "2.1.014.0000",
-      "status": "prepared",
+      "status": "released",
       "date": "2026-11-04",
       "purpose": "Unpublished quiet-poll candidate with Release informational diagnostics compiled out across controller, shared-parent and processor-baseline paths",
       "sourceCommit": "b69ce3e4d26f1a83b8da8d6b0acc6ed0152baefc",
@@ -372,7 +372,21 @@
         "deviceIdentitiesPreserved": 37,
         "logByteReductionMeasured": false,
         "demoBulbsRestoredOff": true
-      }
+      },
+      "url": "https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.14",
+      "publishedUtc": "2026-11-05T02:40:22Z",
+      "releaseSourceCommit": "6d83a8e92c5450edd6d5611b68c6f780e86b04fd",
+      "publicationRun": 41956559843,
+      "hostedTestsRun": 41956251889,
+      "hostedDiscoveryRun": 41956251833,
+      "customerUrl": "https://oznetmaster.github.io/downloads/test-drivers/kasatapo/2.1.014.0000/",
+      "pagesCommit": "a1c0074d4d7f948c0c448216e065fc9e14fe9a88",
+      "uploaderSha256": "4f47eb546411cfbe70e201891dd38e8bf5309f062ffd79f4fee672c33f93f3ec",
+      "downloadSha256": "d051ce099c4e510affbf4052b981ce923cd736623ad87999ee80f4a438232005",
+      "nugetSha256": "aa89b13b6c0a77624de46c75949c8cd6b27c65722c371d70fd9da1a3c2192625",
+      "nugetServerSha256": "42e56f8923d3eb132c4a77e1ef3a4903fa4cdbe53160b6886a7e536e9181b4f7",
+      "publicReadbackVerified": true,
+      "nugetSearchIndexed": true
     }
   ],
   "nugetDocumentationPatches": [

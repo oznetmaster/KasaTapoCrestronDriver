@@ -2,6 +2,13 @@
 
 See the [product changelog](CHANGELOG.md) for shipped changes. This document preserves test, CI and build history. Dated development entries describe work at that time, not a published product version or completed acceptance. Version headings identify the release alongside which development work was recorded; processor-test versions identify separate test packages.
 
+## 2026-11-05 — 2.1.14 public patch release
+
+- Promoted the exact installed/lab-validated driver package to GitHub, NuGet and the Windows uploader without rebuilding the runtime. Public `.pkg` SHA-256: `2e179ad50b61110ab644bfbf7b45d5964c869630b0b33d913b352ac6591627ab`. Submission-only help PDFs and the redundant documentation ZIP are absent from public assets; Crestron submissions remain separate.
+- Hosted validation found a missing mapping for the manual physical-trigger suite. The repaired coverage check compares all 196 test identities across unit (34), lifecycle (152), live (9) and physical (1) suites, preserving the discovery/execution distinction; 23 guard regressions pass. Hosted tests and workflow discovery passed at release source `6d83a8e92c5450edd6d5611b68c6f780e86b04fd`.
+- Publication run 41956559843 reused recorded exact-package lab evidence for the processor gate and promoted frozen assets. GitHub downloads, all non-signature NuGet entries, the community installer manifest, public search visibility and the customer download page were independently read back. NuGet adds its repository signature, so its archive checksum differs from the unsigned GitHub asset while all payload/document entries match.
+- The single-file Windows uploader passed all 10 self-tests and isolated dependency loading; its extracted payload matches the published driver. Customer instructions explicitly require uploading followed by updating the existing driver in Setup/Configure Pro, retaining children, polling and tile feedback programming. The email to John is prepared privately for the maintainer to send.
+
 ## 2026-11-04 — Outlet polling notification volume
 
 - A customer screenshot and log excerpt show Home's received/cache/handle/skip property pipeline repeatedly processing the outlet's full snapshot. The customer's test package was built in Release; its ordinary outlet debug calls were already compiled out. The snapshot notification path is separate from those calls.
