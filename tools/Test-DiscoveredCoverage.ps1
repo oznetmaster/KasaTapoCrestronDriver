@@ -31,7 +31,19 @@ function Assert-SameTests($Expected,$Actual,[string]$Context) {
     Assert-CoverageTestNames $Expected $Actual $Context
 }
 function Read-TestTree([string]$Path,[switch]$AdapterDump) {
-    Read-CoverageTestTree -Path (Resolve-CoveragePath $Path) -AdapterDump:$AdapterDump
+    Read-CoverageTestTree -Path (Resolve-CoveragePath $Path) -AdapterDump:$AdapterDump -ExtraCategories @('PhysicalTriggers')
+}
+function Select-SuiteCases($Inventory,[string]$Category) {
+    if ($Category -notin @('unit','processor','live','physical')) { throw 'Unknown suite category.' }
+    @($Inventory | Where-Object {
+        $candidate = $_
+        switch ($Category) {
+            'unit' { !$candidate.Live -and !$candidate.Processor }
+            'processor' { !$candidate.Live -and $candidate.Processor }
+            'live' { $candidate.Live -and !$candidate.PhysicalTriggers }
+            'physical' { $candidate.Live -and $candidate.PhysicalTriggers }
+        }
+    })
 }
 function Assert-TestOutcome($Case,[bool]$AllowSkip) {
     Assert-CoverageTestOutcome -Case $Case -AllowSkip $AllowSkip -AllowedSkipReasons @(
@@ -62,7 +74,7 @@ if ($Stage -eq 'Desktop') {
     Copy-Item $dump.FullName "$evidence/discovery.dump"
     $inventory = @(Read-TestTree "$evidence/discovery.dump" -AdapterDump)
     foreach ($category in $RequiredCategories) {
-        $selected = @($inventory | Where-Object { if ($category -eq 'live') { $_.Live } elseif ($category -eq 'processor') { $_.Processor -and !$_.Live } else { !$_.Processor -and !$_.Live } })
+        $selected = @($inventory | Where-Object { if ($category -eq 'live') { $candidate.Live } elseif ($category -eq 'processor') { $candidate.Processor -and !$candidate.Live } else { !$candidate.Processor -and !$candidate.Live } })
         if (!$selected.Count) { throw "Expected a nonempty $category suite." }
     }
     $filter = if ($ExcludeProcessor) { 'TestCategory!=Live&TestCategory!=Processor' } else { 'TestCategory!=Live' }
@@ -83,12 +95,12 @@ if ($Stage -eq 'Desktop') {
         Assert-TestOutcome $match[0] $AllowProcessorSkips.IsPresent
         $observed += $identity
     }
-    Assert-SameTests @($inventory | Where-Object { !$_.Live -and (!$ExcludeProcessor -or !$_.Processor) } | ForEach-Object Name) $observed 'Desktop execution'
+    Assert-SameTests @($inventory | Where-Object { !$candidate.Live -and (!$ExcludeProcessor -or !$candidate.Processor) } | ForEach-Object Name) $observed 'Desktop execution'
     if ($CompareProcessorInventory) {
         $sourceCases = @(Get-Content $CompareProcessorInventory -Raw | ConvertFrom-Json)
-        Assert-SameTests @($sourceCases | Where-Object { $_.Processor -and !$_.Live } | ForEach-Object Name) $observed 'Desktop processor harness'
+        Assert-SameTests @($sourceCases | Where-Object { $candidate.Processor -and !$candidate.Live } | ForEach-Object Name) $observed 'Desktop processor harness'
     }
-    $inventory | Select-Object Name,Live,Processor | ConvertTo-Json -Depth 4 | Set-Content "$evidence/inventory.json" -Encoding utf8
+    $inventory | Select-Object Name,Live,Processor,PhysicalTriggers | ConvertTo-Json -Depth 4 | Set-Content "$evidence/inventory.json" -Encoding utf8
     Write-Host "Verified $($observed.Count) test results against discovery; $(@($inventory | Where-Object Live).Count) live tests discovered only."
 } elseif ($Stage -eq 'Package') {
     $inventory = @(Get-Content $SourceInventory -Raw | ConvertFrom-Json)
@@ -101,8 +113,7 @@ if ($Stage -eq 'Desktop') {
     Assert-SameTests $suites @($trees | ForEach-Object { $_.Directory.Name }) 'Package suites'
     foreach ($tree in $trees) {
         $category = $SuiteCategories[$tree.Directory.Name]
-        if ($category -notin @('unit','processor','live')) { throw 'Unknown suite category.' }
-        $expected = @($inventory | Where-Object { $candidate = $_; switch ($category) { 'unit' { !$candidate.Live -and !$candidate.Processor } 'processor' { !$candidate.Live -and $candidate.Processor } 'live' { $candidate.Live } } } | ForEach-Object Name)
+        $expected = @(Select-SuiteCases $inventory $category | ForEach-Object Name)
         Assert-SameTests $expected @((Read-TestTree $tree.FullName).Name) "Packaged $($tree.Directory.Name) discovery"
     }
     if ($DiscoveryOnly) { Write-Host 'Packaged discovery matches source identities; execution is validated separately by the desktop harness and processor CI.'; return }
@@ -112,14 +123,14 @@ if ($Stage -eq 'Desktop') {
     if ($runs.Count -ne 2) { throw 'Both package executions are required.' }
     foreach ($run in $runs) {
         $files = @(Get-ChildItem $run.FullName -Recurse -Filter TestResult.xml)
-        Assert-SameTests @($SuiteCategories.Keys | Where-Object { $SuiteCategories[$_] -ne 'live' }) @($files | ForEach-Object { $_.Directory.Name }) 'Executed package suites'
+        Assert-SameTests @($SuiteCategories.Keys | Where-Object { $SuiteCategories[$_] -notin @('live','physical') }) @($files | ForEach-Object { $_.Directory.Name }) 'Executed package suites'
         $executed = @()
         foreach ($file in $files) {
             $cases = @(Read-TestTree $file.FullName)
             foreach ($case in $cases) { Assert-TestOutcome $case $true }
             $executed += $cases.Name
         }
-        Assert-SameTests @($inventory | Where-Object { !$_.Live } | ForEach-Object Name) $executed 'Packaged execution'
+        Assert-SameTests @($inventory | Where-Object { !$candidate.Live } | ForEach-Object Name) $executed 'Packaged execution'
     }
     Write-Host 'Packaged discovery matches source test identities; both executions are complete.'
 } else { throw 'Choose Desktop or Package validation.' }

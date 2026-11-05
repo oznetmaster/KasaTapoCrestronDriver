@@ -55,4 +55,15 @@ try {
     [IO.File]::WriteAllText($temporary,'<test-run />')
     Reject { Read-TestTree $temporary }
 } finally { Remove-Item -LiteralPath $temporary -ErrorAction SilentlyContinue }
+$inventory = @(
+    [pscustomobject]@{Name='Fixture.Unit';Live=$false;Processor=$false;PhysicalTriggers=$false},
+    [pscustomobject]@{Name='Fixture.Lifecycle';Live=$false;Processor=$true;PhysicalTriggers=$false},
+    [pscustomobject]@{Name='Fixture.Live';Live=$true;Processor=$true;PhysicalTriggers=$false},
+    [pscustomobject]@{Name='Fixture.Physical';Live=$true;Processor=$true;PhysicalTriggers=$true}
+)
+foreach ($pair in @(@('unit','Fixture.Unit'),@('processor','Fixture.Lifecycle'),@('live','Fixture.Live'),@('physical','Fixture.Physical'))) {
+    Assert-SameTests @($pair[1]) @((Select-SuiteCases $inventory $pair[0]).Name) ('Separated ' + $pair[0]); $checks++
+}
+Reject { Select-SuiteCases $inventory 'unknown' }
+Assert-SameTests @($inventory.Name) @(@('unit','processor','live','physical') | ForEach-Object { (Select-SuiteCases $inventory $_).Name }) 'Complete partition'; $checks++
 Write-Host "$checks discovery coverage guard checks passed."
