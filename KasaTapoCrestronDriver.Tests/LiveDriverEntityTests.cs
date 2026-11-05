@@ -117,6 +117,53 @@ public sealed partial class LiveDriverEntityTests
 		}
 
 	[Test]
+	public async Task DemoOutlet_VoltagePublishesOnlyChangedTenthsWithoutPowerCommands ()
+		{
+		using var device = await Connect ("plug");
+		Assert.That (device.SystemInfo?.Alias?.IndexOf ("demo", StringComparison.OrdinalIgnoreCase), Is.GreaterThanOrEqualTo (0));
+		Assert.That (device.Energy.IsAvailable && device.Energy.VoltageVolts.HasValue, Is.True, "Select a demo plug reporting voltage.");
+		bool? originalPower = device.IsOn;
+		Assert.That (originalPower, Is.Not.Null);
+		using var logger = new DriverLogger ("live-voltage-test");
+		var resources = new DriverImplementationResources { Logger = logger, InitLogger = logger.GetComponentLogger ("test", "live-voltage") };
+		var descriptor = new ManagedLightDescriptor ("live-voltage", device.Configuration.Host, device.DeviceType,
+			device.SystemInfo!.Alias!, device.SystemInfo.Model!, device.SystemInfo.DeviceId!, ManagedLightKind.OnOff, childKind: ManagedChildKind.Outlet);
+		using var entity = new KasaOutletEntity ("live-voltage", descriptor, device.Configuration, null, Settings (), resources, null!, "live-test", DriverTestPaths.DataDirectory);
+		Assert.That (entity.TryAttachConnectedDevice (device, "live-voltage-test"), Is.True);
+		await entity.SetConfiguredAsync (true, "live-voltage-test", default);
+		await entity.RefreshAsync (default);
+		entity.NotifyChildRunning ("live-voltage-test");
+		entity.NotifyHostStateRead ();
+		var published = new List<double> ();
+		var switchEvents = new List<bool> ();
+		entity.ValuesChanged += (_, e) => {
+			foreach (var item in e.Update.Changes)
+				if (item.Key == "outletEnergyVoltageVolts" && item.Value.Value is {} value) published.Add (value.GetValue<double> ());
+		};
+		entity.OutletTurnedOn += (_, _) => switchEvents.Add (true);
+		entity.OutletTurnedOff += (_, _) => switchEvents.Add (false);
+		int quiet = 0, changed = 0;
+		for (int i = 0; i < 12; i++)
+			{
+			if (i > 0) await Task.Delay (TimeSpan.FromSeconds (5));
+			double previous = entity.OutletEnergyVoltageVolts;
+			published.Clear ();
+			await entity.RefreshAsync (default);
+			Assert.That (device.Energy.VoltageVolts, Is.Not.Null);
+			double rawVolts = device.Energy.VoltageVolts!.Value;
+			double expected = Math.Round (rawVolts, 1, MidpointRounding.AwayFromZero);
+			Assert.That (entity.OutletEnergyVoltageVolts, Is.EqualTo (expected));
+			Assert.That (entity.GetState ().PropertyValues["outletEnergyVoltageVolts"].GetValue<double> (), Is.EqualTo (expected));
+			Assert.That (published, Is.EqualTo (previous == expected ? Array.Empty<double> () : new[] { expected }));
+			Assert.That (device.IsOn, Is.EqualTo (originalPower), "This read-only test must preserve plug power.");
+			Assert.That (switchEvents, Is.Empty);
+			if (previous == expected) quiet++; else changed++;
+			TestContext.Progress.WriteLine (FormattableString.Invariant ($"VOLTAGE sample={i + 1} raw={rawVolts:F3} published={expected:F1} notified={published.Count > 0}"));
+			}
+		TestContext.Progress.WriteLine ($"VOLTAGE completed: unchanged-tenth polls={quiet}, changed-tenth polls={changed}, power commands=0, original power={originalPower}.");
+		}
+
+	[Test]
 	public async Task DemoLight_LevelPowerCommandsPreserveBrightnessAndRestoreState ()
 		{
 		if (!_settings.AllowDemoPowerControl) Assert.Ignore ("Demo power control requires its own private opt-in.");

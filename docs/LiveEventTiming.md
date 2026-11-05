@@ -38,8 +38,10 @@ repetition on unchanged polls, and an external change made through the independe
 The trace uses sequence numbers and operation names; it does not log protocol payloads.
 
 Run the existing `kasatapodriver-live` manual processor suite with the private input file.
-It contains nine cases, including the four timing cases, read-only checks, inventory and
+It contains ten cases, including the four timing cases, read-only voltage checks, inventory and
 the existing retained-brightness power test. Its filter excludes physical-trigger cases.
+
+`DemoOutlet_VoltagePublishesOnlyChangedTenthsWithoutPowerCommands` samples the selected demo plug twelve times at five-second intervals. It compares raw library voltage with the driver's one-decimal property and its SDK notifications, and checks that switch state/events are unaffected. It sends no power commands. The naturally observed counts of quiet and changed rounded readings are reported; a fixed grid-voltage pattern is not assumed.
 
 For workstation execution, supply private runsettings that enable live tests and set
 `TestDataDirectory` to a directory containing the input file and `DriverTestData` resources.
