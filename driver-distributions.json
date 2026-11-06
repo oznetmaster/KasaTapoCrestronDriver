@@ -458,6 +458,15 @@
         "rebootPerformed": false,
         "leaseReleased": true
       }
+    },
+    {
+      "id": "john-outlet-polling-2.1.014.0003",
+      "channel": "test",
+      "publicVersion": null,
+      "driverVersion": "2.1.014.0003",
+      "status": "reserved",
+      "date": "2026-11-06",
+      "purpose": "Standalone outlet split polling, shared stagger and concurrency cap, and verified reconnect metadata persistence"
     }
   ],
   "nugetDocumentationPatches": [

@@ -60,7 +60,7 @@
       "packageId": "BouncyCastle.Cryptography",
       "packageVersion": "2.7.0",
       "license": "MIT",
-      "copyright": "Copyright © Legion of the Bouncy Castle Inc. 2000-2026",
+      "copyright": "Copyright \u00a9 Legion of the Bouncy Castle Inc. 2000-2026",
       "noticeIds": [
         "bouncycastle.cryptography-2.7.0-license.md"
       ]
@@ -166,9 +166,9 @@
     },
     {
       "assembly": "KasaTapoClient.dll",
-      "sha256": "1b81282cbefaeacf2ea1b3f2a30dafb995b0abb00e562d48b61e31d4fdf61c0a",
+      "sha256": "211c2988494ca68a0260e8f90a3f2ec495b0c19029155d6c3fb8e02d09729123",
       "packageId": "KasaTapoClient",
-      "packageVersion": "2.0.1",
+      "packageVersion": "2.0.1-outletpoll.2",
       "license": "MIT",
       "copyright": "Copyright (c) 2026 Neil Colvin",
       "noticeIds": [
@@ -181,7 +181,7 @@
       "packageId": "Microsoft.Bcl.AsyncInterfaces",
       "packageVersion": "10.0.12",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-95017c711e6a",
         "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
@@ -193,7 +193,7 @@
       "packageId": "Microsoft.Bcl.Memory",
       "packageVersion": "10.0.12",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-95017c711e6a",
         "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
@@ -205,7 +205,7 @@
       "packageId": "Microsoft.Extensions.DependencyInjection.Abstractions",
       "packageVersion": "10.0.12",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-95017c711e6a",
         "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
@@ -217,7 +217,7 @@
       "packageId": "Microsoft.Extensions.Logging.Abstractions",
       "packageVersion": "10.0.12",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-95017c711e6a",
         "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
@@ -229,7 +229,7 @@
       "packageId": "System.Buffers",
       "packageVersion": "4.6.1",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-6b84308c9ad0"
       ]
@@ -240,7 +240,7 @@
       "packageId": "System.Diagnostics.DiagnosticSource",
       "packageVersion": "10.0.12",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-95017c711e6a",
         "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
@@ -252,7 +252,7 @@
       "packageId": "System.IO.Pipelines",
       "packageVersion": "10.0.12",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-95017c711e6a",
         "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
@@ -264,7 +264,7 @@
       "packageId": "System.Memory",
       "packageVersion": "4.6.3",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-6b84308c9ad0"
       ]
@@ -275,7 +275,7 @@
       "packageId": "System.Numerics.Vectors",
       "packageVersion": "4.6.1",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-6b84308c9ad0"
       ]
@@ -286,7 +286,7 @@
       "packageId": "System.Runtime.CompilerServices.Unsafe",
       "packageVersion": "6.1.2",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-6b84308c9ad0"
       ]
@@ -297,7 +297,7 @@
       "packageId": "System.Text.Encodings.Web",
       "packageVersion": "10.0.12",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-95017c711e6a",
         "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
@@ -309,7 +309,7 @@
       "packageId": "System.Text.Json",
       "packageVersion": "10.0.12",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-95017c711e6a",
         "microsoft.bcl.asyncinterfaces-10.0.12-third-party-notices.txt"
@@ -321,7 +321,7 @@
       "packageId": "System.Threading.Tasks.Extensions",
       "packageVersion": "4.6.3",
       "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
       "noticeIds": [
         "upstream-6b84308c9ad0"
       ]

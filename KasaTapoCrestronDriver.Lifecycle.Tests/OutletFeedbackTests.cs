@@ -216,11 +216,13 @@ public sealed class OutletFeedbackTests
 		await fixture.InitializeAsync ();
 		fixture.Outlet.NotifyChildPublished ();
 		fixture.PublishedIds.Clear ();
+		var before = fixture.Settings.Snapshot ();
 		fixture.Settings.Update ("", "", TimeSpan.FromSeconds (5), true, TimeSpan.FromMilliseconds (100), TimeSpan.FromSeconds (30), false, "", "", "");
 		int reads = fixture.Transport.Reads;
-		var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-		int generation = (int) typeof (KasaOutletEntity).GetField ("_pollingGeneration", flags)!.GetValue (fixture.Outlet)!;
-		await (Task) typeof (KasaOutletEntity).GetMethod ("RunPollingCycleAsync", flags)!.Invoke (fixture.Outlet, new object[] { generation })!;
+		fixture.Outlet.ApplyRuntimeConfiguration (before, fixture.Settings.Snapshot ());
+        using var wait = new CancellationTokenSource (TimeSpan.FromSeconds (4));
+        while (Volatile.Read (ref fixture.Transport.Reads) <= reads)
+            await Task.Delay (15, wait.Token);
 		fixture.Outlet.Stop ();
 		Assert.That (fixture.Transport.Reads, Is.GreaterThan (reads));
 		Assert.That (fixture.PublishedIds, Is.Empty);

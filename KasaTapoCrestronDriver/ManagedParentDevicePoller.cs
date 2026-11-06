@@ -16,6 +16,8 @@ internal sealed class ManagedParentDevicePoller : IDisposable
     private readonly string _driverLogId;
     private readonly string _hostKey;
     private readonly bool _isStrip;
+    private readonly OutletPollCoordinator? _outletPolls;
+    private readonly int _pollSlot;
     private readonly Func<DeviceConfiguration, CancellationToken, Task<KasaDevice>> _connect;
     private readonly Func<KasaDevice, CancellationToken, Task> _update;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
@@ -31,10 +33,10 @@ internal sealed class ManagedParentDevicePoller : IDisposable
 
     public ManagedParentDevicePoller(string hostKey, DeviceConfiguration configuration,
         IPlatformSharedConfiguration sharedConfiguration, DriverControllerLogger? logger,
-        string driverLogId, bool isStrip = false)
+        string driverLogId, bool isStrip = false, OutletPollCoordinator? outletPolls = null)
         : this(hostKey, configuration, sharedConfiguration, logger, driverLogId, isStrip,
             (config, token) => Discover.GetOrConnectSharedAsync(config, updateState: true, cancellationToken: token),
-            (device, token) => device.UpdateAsync(token), (interval, token) => Task.Delay(interval, token)) { }
+            (device, token) => device.UpdateAsync(token), (interval, token) => Task.Delay(interval, token), outletPolls) { }
 
     // Inject only I/O and waiting for deterministic coordinator tests.
     internal ManagedParentDevicePoller(string hostKey, DeviceConfiguration configuration,
@@ -42,7 +44,7 @@ internal sealed class ManagedParentDevicePoller : IDisposable
         string driverLogId, bool isStrip,
         Func<DeviceConfiguration, CancellationToken, Task<KasaDevice>> connect,
         Func<KasaDevice, CancellationToken, Task> update,
-        Func<TimeSpan, CancellationToken, Task> delay)
+        Func<TimeSpan, CancellationToken, Task> delay, OutletPollCoordinator? outletPolls = null)
     {
         _hostKey = hostKey;
         _configuration = configuration;
@@ -50,6 +52,8 @@ internal sealed class ManagedParentDevicePoller : IDisposable
         _logger = logger;
         _driverLogId = driverLogId;
         _isStrip = isStrip;
+        _outletPolls = isStrip ? outletPolls : null;
+        _pollSlot = _outletPolls?.Register() ?? 0;
         _connect = connect;
         _update = update;
         _delay = delay;
@@ -169,9 +173,19 @@ internal sealed class ManagedParentDevicePoller : IDisposable
             while (!token.IsCancellationRequested)
             {
                 // Keep initial state and offline recovery when steady strip polling is off.
-                if (!_isStrip || _sharedConfiguration.EnableLightPolling || !_online)
-                    await RefreshAsync(token).ConfigureAwait(false);
-                await _delay(ComputeNextDelay(), token).ConfigureAwait(false);
+                if (_outletPolls is null)
+                {
+                    if (!_isStrip || _sharedConfiguration.EnableLightPolling || !_online)
+                        await RefreshAsync(token).ConfigureAwait(false);
+                    await _delay(ComputeNextDelay(), token).ConfigureAwait(false);
+                }
+                else
+                {
+                    // One scheduled request per physical strip, never per socket.
+                    await _outletPolls.WaitForSlotAsync(_pollSlot, ComputeNextDelay(), token).ConfigureAwait(false);
+                    if (_sharedConfiguration.EnableLightPolling || !_online)
+                        await _outletPolls.RunAsync(() => RefreshCoreAsync(token, scheduledStrip: true), token).ConfigureAwait(false);
+                }
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
@@ -249,17 +263,31 @@ internal sealed class ManagedParentDevicePoller : IDisposable
         return _connectedDevice;
     }
 
-    public async Task RefreshAsync(CancellationToken token)
+    public Task RefreshAsync(CancellationToken token) => RefreshCoreAsync(token, scheduledStrip: false);
+
+    private async Task RefreshCoreAsync(CancellationToken token, bool scheduledStrip)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, _lifetime.Token);
-        await _operationGate.WaitAsync(linked.Token).ConfigureAwait(false);
+        if (scheduledStrip)
+        {
+            if (!await _operationGate.WaitAsync(0, linked.Token).ConfigureAwait(false)) return;
+        }
+        else await _operationGate.WaitAsync(linked.Token).ConfigureAwait(false);
         try
         {
             IParentDeviceChild[] children;
             lock (_gate) children = _children.Values.ToArray();
             if (children.Length == 0) return;
-            var device = await EnsureConnectedAsync(linked.Token).ConfigureAwait(false);
-            await _update(device, linked.Token).ConfigureAwait(false);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(linked.Token);
+            if (scheduledStrip) deadline.CancelAfter(TimeSpan.FromSeconds(5));
+            var device = await EnsureConnectedAsync(deadline.Token).ConfigureAwait(false);
+            if (scheduledStrip)
+            {
+                _outletPolls!.Observe(_pollSlot, "strip-start");
+                await device.RefreshStripOutletStatesAsync(deadline.Token).ConfigureAwait(false);
+                _outletPolls.Observe(_pollSlot, "strip-success");
+            }
+            else await _update(device, deadline.Token).ConfigureAwait(false);
             linked.Token.ThrowIfCancellationRequested();
             UpdateDeviceReportedInterval(device, children);
             _failures = 0;

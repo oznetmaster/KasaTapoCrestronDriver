@@ -17,13 +17,19 @@
     {
       "Id": "kasatapodriver-live",
       "Name": "KasaTapoCrestronDriver Tests — Live device state",
-      "FilterXml": "<filter><and><class>KasaTapoCrestronDriver.Tests.LiveDriverEntityTests</class><not><cat>PhysicalTriggers</cat></not></and></filter>",
+      "FilterXml": "<filter><and><class>KasaTapoCrestronDriver.Tests.LiveDriverEntityTests</class><not><cat>PhysicalTriggers</cat></not><not><cat>MixedOutletLoad</cat></not></and></filter>",
       "ManualOnly": true
     },
     {
       "Id": "kasatapodriver-physical-events",
       "Name": "KasaTapoCrestronDriver Tests — Physical event timing",
       "FilterXml": "<filter><and><class>KasaTapoCrestronDriver.Tests.LiveDriverEntityTests</class><cat>PhysicalTriggers</cat></and></filter>",
+      "ManualOnly": true
+    },
+    {
+      "Id": "kasatapodriver-mixed-outlet-load",
+      "Name": "Kasa/Tapo 20 outlet mixed load",
+      "FilterXml": "<filter><cat>MixedOutletLoad</cat></filter>",
       "ManualOnly": true
     }
   ]

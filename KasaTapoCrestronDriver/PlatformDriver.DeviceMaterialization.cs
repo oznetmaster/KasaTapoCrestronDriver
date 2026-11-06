@@ -106,7 +106,7 @@ public sealed partial class PlatformDriver
 				return existingPoller;
 				}
 
-			var poller = new ManagedParentDevicePoller (hostKey, configuration, _sharedConfiguration, _logger, _driverLogId, isStrip);
+			var poller = new ManagedParentDevicePoller (hostKey, configuration, _sharedConfiguration, _logger, _driverLogId, isStrip, isStrip ? _outletPollCoordinator : null);
 			_hubPollers[pollerKey] = poller;
 			return poller;
 			}
@@ -119,6 +119,8 @@ public sealed partial class PlatformDriver
 		{
 		return _childHubPollers.TryGetValue (controllerId, out ManagedParentDevicePoller? poller) ? poller : null;
 		}
+
+	private readonly OutletPollCoordinator _outletPollCoordinator = new ();
 
 	private IKasaManagedChildEntity CreateManagedLightEntity (ManagedLightDescriptor descriptor, DeviceConfiguration configuration)
 		{
@@ -135,7 +137,7 @@ public sealed partial class PlatformDriver
 				_resources,
 				_logger,
 				_driverLogId,
-				_args.DriverDataDirectoryPath, stripPoller);
+				_args.DriverDataDirectoryPath, stripPoller, _outletPollCoordinator, SaveVerifiedOutletConnection);
 			}
 
 		if (descriptor.ChildKind == ManagedChildKind.Sensor)

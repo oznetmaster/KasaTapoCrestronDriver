@@ -57,6 +57,12 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	private readonly CommandActivity _controlActivity = new ();
 	private readonly object _outletStateLock = new ();
 	private readonly SemaphoreSlim _commandGate = new (1, 1);
+	private readonly OutletPollCoordinator _outletPolls;
+	private readonly int _pollSlot;
+	private readonly Action<ManagedLightDescriptor, KasaDevice>? _connectionVerified;
+	private long _nextEnergyMilliseconds;
+	private static readonly TimeSpan ScheduledPollTimeout = TimeSpan.FromSeconds (5);
+	private const int ENERGY_REFRESH_MS = 60000;
 	private bool _hasConfirmedOutletState;
 	private bool _childRunning;
 	private bool _hostStateRead;
@@ -211,7 +217,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	public void OutletOff ()
 		{
 		LogInfo ($"Outlet entity '{ControllerId}' command invoked: outletOff.");
-		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => StripOutletControl.SetIsOnAsync (device, _descriptor.ChildId, false, cancellationToken), _lifetimeCancellationSource.Token), "outletOff");
+		StartBackgroundOperation (() => ExecuteDeviceCommandAsync (false, _lifetimeCancellationSource.Token), "outletOff");
 		}
 
 	[EntityCommand (Id = "outletOn")]
@@ -219,7 +225,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	public void OutletOn ()
 		{
 		LogInfo ($"Outlet entity '{ControllerId}' command invoked: outletOn.");
-		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) => StripOutletControl.SetIsOnAsync (device, _descriptor.ChildId, true, cancellationToken), _lifetimeCancellationSource.Token), "outletOn");
+		StartBackgroundOperation (() => ExecuteDeviceCommandAsync (true, _lifetimeCancellationSource.Token), "outletOn");
 		}
 
 	[EntityCommand (Id = "outletToggle")]
@@ -227,16 +233,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 	public void OutletToggle ()
 		{
 		LogInfo ($"Outlet entity '{ControllerId}' command invoked: outletToggle.");
-		// Resolve the toggle when its queued operation runs, after any preceding
-		// command's readback, rather than twice against the same pre-command UI state.
-		bool? targetIsOn = null;
-		StartBackgroundOperation (() => ExecuteDeviceCommandAsync ((device, cancellationToken) =>
-			{
-			// Retrying a lost acknowledgement/readback must retain the same target.
-			targetIsOn ??= !StripOutletControl.ReadIsOn (device, _descriptor.ChildId);
-			return StripOutletControl.SetIsOnAsync (device, _descriptor.ChildId, targetIsOn.Value, cancellationToken);
-			},
-			_lifetimeCancellationSource.Token), "outletToggle");
+        StartBackgroundOperation (() => ExecuteDeviceCommandAsync (null, _lifetimeCancellationSource.Token), "outletToggle");
 		}
 
 	// ExtensionSetPropertyValueExecutor (extension:setPropertyValue) does not write the property
@@ -269,10 +266,14 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 		DriverImplementationResources resources,
 		DriverControllerLogger logger,
 		string driverLogId,
-		string? driverDataDirectoryPath = null, ManagedParentDevicePoller? parentPoller = null)
+		string? driverDataDirectoryPath = null, ManagedParentDevicePoller? parentPoller = null,
+        OutletPollCoordinator? outletPolls = null, Action<ManagedLightDescriptor, KasaDevice>? connectionVerified = null)
 		: base (controllerId)
 		{
 		_parentPoller = parentPoller;
+        _outletPolls = outletPolls ?? new OutletPollCoordinator ();
+        _pollSlot = parentPoller is null ? _outletPolls.Register () : 0;
+        _connectionVerified = connectionVerified;
 		_descriptorUpdated = descriptorUpdated;
 		_sharedConfiguration = sharedConfiguration;
 		_logger = logger;
@@ -402,6 +403,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			return false;
 			}
 
+        _connectionVerified?.Invoke (_descriptor, device);
 		UpdateDescriptorFromConnectedDevice (device);
 		LogInfo ($"Outlet entity '{ControllerId}' adopted connected device from context='{context}'.");
 		return true;
@@ -682,14 +684,16 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			}
 		}
 
-	private void ApplyState (KasaDevice device)
+	private void ApplyState (KasaDevice device) =>
+        ApplyReadback (string.IsNullOrWhiteSpace (_descriptor.ChildId)
+            ? device.IsOn : device.GetChild (_descriptor.ChildId!)?.IsOn, device);
+
+    private void ApplyReadback (bool? reportedIsOn, KasaDevice? device = null)
 		{
 		lock (_outletStateLock)
 			{
+            if (_disposed || Volatile.Read (ref _stopState) != 0) return;
 			// A missing state is not confirmation that the outlet is off.
-			bool? reportedIsOn = string.IsNullOrWhiteSpace (_descriptor.ChildId)
-				? device.IsOn
-				: device.GetChild (_descriptor.ChildId!)?.IsOn;
 			bool firstState = reportedIsOn.HasValue && !_hasConfirmedOutletState;
 			bool announceState = _childRunning && _hostStateRead && reportedIsOn.HasValue && (!_startupStateAnnounced || OutletIsOn != reportedIsOn.Value);
 			if (reportedIsOn.HasValue)
@@ -699,20 +703,23 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 				OutletStatus = reportedIsOn.Value ? "On" : "Off";
 				OutletIcon = reportedIsOn.Value ? "icGenericDeviceOn" : "icGenericDeviceOff";
 				}
-			// Parent aggregate energy must not be displayed as one socket's consumption.
-			_energyAvailable = string.IsNullOrWhiteSpace (_descriptor.ChildId) && (device.Energy?.IsAvailable ?? false);
-			HasEnergyReporting = _energyAvailable;
-			if (_energyAvailable)
-				{
-				OutletEnergyCurrentPowerWatts = device.Energy!.CurrentPowerWatts ?? 0d;
-				OutletEnergyTodayKilowattHours = device.Energy!.TodayKilowattHours ?? 0d;
-				OutletEnergyMonthKilowattHours = device.Energy!.MonthKilowattHours ?? 0d;
-				OutletEnergyTotalKilowattHours = device.Energy!.TotalKilowattHours ?? 0d;
-				OutletEnergyVoltageVolts = device.Energy!.VoltageVolts ?? 0d;
-				OutletEnergyCurrentAmps = device.Energy!.CurrentAmps ?? 0d;
-				}
-			TraceSample (device);
-			EnsureUiDefinitionMatchesEnergyCapability ();
+            if (device is not null)
+                {
+				// Parent aggregate energy must not be displayed as one socket's consumption.
+				_energyAvailable = string.IsNullOrWhiteSpace (_descriptor.ChildId) && (device.Energy?.IsAvailable ?? false);
+				HasEnergyReporting = _energyAvailable;
+				if (_energyAvailable)
+					{
+					OutletEnergyCurrentPowerWatts = device.Energy!.CurrentPowerWatts ?? 0d;
+					OutletEnergyTodayKilowattHours = device.Energy!.TodayKilowattHours ?? 0d;
+					OutletEnergyMonthKilowattHours = device.Energy!.MonthKilowattHours ?? 0d;
+					OutletEnergyTotalKilowattHours = device.Energy!.TotalKilowattHours ?? 0d;
+					OutletEnergyVoltageVolts = device.Energy!.VoltageVolts ?? 0d;
+					OutletEnergyCurrentAmps = device.Energy!.CurrentAmps ?? 0d;
+					}
+				TraceSample (device);
+				EnsureUiDefinitionMatchesEnergyCapability ();
+                }
 			OnlineIndicatorIsOnline = true;
 			ReadyIndicatorIsReady = true;
 			// Include unchanged/default-valued fields in the first confirmed snapshot.
@@ -800,10 +807,27 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			}
 		}
 
-	private async Task InitializeConnectedStateAsync (CancellationToken cancellationToken)
+	private Task InitializeConnectedStateAsync (CancellationToken cancellationToken) =>
+        _parentPoller is null
+            ? _outletPolls.RunAsync (() => InitializeStandaloneAsync (cancellationToken), cancellationToken)
+            : InitializeOutletAsync (cancellationToken);
+
+    private async Task InitializeStandaloneAsync (CancellationToken token)
+        {
+        await _commandGate.WaitAsync (token).ConfigureAwait (false);
+        try
+            {
+            if (_isConfigured && !_disposed && Volatile.Read (ref _stopState) == 0)
+                await InitializeOutletAsync (token).ConfigureAwait (false);
+            }
+        finally { _commandGate.Release (); }
+        }
+
+    private async Task InitializeOutletAsync (CancellationToken cancellationToken)
 		{
 		KasaDevice device = await EnsureConnectedAsync (cancellationToken).ConfigureAwait (false);
 		ApplyState (device);
+        Interlocked.Exchange (ref _nextEnergyMilliseconds, _outletPolls.ElapsedMilliseconds + ENERGY_REFRESH_MS);
 		OnlineIndicatorIsOnline = true;
 		ReadyIndicatorIsReady = true;
 		if (_childPublished)
@@ -852,7 +876,9 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
             }
 
 		TraceOutlet ("connect-success");
+        cancellationToken.ThrowIfCancellationRequested ();
 		_connectedDevice = connectedDevice;
+        _connectionVerified?.Invoke (_descriptor, connectedDevice);
 		UpdateDescriptorFromConnectedDevice (connectedDevice);
 		return connectedDevice;
 		}
@@ -936,12 +962,12 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			TaskScheduler.Default);
 		}
 
-	private async Task ExecuteDeviceCommandAsync (Func<KasaDevice, CancellationToken, Task> action, CancellationToken cancellationToken)
+	private async Task ExecuteDeviceCommandAsync (bool? target, CancellationToken cancellationToken)
 		{
 		await _commandGate.WaitAsync (cancellationToken).ConfigureAwait (false);
 		try
 			{
-			await ExecuteDeviceCommandCoreAsync (action, cancellationToken).ConfigureAwait (false);
+			await ExecuteDeviceCommandCoreAsync (target, cancellationToken).ConfigureAwait (false);
 			}
 		finally
 			{
@@ -949,7 +975,7 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 			}
 		}
 
-	private async Task ExecuteDeviceCommandCoreAsync (Func<KasaDevice, CancellationToken, Task> action, CancellationToken cancellationToken)
+	private async Task ExecuteDeviceCommandCoreAsync (bool? target, CancellationToken cancellationToken)
 		{
 		for (int attempt = 1; ; attempt++)
 			{
@@ -958,15 +984,24 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 				{
 				if (_parentPoller is not null)
 					{
-					await _parentPoller.ExecuteCommandAsync (action, cancellationToken).ConfigureAwait (false);
+                    await _parentPoller.ExecuteCommandAsync ((device, token) =>
+                        {
+                        target ??= !StripOutletControl.ReadIsOn (device, _descriptor.ChildId);
+                        return StripOutletControl.SetIsOnAsync (device, _descriptor.ChildId, target.Value, token);
+                        }, cancellationToken).ConfigureAwait (false);
 					return;
 					}
 				KasaDevice device = await EnsureConnectedAsync (cancellationToken).ConfigureAwait (false);
 				using CancellationTokenSource timeoutCancellationSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken);
 				timeoutCancellationSource.CancelAfter (DeviceCommandTimeout);
-				await action (device, timeoutCancellationSource.Token).ConfigureAwait (false);
-				await device.UpdateAsync (timeoutCancellationSource.Token).ConfigureAwait (false);
-				ApplyState (device);
+                var token = timeoutCancellationSource.Token;
+                // Do not derive a toggle from an old full snapshot. Retain the resolved target on retry.
+                if (!target.HasValue)
+                    target = !(await device.ReadOutletStateAsync (token).ConfigureAwait (false)
+                        ?? throw new InvalidDataException ("Outlet did not report relay state for toggle."));
+                bool? confirmed = await device.SetOutletStateAndReadBackAsync (target.Value, token).ConfigureAwait (false);
+                if (!confirmed.HasValue) throw new InvalidDataException ("Outlet did not confirm relay state.");
+                ApplyReadback (confirmed);
 				OnlineIndicatorIsOnline = true;
 				ReadyIndicatorIsReady = true;
 				return;
@@ -1000,39 +1035,73 @@ internal sealed partial class KasaOutletEntity : ReflectedAttributeDriverEntity,
 		_pollingTask = RunPollingCycleAsync (generation);
 		}
 
-	private async Task RunPollingCycleAsync (int generation)
-		{
-		try
-			{
-			await Task.Delay (_sharedConfiguration.LightPollInterval, _lifetimeCancellationSource.Token).ConfigureAwait (false);
+    private bool IsCurrentPoll (int generation) => _isConfigured && !_disposed
+        && Volatile.Read (ref _stopState) == 0 && generation == Volatile.Read (ref _pollingGeneration);
 
-			if (_disposed || Volatile.Read (ref _stopState) != 0 || generation != Volatile.Read (ref _pollingGeneration))
-				{
-				return;
-				}
+    private async Task RunPollingCycleAsync (int generation)
+        {
+        try
+            {
+            var token = _lifetimeCancellationSource.Token;
+            while (IsCurrentPoll (generation))
+                {
+                long scheduled = await _outletPolls.WaitForSlotAsync (_pollSlot, _sharedConfiguration.LightPollInterval, token).ConfigureAwait (false);
+                if (IsCurrentPoll (generation) && _sharedConfiguration.EnableLightPolling)
+                    await _outletPolls.RunAsync (() => PollStandaloneAsync (generation, scheduled, token), token).ConfigureAwait (false);
+                }
+            }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { LogError ($"Outlet '{ControllerId}' poll loop failed: {ex}"); }
+        }
 
-			if (_sharedConfiguration.EnableLightPolling)
-				{
-				// Refresh publishes confirmed changes. A full snapshot here repeats every
-				// property notification on every poll, even when the outlet is unchanged.
-				await RefreshAsync (_lifetimeCancellationSource.Token).ConfigureAwait (false);
-				}
-
-			if (_disposed || Volatile.Read (ref _stopState) != 0 || generation != Volatile.Read (ref _pollingGeneration))
-				{
-				return;
-				}
-
-			_pollingTask = RunPollingCycleAsync (generation);
-			}
-		catch (OperationCanceledException)
-			{
-			}
-		catch (Exception ex)
-			{
-			_logger?.Log (_driverLogId, LogEntryLevel.Error, $"Outlet entity '{ControllerId}' polling loop failed: {ex}");
-			}
-		}
+    private async Task PollStandaloneAsync (int generation, long scheduled, CancellationToken token)
+        {
+        // A queued user command wins over scheduled work for this outlet.
+        if (!IsCurrentPoll (generation) || !await _commandGate.WaitAsync (0, token).ConfigureAwait (false)) return;
+        try
+            {
+            if (!IsCurrentPoll (generation) || !_sharedConfiguration.EnableLightPolling) return;
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource (token);
+            deadline.CancelAfter (ScheduledPollTimeout);
+            bool connecting = Volatile.Read (ref _connectedDevice) is null;
+            KasaDevice device = await EnsureConnectedAsync (deadline.Token).ConfigureAwait (false);
+            if (!IsCurrentPoll (generation)) return;
+            if (connecting || scheduled >= Interlocked.Read (ref _nextEnergyMilliseconds))
+                {
+                // Full refresh on the minute slot replaces that slot's state read. The
+                // existing parser preserves the full energy snapshot on legacy and SMART.
+                TraceOutlet ("energy-poll-start");
+                _outletPolls.Observe (_pollSlot, "energy-start");
+                Interlocked.Exchange (ref _nextEnergyMilliseconds, scheduled + ENERGY_REFRESH_MS);
+                if (!connecting) await device.UpdateAsync (deadline.Token).ConfigureAwait (false);
+                if (IsCurrentPoll (generation)) ApplyState (device);
+                TraceOutlet ("energy-poll-success");
+                _outletPolls.Observe (_pollSlot, "energy-success");
+                }
+            else
+                {
+                TraceOutlet ("state-poll-start");
+                _outletPolls.Observe (_pollSlot, "state-start");
+                bool? state = await device.ReadOutletStateAsync (deadline.Token).ConfigureAwait (false);
+                if (!state.HasValue) throw new InvalidDataException ("Outlet did not report relay state.");
+                if (IsCurrentPoll (generation)) ApplyReadback (state);
+                TraceOutlet ("state-poll-success");
+                _outletPolls.Observe (_pollSlot, "state-success");
+                }
+            }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex)
+            {
+            if (IsCurrentPoll (generation))
+                {
+                OnlineIndicatorIsOnline = false;
+                ReadyIndicatorIsReady = false;
+                TraceOutlet ("scheduled-poll-failure", ex);
+                LogError ($"Outlet '{ControllerId}' scheduled poll failed: {ex}");
+                }
+            }
+        finally { _commandGate.Release (); }
+        }
 
 	[Conditional ("DEBUG")]
 	private void LogInfo (string message)
