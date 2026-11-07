@@ -159,6 +159,10 @@ public sealed partial class LiveDriverEntityTests
         }
         finally
         {
+            // Mark the simulated servers as shutting down before disposal of a
+            // connected device can close an in-flight TCP frame. Unexpected EOF
+            // during the observation window must still fail the server task.
+            foreach (var simulator in simulators) simulator.Stop();
             foreach (var e in entities) e.Stop();
             foreach (var e in entities) e.Dispose();
             foreach (var device in devices) device.Dispose();
@@ -228,10 +232,14 @@ public sealed partial class LiveDriverEntityTests
             }
             return data;
         }
-        public void Dispose()
+        public void Stop()
         {
             _stop.Cancel();
             _listener.Stop();
+        }
+        public void Dispose()
+        {
+            Stop();
             _server.GetAwaiter().GetResult();
             _stop.Dispose();
         }

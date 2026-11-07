@@ -526,6 +526,16 @@
         "ExactLabInstalled": true,
         "PreservedDeviceIdentities": 37
       }
+    },
+    {
+      "id": "public-2.1.15",
+      "channel": "public",
+      "publicVersion": "2.1.15",
+      "driverVersion": "2.1.015.0000",
+      "status": "reserved",
+      "date": "2026-11-07",
+      "packageSha256": "8f02d1afc2dda27dfc6c869231d4699dbb5ec516636c2248d3365fd465bb88ad",
+      "purpose": "Public outlet polling/load and rounded-voltage correction; public client 2.2.0"
     }
   ],
   "nugetDocumentationPatches": [

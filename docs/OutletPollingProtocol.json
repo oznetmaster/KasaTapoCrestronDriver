@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "name": "Outlet polling mixed-load validation",
+  "source": "KasaTapoCrestronDriver.Lifecycle.Tests/MixedOutletPollingTests.cs",
+  "test": "TwoRealOutletsAndEighteenTcpSimulatorsKeepCadenceAndCommandFeedback",
+  "runtimes": [
+    "workstation .NET 10",
+    "Crestron processor .NET Framework 4.7.2"
+  ],
+  "fixtures": {
+    "realOutlets": 2,
+    "realRoles": [
+      "energy-reporting standalone plug",
+      "one legacy strip socket"
+    ],
+    "simulatedTcpOutlets": 18,
+    "simulationTransport": "LegacyXor over loopback TCP",
+    "realDeviceNameMustContain": "demo",
+    "realDeviceCommandsAllowed": false,
+    "credentials": "Private inputs only; never include in result bundles"
+  },
+  "settings": {
+    "statePollSeconds": 10,
+    "fullEnergyRefreshSeconds": 60,
+    "backgroundConcurrencyCap": 3,
+    "steadyObservationMilliseconds": 132000
+  },
+  "checks": [
+    "All twenty state-poll slots complete 12\u201314 successful reads in the observation window.",
+    "The longest healthy per-slot state-poll gap is less than 12.5 seconds.",
+    "Each of nineteen standalone slots completes two energy refreshes, separated by 57.5\u201362.5 seconds; no per-socket energy request is introduced.",
+    "No more than three background starts occur in any 100 ms window, and peak background concurrency equals three.",
+    "Each simulator receives exactly two full-module requests and 12\u201314 state reads during the steady window, without writes.",
+    "A simulated external state change produces the confirmed event within twelve seconds.",
+    "With all three background permits occupied, a simulator command confirms within two seconds while a fourth background request remains queued.",
+    "Both real outlets remain at their observed initial relay states; no physical switching command is issued.",
+    "All temporary entities, simulated endpoints and owned processor fixtures are stopped/removed; the exact processor reservation is released."
+  ],
+  "report": [
+    "successful state reads and maximum gap",
+    "energy count and gap range",
+    "peak starts per 100 ms and background concurrency",
+    "external-change and saturated-command feedback times",
+    "optional process CPU time",
+    "physical command count",
+    "source/dependency/package hashes",
+    "cleanup and reservation receipts"
+  ],
+  "limits": [
+    "Two physical outlets plus simulations do not establish performance of twenty physical devices.",
+    "The simulation protocol is legacy XOR; supported SMART standalone behavior is exercised only by matching available real hardware.",
+    "SMART strips retain the existing full child-list refresh; this protocol does not qualify lightweight SMART-strip energy traffic.",
+    "Offline, slow or reconnecting endpoints can extend polling gaps beyond the healthy-device budget.",
+    "Do not substitute a command acknowledgement for independently confirmed state."
+  ]
+}

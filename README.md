@@ -28,19 +28,21 @@ TP-Link, Kasa, and Tapo are trademarks of their respective owners. This project 
 
 ---
 
-## GitHub and NuGet release 2.1.14
+## GitHub and NuGet release 2.1.15
 
-The GitHub/NuGet patch release is **2.1.14**, with Crestron driver version **2.1.014.0000**. It supersedes 2.1.5 and customer test 2.1.004.0001. Intermediate numbers were reserved for unpublished lab candidates; they were not public releases. The Crestron catalog entry above is separate from GitHub/NuGet publication.
+Public patch **2.1.15** contains driver **2.1.015.0000** (Home may show **2.001.0015.0**). It supersedes public 2.1.14 and customer tests 2.1.014.0001–0003. Crestron catalogue publication is separate.
 
-This update removes repeated full outlet snapshots from ordinary polling, shared-parent updates and command completion. Polling continues, confirmed On/Off events still update third-party tiles, and changed energy readings remain available. Release builds suppress routine driver informational/debug diagnostics and retain warning/error reporting. Crestron Home can still log genuine property changes through its own diagnostics.
+Standalone outlet On/Off state follows the configured polling interval, while full energy refreshes normally occur about once a minute. Background outlet polls are staggered and limited to three concurrent operations per platform, and each physical strip shares a poll. Legacy strips support a lightweight state refresh; SMART strips retain their full child-list refresh. Direct command feedback does not wait for the next scheduled poll or for a background polling slot.
 
-Light/dimmer, outlet and sensor events follow confirmed device feedback after their related properties are published. Startup publishes confirmed values and announces their matching state events once; extension events wait for Home to begin reading the running child. Existing automations using these events can therefore run when initial state is confirmed after a reload. Button gesture history is not replayed. Processor light baselines retain the correct brightness and active colour/white mode; an off dimmer reports 0% even if the bulb stores a nonzero brightness.
+Voltage is published to one decimal place (0.1 V), notifying when the rounded value changes. Other energy precision is unchanged. Release builds retain warning/error diagnostics and omit routine informational/debug diagnostics. Home can still log real property changes; its logging is independent of the driver's logging setting.
 
-Third-party toggle tiles still require event-to-feedback programming using their own state/display actions; see [Outlet feedback and third-party tiles](#outlet-feedback-and-third-party-tiles). Enable **Enable Light Polling** for external changes. Outlets use **Light Poll Interval (Seconds)**, normally 15 seconds; an existing 10-second setting can be retained.
+Keep **Enable Light Polling** enabled for Kasa/Tapo-app or physical-button changes. **15 seconds** is the normal recommendation; an existing **10-second** setting remains supported and is retained. Energy feedback can lag by about a minute. Keep the existing [third-party tile feedback programming](#outlet-feedback-and-third-party-tiles).
 
-Existing device identities and programmable IDs are retained. KasaTapoClient remains at 2.0.1 and Crestron.DeviceDrivers.DevKit remains at 29.0.10. See the [release notes](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/RELEASE-NOTES.md) for validation scope and upgrade instructions.
+Confirmed startup state/events and light-baseline behavior from 2.1.14 are retained. Successful reconnect metadata is saved only after matching the physical device identity; child identities, rooms and programmable IDs are preserved. KasaTapoClient is **2.2.0** and DevKit remains **29.0.10**. Customer CP4-R testing confirmed retained tile feedback and substantially reduced logging; see the [release notes](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/RELEASE-NOTES.md) for validation scope and limitations.
 
-Import the package, then update the existing platform driver in Home Setup or Configure Pro. Importing alone does not update the active driver. Removing and re-adding the platform or its children is not a routine update step. Contact [support](https://oznetmaster.github.io/support/) before deleting configured devices, which can affect rooms, scenes and programming.
+Import/upload the package, then update the existing driver in Setup or Configure Pro. Uploading alone does not update it. Do not remove/re-add the platform or its children as a routine upgrade; contact [support](https://oznetmaster.github.io/support/) before deleting configured devices.
+
+The reproducible [outlet mixed-load validation protocol](docs/OutletPollingProtocol.json) records the two-real-plus-eighteen-simulated workload, timing checks and cleanup requirements. It does not represent twenty physical-device tests.
 
 ## Driver Architecture
 

@@ -10,6 +10,13 @@ project follows [Semantic Versioning](https://semver.org/).
 
 This changelog records shipped features, fixes, compatibility and runtime dependency changes. See [development and validation history](DEVELOPMENT-HISTORY.md) for tests, CI, build tooling and work not yet released.
 
+## [2.1.15](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.15) — 2026-11-07
+
+- Separate frequent standalone outlet state polling from full energy refreshes, normally about once a minute. Stagger background polls, cap concurrency at three per platform and share physical-strip polls while retaining prompt confirmed command feedback.
+- Round published voltage to 0.1 V before comparison/notification, reducing reports caused by finer raw fluctuations. Preserve other energy precision and existing tile feedback programming.
+- Persist verified reconnect protocol metadata only after matching the saved physical device identity. Keep existing child IDs, placement and configuration.
+- Use public KasaTapoClient 2.2.0. Customer CP4-R testing of the corresponding .0003 test build confirmed working tile feedback and substantially reduced log activity.
+
 ## [2.1.14](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.14) — 2026-11-05
 
 - Stop replaying full outlet property snapshots on scheduled polls, shared-parent updates and command completion. Continue polling and publish changed energy/state/availability values and confirmed On/Off events; retain complete lifecycle/startup snapshots. Compile routine controller-registration, shared-parent polling and processor-baseline informational diagnostics out of Release builds; retain error reporting.
