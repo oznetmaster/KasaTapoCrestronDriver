@@ -42,7 +42,7 @@ Confirmed startup state/events and light-baseline behavior from 2.1.14 are retai
 
 Import/upload the package, then update the existing driver in Setup or Configure Pro. Uploading alone does not update it. Do not remove/re-add the platform or its children as a routine upgrade; contact [support](https://oznetmaster.github.io/support/) before deleting configured devices.
 
-The reproducible [outlet mixed-load validation protocol](docs/OutletPollingProtocol.json) records the two-real-plus-eighteen-simulated workload, timing checks and cleanup requirements. It does not represent twenty physical-device tests.
+The reproducible [outlet mixed-load validation protocol](https://github.com/oznetmaster/KasaTapoCrestronDriver/blob/master/docs/OutletPollingProtocol.json) records the two-real-plus-eighteen-simulated workload, timing checks and cleanup requirements. It does not represent twenty physical-device tests.
 
 ## Driver Architecture
 
