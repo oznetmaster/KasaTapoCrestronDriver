@@ -532,10 +532,21 @@
       "channel": "public",
       "publicVersion": "2.1.15",
       "driverVersion": "2.1.015.0000",
-      "status": "reserved",
+      "status": "released",
       "date": "2026-11-07",
       "packageSha256": "8f02d1afc2dda27dfc6c869231d4699dbb5ec516636c2248d3365fd465bb88ad",
-      "purpose": "Public outlet polling/load and rounded-voltage correction; public client 2.2.0"
+      "purpose": "Public outlet polling/load and rounded-voltage correction; public client 2.2.0",
+      "publishedUtc": "2026-11-07T21:25:00Z",
+      "url": "https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.15",
+      "releaseSourceCommit": "715d30dfde4186443f36305caa24725da9030d71",
+      "runtimeSourceCommit": "27e17f3bd913df8ce6d9fe3115a030cbcdc228cc",
+      "publicationRun": 42415683392,
+      "uploaderSha256": "748b80d9067fa2f9258cfbf10b5899a6b849a0ccb00943361e902d0b21002a94",
+      "downloadSha256": "554f00c56246843b2b531c2e4e8bde661bbabe3af3ea37f412018c136e0d5d28",
+      "nugetSha256": "c8f131d2811922701e4815d2fa871c09124c21d3518fddf5a46a8ad3f71b79b6",
+      "nugetServerSha256": "5129f80fc837e798e235a327ea8c726a061faef19d8ce844a01db95ff6564117",
+      "publicReadbackVerified": true,
+      "customerUrl": "https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/download/v2.1.15/KasaTapo-2.1.15-Windows.zip"
     }
   ],
   "nugetDocumentationPatches": [

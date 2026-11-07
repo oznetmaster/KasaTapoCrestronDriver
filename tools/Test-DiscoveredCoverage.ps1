@@ -31,17 +31,18 @@ function Assert-SameTests($Expected,$Actual,[string]$Context) {
     Assert-CoverageTestNames $Expected $Actual $Context
 }
 function Read-TestTree([string]$Path,[switch]$AdapterDump) {
-    Read-CoverageTestTree -Path (Resolve-CoveragePath $Path) -AdapterDump:$AdapterDump -ExtraCategories @('PhysicalTriggers')
+    Read-CoverageTestTree -Path (Resolve-CoveragePath $Path) -AdapterDump:$AdapterDump -ExtraCategories @('PhysicalTriggers','MixedOutletLoad')
 }
 function Select-SuiteCases($Inventory,[string]$Category) {
-    if ($Category -notin @('unit','processor','live','physical')) { throw 'Unknown suite category.' }
+    if ($Category -notin @('unit','processor','live','physical','mixed')) { throw 'Unknown suite category.' }
     @($Inventory | Where-Object {
         $candidate = $_
         switch ($Category) {
             'unit' { !$candidate.Live -and !$candidate.Processor }
             'processor' { !$candidate.Live -and $candidate.Processor }
-            'live' { $candidate.Live -and !$candidate.PhysicalTriggers }
+            'live' { $candidate.Live -and !$candidate.PhysicalTriggers -and !$candidate.MixedOutletLoad }
             'physical' { $candidate.Live -and $candidate.PhysicalTriggers }
+            'mixed' { $candidate.Live -and $candidate.MixedOutletLoad }
         }
     })
 }
@@ -100,7 +101,7 @@ if ($Stage -eq 'Desktop') {
         $sourceCases = @(Get-Content $CompareProcessorInventory -Raw | ConvertFrom-Json)
         Assert-SameTests @($sourceCases | Where-Object { $_.Processor -and !$_.Live } | ForEach-Object Name) $observed 'Desktop processor harness'
     }
-    $inventory | Select-Object Name,Live,Processor,PhysicalTriggers | ConvertTo-Json -Depth 4 | Set-Content "$evidence/inventory.json" -Encoding utf8
+    $inventory | Select-Object Name,Live,Processor,PhysicalTriggers,MixedOutletLoad | ConvertTo-Json -Depth 4 | Set-Content "$evidence/inventory.json" -Encoding utf8
     Write-Host "Verified $($observed.Count) test results against discovery; $(@($inventory | Where-Object Live).Count) live tests discovered only."
 } elseif ($Stage -eq 'Package') {
     $inventory = @(Get-Content $SourceInventory -Raw | ConvertFrom-Json)
@@ -123,7 +124,7 @@ if ($Stage -eq 'Desktop') {
     if ($runs.Count -ne 2) { throw 'Both package executions are required.' }
     foreach ($run in $runs) {
         $files = @(Get-ChildItem $run.FullName -Recurse -Filter TestResult.xml)
-        Assert-SameTests @($SuiteCategories.Keys | Where-Object { $SuiteCategories[$_] -notin @('live','physical') }) @($files | ForEach-Object { $_.Directory.Name }) 'Executed package suites'
+        Assert-SameTests @($SuiteCategories.Keys | Where-Object { $SuiteCategories[$_] -notin @('live','physical','mixed') }) @($files | ForEach-Object { $_.Directory.Name }) 'Executed package suites'
         $executed = @()
         foreach ($file in $files) {
             $cases = @(Read-TestTree $file.FullName)

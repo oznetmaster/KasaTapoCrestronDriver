@@ -56,14 +56,15 @@ try {
     Reject { Read-TestTree $temporary }
 } finally { Remove-Item -LiteralPath $temporary -ErrorAction SilentlyContinue }
 $inventory = @(
-    [pscustomobject]@{Name='Fixture.Unit';Live=$false;Processor=$false;PhysicalTriggers=$false},
-    [pscustomobject]@{Name='Fixture.Lifecycle';Live=$false;Processor=$true;PhysicalTriggers=$false},
-    [pscustomobject]@{Name='Fixture.Live';Live=$true;Processor=$true;PhysicalTriggers=$false},
-    [pscustomobject]@{Name='Fixture.Physical';Live=$true;Processor=$true;PhysicalTriggers=$true}
+    [pscustomobject]@{Name='Fixture.Unit';Live=$false;Processor=$false;PhysicalTriggers=$false;MixedOutletLoad=$false},
+    [pscustomobject]@{Name='Fixture.Lifecycle';Live=$false;Processor=$true;PhysicalTriggers=$false;MixedOutletLoad=$false},
+    [pscustomobject]@{Name='Fixture.Live';Live=$true;Processor=$true;PhysicalTriggers=$false;MixedOutletLoad=$false},
+    [pscustomobject]@{Name='Fixture.Physical';Live=$true;Processor=$true;PhysicalTriggers=$true;MixedOutletLoad=$false},
+    [pscustomobject]@{Name='Fixture.Mixed';Live=$true;Processor=$true;PhysicalTriggers=$false;MixedOutletLoad=$true}
 )
-foreach ($pair in @(@('unit','Fixture.Unit'),@('processor','Fixture.Lifecycle'),@('live','Fixture.Live'),@('physical','Fixture.Physical'))) {
+foreach ($pair in @(@('unit','Fixture.Unit'),@('processor','Fixture.Lifecycle'),@('live','Fixture.Live'),@('physical','Fixture.Physical'),@('mixed','Fixture.Mixed'))) {
     Assert-SameTests @($pair[1]) @((Select-SuiteCases $inventory $pair[0]).Name) ('Separated ' + $pair[0]); $checks++
 }
 Reject { Select-SuiteCases $inventory 'unknown' }
-Assert-SameTests @($inventory.Name) @(@('unit','processor','live','physical') | ForEach-Object { (Select-SuiteCases $inventory $_).Name }) 'Complete partition'; $checks++
+Assert-SameTests @($inventory.Name) @(@('unit','processor','live','physical','mixed') | ForEach-Object { (Select-SuiteCases $inventory $_).Name }) 'Complete partition'; $checks++
 Write-Host "$checks discovery coverage guard checks passed."
