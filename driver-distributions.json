@@ -553,9 +553,17 @@
       "channel": "public",
       "publicVersion": "2.1.16",
       "driverVersion": "2.1.016.0000",
-      "status": "prepared",
       "purpose": "Audited dependency and driver lifecycle patch",
-      "url": "https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.16"
+      "url": "https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.16",
+      "packageSha256": "d70e6ef1ec44da2ada61c8276a3cde2dae5d83268bfcb51f0003b68d9eaf82f8",
+      "releaseSourceCommit": "0b52666e5606d89469c0e94b097a27261f9a02e8",
+      "status": "released",
+      "date": "2026-11-10",
+      "publicationRun": 42821287768,
+      "manifestSha256": "4b1ccce2d2a0fba179eda862ce14c221352b2e16ade472e7a647bd5a1dbc4522",
+      "nugetUrl": "https://www.nuget.org/packages/CrestronHomeDriver.TpLink.KasaTapoPlatform/2.1.16",
+      "nugetPayloadSha256": "14b500898f79d7fb72b6b3a86af4ad8b86127184a2af218fa5f4df83ce8673e4",
+      "publishedUtc": "2026-11-10T13:24:30.361978+00:00"
     }
   ],
   "nugetDocumentationPatches": [
