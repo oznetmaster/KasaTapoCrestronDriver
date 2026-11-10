@@ -3,6 +3,12 @@ name: Release Package
 on:
   workflow_dispatch:
     inputs:
+      artifact_run_id:
+        description: Original completed build run for immutable publication recovery
+        type: string
+      source_commit:
+        description: Exact original source commit required with artifact_run_id
+        type: string
       standard_release:
         description: Publish exact verified driver assets through the shared release actions
         type: boolean
@@ -388,7 +394,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'NuGet documentation patch publication failed.' }
 
   build:
-    if: inputs.standard_release == true
+    if: inputs.standard_release == true && inputs.artifact_run_id == ''
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -408,7 +414,7 @@ jobs:
       - name: Install pinned merge tool
         shell: pwsh
         run: dotnet tool install --global dotnet-ilrepack --version 2.0.45
-      - uses: oznetmaster/BuildAutomation/.github/actions/release-prepare@dd6056146da4424c996c0c3a0f98651e16209098
+      - uses: oznetmaster/BuildAutomation/.github/actions/release-prepare@d0973220540fa9a04e614d7f2a3f5e12e531b680
         with:
           version: ${{ inputs.public_version }}
       - name: Verify shared validation policy
@@ -422,16 +428,16 @@ jobs:
           hardware-skip-reason: ${{ inputs.hardware_skip_reason }}
           validation-commit: ${{ inputs.validation_commit }}
       - name: Stage driver packages through Cake
-        uses: oznetmaster/BuildAutomation@dd6056146da4424c996c0c3a0f98651e16209098
+        uses: oznetmaster/BuildAutomation@d0973220540fa9a04e614d7f2a3f5e12e531b680
         env:
           RELEASE_VERSION: ${{ inputs.public_version }}
         with:
           task: release-assets
-      - uses: oznetmaster/BuildAutomation/.github/actions/release-freeze@dd6056146da4424c996c0c3a0f98651e16209098
+      - uses: oznetmaster/BuildAutomation/.github/actions/release-freeze@d0973220540fa9a04e614d7f2a3f5e12e531b680
         with:
           version: ${{ inputs.public_version }}
   standard-publish:
-    if: inputs.standard_release == true
+    if: inputs.standard_release == true && inputs.artifact_run_id == ''
     needs: build
     runs-on: windows-latest
     timeout-minutes: 30
@@ -448,6 +454,28 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - uses: oznetmaster/BuildAutomation/.github/actions/release-publish@dd6056146da4424c996c0c3a0f98651e16209098
+      - uses: oznetmaster/BuildAutomation/.github/actions/release-publish@d0973220540fa9a04e614d7f2a3f5e12e531b680
         with:
           version: ${{ inputs.public_version }}
+  recover-frozen:
+    if: inputs.standard_release == true && inputs.artifact_run_id != ''
+    runs-on: windows-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: oznetmaster/BuildAutomation/.github/actions/release-publish@d0973220540fa9a04e614d7f2a3f5e12e531b680
+        with:
+          version: ${{ inputs.public_version }}
+          source-run-id: ${{ inputs.artifact_run_id }}
+          source-commit: ${{ inputs.source_commit }}
