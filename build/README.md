@@ -1,6 +1,6 @@
 # Build and test
 
-This repository uses [the shared Cake build component](https://github.com/oznetmaster/BuildAutomation/tree/ae6f311e530a18dc705971dcc655fc97de03e368) pinned in `component.json`. It is build tooling only; product dependencies and versions are unchanged.
+This repository uses [the shared Cake build component](https://github.com/oznetmaster/BuildAutomation/tree/dd6056146da4424c996c0c3a0f98651e16209098) pinned in `component.json`. It is build tooling only; product dependencies and versions are unchanged.
 
 The CI workflow retains its jobs, framework matrix, filters, prerequisites and artifact upload rules. Repository-owned recipes preserve the build/test/package commands. Publication, validation reuse, approvals, runner selection and hardware reservations remain in GitHub Actions.
 
