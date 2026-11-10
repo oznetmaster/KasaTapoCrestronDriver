@@ -32,9 +32,9 @@ TP-Link, Kasa, and Tapo are trademarks of their respective owners. This project 
 
 ---
 
-## GitHub and NuGet release 2.1.15
+## Retained outlet behavior from 2.1.15
 
-Public patch **2.1.15** contains driver **2.1.015.0000** (Home may show **2.001.0015.0**). It supersedes public 2.1.14 and customer tests 2.1.014.0001–0003. Crestron catalogue publication is separate.
+Previous public patch **2.1.15** contains driver **2.1.015.0000** (Home may show **2.001.0015.0**). It supersedes public 2.1.14 and customer tests 2.1.014.0001–0003. Crestron catalogue publication is separate.
 
 Standalone outlet On/Off state follows the configured polling interval, while full energy refreshes normally occur about once a minute. Background outlet polls are staggered and limited to three concurrent operations per platform, and each physical strip shares a poll. Legacy strips support a lightweight state refresh; SMART strips retain their full child-list refresh. Direct command feedback does not wait for the next scheduled poll or for a background polling slot.
 
