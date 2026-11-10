@@ -176,7 +176,7 @@ internal partial class KasaLightEntity
 			}
 
 		Stop ();
-		_lifetimeCancellationSource.Dispose ();
+		// Cancellation observers may still access this source while unwinding; retain it with the entity.
 		_disposed = true;
 		}
 
@@ -184,7 +184,8 @@ internal partial class KasaLightEntity
 		{
 		// The startup owner retries initial connection and awaits processor baseline synchronization.
 		// Recovery polling must not race it and mark a partly initialized light online/ready.
-		if (!_initialStateEstablished) return;
+		if (!_initialStateEstablished)
+			return;
 		try
 			{
 			await RefreshAndApplyStateAsync (cancellationToken).ConfigureAwait (false);
@@ -222,7 +223,8 @@ internal partial class KasaLightEntity
 
 	private void RestartPolling ()
 		{
-		if (UseParentPolling ()) return;
+		if (UseParentPolling ())
+			return;
 		if (_disposed)
 			{
 			LogInfo ($"Light entity '{ControllerId}' RestartPolling skipped because the entity is disposed.");
@@ -267,7 +269,8 @@ internal partial class KasaLightEntity
 			}
 
 		// The strip coordinator/cache owns this device; a projection must never dispose it.
-		if (_parentPoller is not null) return;
+		if (_parentPoller is not null)
+			return;
 
 		if (staleDevice is null)
 			{
@@ -451,7 +454,8 @@ internal partial class KasaLightEntity
 		{
 		bool establishingBaseline = !_initialStateEstablished;
 		bool previousSuppression = _suppressPropertyNotifications;
-		if (establishingBaseline) _suppressPropertyNotifications = true;
+		if (establishingBaseline)
+			_suppressPropertyNotifications = true;
 		try
 			{
 			await InitializeConnectedStateCoreAsync (cancellationToken).ConfigureAwait (false);

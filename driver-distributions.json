@@ -547,6 +547,15 @@
       "nugetServerSha256": "5129f80fc837e798e235a327ea8c726a061faef19d8ce844a01db95ff6564117",
       "publicReadbackVerified": true,
       "customerUrl": "https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/download/v2.1.15/KasaTapo-2.1.15-Windows.zip"
+    },
+    {
+      "id": "public-2.1.16",
+      "channel": "public",
+      "publicVersion": "2.1.16",
+      "driverVersion": "2.1.016.0000",
+      "status": "prepared",
+      "purpose": "Audited dependency and driver lifecycle patch",
+      "url": "https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.16"
     }
   ],
   "nugetDocumentationPatches": [

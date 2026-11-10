@@ -380,133 +380,133 @@ public sealed partial class PlatformDriver
 
 		try
 			{
-				using var stream = File.OpenRead (cachePath);
-				var serializer = new DataContractJsonSerializer (typeof (ManagedDeviceCacheDocument));
-				if (serializer.ReadObject (stream) is not ManagedDeviceCacheDocument document)
-					{
-					LogInfo ("Managed-device cache load returned no document.");
-					return;
-					}
+			using var stream = File.OpenRead (cachePath);
+			var serializer = new DataContractJsonSerializer (typeof (ManagedDeviceCacheDocument));
+			if (serializer.ReadObject (stream) is not ManagedDeviceCacheDocument document)
+				{
+				LogInfo ("Managed-device cache load returned no document.");
+				return;
+				}
 
-				if (document.Version != MANAGED_DEVICE_CACHE_VERSION)
-					{
-					LogInfo ($"Managed-device cache load skipped because version '{document.Version}' is not current; expected version '{MANAGED_DEVICE_CACHE_VERSION}'. The cache will be deleted and rebuilt from discovery.");
-					DeleteInvalidManagedDeviceCache (cachePath);
-					return;
-					}
+			if (document.Version != MANAGED_DEVICE_CACHE_VERSION)
+				{
+				LogInfo ($"Managed-device cache load skipped because version '{document.Version}' is not current; expected version '{MANAGED_DEVICE_CACHE_VERSION}'. The cache will be deleted and rebuilt from discovery.");
+				DeleteInvalidManagedDeviceCache (cachePath);
+				return;
+				}
 
-				bool skippedInvalidEntries = false;
-				int cachedConfiguredEntryCount = 0;
-				List<ManagedDeviceCacheEntry> devices = document.Devices ?? new List<ManagedDeviceCacheEntry> ();
-				ConcurrentDictionary<string, PlatformManagedDevice> cacheSeedCopy = new (_managedDevices, StringComparer.OrdinalIgnoreCase);
+			bool skippedInvalidEntries = false;
+			int cachedConfiguredEntryCount = 0;
+			List<ManagedDeviceCacheEntry> devices = document.Devices ?? new List<ManagedDeviceCacheEntry> ();
+			ConcurrentDictionary<string, PlatformManagedDevice> cacheSeedCopy = new (_managedDevices, StringComparer.OrdinalIgnoreCase);
 
-				foreach (ManagedDeviceCacheEntry? entry in devices)
+			foreach (ManagedDeviceCacheEntry? entry in devices)
+				{
+				if (!IsValidManagedDeviceCacheEntryShape (entry))
 					{
-					if (!IsValidManagedDeviceCacheEntryShape (entry))
-						{
 					LogInfo ("Managed-device cache contains an invalid current-schema entry; deleting cache so discovery can rebuild it.");
 					DeleteInvalidManagedDeviceCache (cachePath);
 					return;
-						}
-
-						if (!IsCompleteManagedDeviceCacheIdentity (entry)
-							|| string.IsNullOrWhiteSpace (entry.Name))
-							{
-						LogInfo ($"Managed-device cache contains incomplete identity metadata for controllerId='{entry.ControllerId ?? "<null>"}'; deleting cache so discovery can rebuild it.");
-						DeleteInvalidManagedDeviceCache (cachePath);
-						return;
-							}
-
-						string cacheSerialNumber = entry.SerialNumber!;
-						bool hasReconnectMetadata = !string.IsNullOrWhiteSpace (entry.Host)
-							&& entry.Port > 0;
-
-						if (!IsResolvedFriendlyDeviceName (entry.ControllerId, entry.Name, cacheSerialNumber, entry.Host)
-							&& (!entry.AwaitingConnectedIdentity || !hasReconnectMetadata))
-							{
-							LogInfo ($"Managed-device cache dropped stale fallback name for controllerId='{entry.ControllerId}', cachedName='{entry.Name}', serial='{entry.SerialNumber ?? "<null>"}'.");
-							skippedInvalidEntries = true;
-							continue;
-							}
-
-						// Restore the per-child "Treat As Light" preference before recomputing
-						// UxCategory below - otherwise ResolveManagedChildKind would see an empty
-						// _childTreatAsLight (this dictionary is never itself persisted directly)
-						// and default every plug/strip child back to Outlet.
-						_childTreatAsLight[entry.ControllerId] = entry.TreatAsLight;
-
-						// Only trust the cached UxCategory for entries that are still configured
-						// (in a room) - an unconfigured entry's UxCategory can go stale (e.g. it
-						// was switched to Light, then removed from configuration, which resolves
-						// the in-memory ChildKind back to Outlet without updating this on-disk
-						// cache entry). Recomputing here from the restored TreatAsLight preference
-						// ensures an unassigned device reappears with its correct current kind
-						// instead of the last-published one.
-						//
-						// ResolveManagedChildKind only understands the Plug/Strip "Treat As Light"
-						// toggle - for every other discovered device type (including Hub children:
-						// Sensor/Button telemetry with no such toggle) it unconditionally returns
-						// ManagedChildKind.Light. Calling it unconditionally here previously forced
-						// every unconfigured hub child (T310/T315/T100/S200B, etc.) back to
-						// DeviceUxCategory.Light on every driver reload, even though the cached
-						// UxCategory correctly recorded Sensor/Switch. Only recompute for the
-						// device types ResolveManagedChildKind actually knows how to classify;
-						// trust the cached UxCategory for everything else.
-						DeviceUxCategory resolvedUxCategory = entry.IsConfigured
-							|| (entry.DiscoveredDeviceType != KasaDeviceType.Plug && entry.DiscoveredDeviceType != KasaDeviceType.Strip)
-							? entry.UxCategory
-							: ResolveManagedChildKind (entry.ControllerId, entry.DiscoveredDeviceType, entry.Model) switch
-								{
-								ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
-								ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
-								// Switch is used only as a distinct, round-trippable marker for Button
-								// kind - see matching comment in PlatformDriver.ManagedDevices.cs.
-								ManagedChildKind.Button => DeviceUxCategory.Switch,
-								ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
-								ManagedChildKind.Light => DeviceUxCategory.Light,
-								_ => entry.UxCategory,
-								};
-						entry.UxCategory = resolvedUxCategory;
-
-						// Configure Pro renders a managed device's secondary info line as the serial
-						// number whenever one is supplied, and falls back to manufacturer/model only
-						// when it is null (see CreateManagedDeviceCacheEntry for the same rule). Pass
-						// null here too instead of cacheSerialNumber, otherwise every device restored
-						// from the on-disk cache on driver startup reverts to showing its serial
-						// number again. The real serial number is still tracked separately in
-						// _managedDeviceCacheMetadata for reconnect/identity purposes.
-						cacheSeedCopy[entry.ControllerId] = new PlatformManagedDevice (
-							resolvedUxCategory,
-							entry.Name,
-							entry.Manufacturer,
-							entry.Model,
-							null!);
-						_managedDeviceCacheMetadata[entry.ControllerId] = entry;
-						if (entry.IsConfigured)
-							{
-							cachedConfiguredEntryCount++;
-							// _configuredChildControllerIds is in-memory only and would otherwise start
-							// empty on every process restart, even though the cache on disk still says
-							// this child was configured/installed. Without restoring it here,
-							// PublishCachedChildControllers later reads wasConfigured=false for every
-							// cached child and skips replaying ActivationMarker/TreatAsLight into the
-							// recreated configuration controller, leaving it stuck NotConfigured (and the
-							// device permanently Offline in Configure Pro) no matter how many times
-							// discovery re-runs.
-							_ = _configuredChildControllerIds.TryAdd (entry.ControllerId, 0);
-							}
-
-					RememberResolvedDeviceName (entry.ControllerId, entry.Name, cacheSerialNumber, entry.Host);
 					}
 
-
-				_managedDevices = cacheSeedCopy;
-				LogInfo ($"Managed-device cache seeded {_managedDevices.Count} device entries from '{cachePath}', cachedConfiguredChildCount={cachedConfiguredEntryCount}; current session child configuration state will be established only by child configuration callbacks.");
-				if (skippedInvalidEntries)
+				if (!IsCompleteManagedDeviceCacheIdentity (entry)
+					|| string.IsNullOrWhiteSpace (entry.Name))
 					{
-					PersistManagedDeviceCache ();
-					LogInfo ("Managed-device cache was rewritten after dropping invalid current-schema entries.");
+					LogInfo ($"Managed-device cache contains incomplete identity metadata for controllerId='{entry.ControllerId ?? "<null>"}'; deleting cache so discovery can rebuild it.");
+					DeleteInvalidManagedDeviceCache (cachePath);
+					return;
 					}
+
+				string cacheSerialNumber = entry.SerialNumber!;
+				bool hasReconnectMetadata = !string.IsNullOrWhiteSpace (entry.Host)
+					&& entry.Port > 0;
+
+				if (!IsResolvedFriendlyDeviceName (entry.ControllerId, entry.Name, cacheSerialNumber, entry.Host)
+					&& (!entry.AwaitingConnectedIdentity || !hasReconnectMetadata))
+					{
+					LogInfo ($"Managed-device cache dropped stale fallback name for controllerId='{entry.ControllerId}', cachedName='{entry.Name}', serial='{entry.SerialNumber ?? "<null>"}'.");
+					skippedInvalidEntries = true;
+					continue;
+					}
+
+				// Restore the per-child "Treat As Light" preference before recomputing
+				// UxCategory below - otherwise ResolveManagedChildKind would see an empty
+				// _childTreatAsLight (this dictionary is never itself persisted directly)
+				// and default every plug/strip child back to Outlet.
+				_childTreatAsLight[entry.ControllerId] = entry.TreatAsLight;
+
+				// Only trust the cached UxCategory for entries that are still configured
+				// (in a room) - an unconfigured entry's UxCategory can go stale (e.g. it
+				// was switched to Light, then removed from configuration, which resolves
+				// the in-memory ChildKind back to Outlet without updating this on-disk
+				// cache entry). Recomputing here from the restored TreatAsLight preference
+				// ensures an unassigned device reappears with its correct current kind
+				// instead of the last-published one.
+				//
+				// ResolveManagedChildKind only understands the Plug/Strip "Treat As Light"
+				// toggle - for every other discovered device type (including Hub children:
+				// Sensor/Button telemetry with no such toggle) it unconditionally returns
+				// ManagedChildKind.Light. Calling it unconditionally here previously forced
+				// every unconfigured hub child (T310/T315/T100/S200B, etc.) back to
+				// DeviceUxCategory.Light on every driver reload, even though the cached
+				// UxCategory correctly recorded Sensor/Switch. Only recompute for the
+				// device types ResolveManagedChildKind actually knows how to classify;
+				// trust the cached UxCategory for everything else.
+				DeviceUxCategory resolvedUxCategory = entry.IsConfigured
+					|| (entry.DiscoveredDeviceType != KasaDeviceType.Plug && entry.DiscoveredDeviceType != KasaDeviceType.Strip)
+					? entry.UxCategory
+					: ResolveManagedChildKind (entry.ControllerId, entry.DiscoveredDeviceType, entry.Model) switch
+						{
+							ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
+							ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
+							// Switch is used only as a distinct, round-trippable marker for Button
+							// kind - see matching comment in PlatformDriver.ManagedDevices.cs.
+							ManagedChildKind.Button => DeviceUxCategory.Switch,
+							ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
+							ManagedChildKind.Light => DeviceUxCategory.Light,
+							_ => entry.UxCategory,
+							};
+				entry.UxCategory = resolvedUxCategory;
+
+				// Configure Pro renders a managed device's secondary info line as the serial
+				// number whenever one is supplied, and falls back to manufacturer/model only
+				// when it is null (see CreateManagedDeviceCacheEntry for the same rule). Pass
+				// null here too instead of cacheSerialNumber, otherwise every device restored
+				// from the on-disk cache on driver startup reverts to showing its serial
+				// number again. The real serial number is still tracked separately in
+				// _managedDeviceCacheMetadata for reconnect/identity purposes.
+				cacheSeedCopy[entry.ControllerId] = new PlatformManagedDevice (
+					resolvedUxCategory,
+					entry.Name,
+					entry.Manufacturer,
+					entry.Model,
+					null!);
+				_managedDeviceCacheMetadata[entry.ControllerId] = entry;
+				if (entry.IsConfigured)
+					{
+					cachedConfiguredEntryCount++;
+					// _configuredChildControllerIds is in-memory only and would otherwise start
+					// empty on every process restart, even though the cache on disk still says
+					// this child was configured/installed. Without restoring it here,
+					// PublishCachedChildControllers later reads wasConfigured=false for every
+					// cached child and skips replaying ActivationMarker/TreatAsLight into the
+					// recreated configuration controller, leaving it stuck NotConfigured (and the
+					// device permanently Offline in Configure Pro) no matter how many times
+					// discovery re-runs.
+					_ = _configuredChildControllerIds.TryAdd (entry.ControllerId, 0);
+					}
+
+				RememberResolvedDeviceName (entry.ControllerId, entry.Name, cacheSerialNumber, entry.Host);
+				}
+
+
+			_managedDevices = cacheSeedCopy;
+			LogInfo ($"Managed-device cache seeded {_managedDevices.Count} device entries from '{cachePath}', cachedConfiguredChildCount={cachedConfiguredEntryCount}; current session child configuration state will be established only by child configuration callbacks.");
+			if (skippedInvalidEntries)
+				{
+				PersistManagedDeviceCache ();
+				LogInfo ("Managed-device cache was rewritten after dropping invalid current-schema entries.");
+				}
 			}
 		catch (Exception ex)
 			{
@@ -605,62 +605,62 @@ public sealed partial class PlatformDriver
 
 	private Task StartCachedIdentityResolutionsAsync (PlatformSharedConfigurationSnapshot configuration)
 		{
-		return Task.Run (async () =>
+		return RunRuntimeTask (async () =>
 			{
 				DeviceCredentials? credentials = CreateCredentials ();
 				foreach (ManagedDeviceCacheEntry entry in _managedDeviceCacheMetadata.Values.ToArray ())
 					{
-						if (!entry.AwaitingConnectedIdentity
-							|| string.IsNullOrWhiteSpace (entry.Host)
-							|| entry.Port <= 0
-							|| !HasTapoCredentials ())
+					if (!entry.AwaitingConnectedIdentity
+						|| string.IsNullOrWhiteSpace (entry.Host)
+						|| entry.Port <= 0
+						|| !HasTapoCredentials ())
+						{
+						continue;
+						}
+
+					try
+						{
+						LogInfo ($"Cached identity resolution: attempting reconnect for controllerId='{entry.ControllerId}', host='{entry.Host}', serial='{entry.SerialNumber}'.");
+						DeviceConfiguration cachedConfiguration = new DeviceConfiguration (
+							entry.Host,
+							entry.Port,
+							credentials,
+							new DeviceConnectionOptions (
+								entry.TransportKind,
+								new DeviceConnectionParameters (entry.DeviceFamily, entry.EncryptionKind, entry.LoginVersion, entry.UseHttps, entry.HttpPort),
+								entry.UseSsl,
+								entry.UseDefaultCredentials,
+								entry.DefaultCredentialProfile,
+								entry.ApplicationPath ?? string.Empty,
+								entry.UseSecurePassthrough,
+								entry.TpapKeepAliveIntervalMs.HasValue ? TimeSpan.FromMilliseconds (entry.TpapKeepAliveIntervalMs.Value) : null),
+							configuration.DiscoveryTimeout);
+
+						using KasaDevice device = await Discover.ConnectAsync (cachedConfiguration, updateState: true, _runtimeCancellationSource.Token).ConfigureAwait (false);
+						string? resolvedAlias = !string.IsNullOrWhiteSpace (device.Alias)
+							? device.Alias
+							: device.SystemInfo?.Alias;
+
+						if (string.IsNullOrWhiteSpace (resolvedAlias))
 							{
 							continue;
 							}
 
-						try
+						if (_managedDevices.TryGetValue (entry.ControllerId, out PlatformManagedDevice? managedDevice))
 							{
-							LogInfo ($"Cached identity resolution: attempting reconnect for controllerId='{entry.ControllerId}', host='{entry.Host}', serial='{entry.SerialNumber}'.");
-							DeviceConfiguration cachedConfiguration = new DeviceConfiguration (
-								entry.Host,
-								entry.Port,
-								credentials,
-								new DeviceConnectionOptions (
-									entry.TransportKind,
-									new DeviceConnectionParameters (entry.DeviceFamily, entry.EncryptionKind, entry.LoginVersion, entry.UseHttps, entry.HttpPort),
-									entry.UseSsl,
-									entry.UseDefaultCredentials,
-									entry.DefaultCredentialProfile,
-									entry.ApplicationPath ?? string.Empty,
-									entry.UseSecurePassthrough,
-									entry.TpapKeepAliveIntervalMs.HasValue ? TimeSpan.FromMilliseconds (entry.TpapKeepAliveIntervalMs.Value) : null),
-								configuration.DiscoveryTimeout);
-
-							using KasaDevice device = await Discover.ConnectAsync (cachedConfiguration, updateState: true, _runtimeCancellationSource.Token).ConfigureAwait (false);
-							string? resolvedAlias = !string.IsNullOrWhiteSpace (device.Alias)
-								? device.Alias
-								: device.SystemInfo?.Alias;
-
-							if (string.IsNullOrWhiteSpace (resolvedAlias))
-								{
-								continue;
-								}
-
-							if (_managedDevices.TryGetValue (entry.ControllerId, out PlatformManagedDevice? managedDevice))
-								{
-								managedDevice.Name = resolvedAlias!;
-								entry.Name = resolvedAlias!;
-								entry.AwaitingConnectedIdentity = false;
-								RememberResolvedDeviceName (entry.ControllerId, resolvedAlias!, entry.SerialNumber, entry.Host);
-								PersistManagedDeviceCache ();
+							managedDevice.Name = resolvedAlias!;
+							entry.Name = resolvedAlias!;
+							entry.AwaitingConnectedIdentity = false;
+							RememberResolvedDeviceName (entry.ControllerId, resolvedAlias!, entry.SerialNumber, entry.Host);
+							PersistManagedDeviceCache ();
 							PublishManagedDeviceEntryUpdate (entry.ControllerId, "cached-identity-resolution");
-								LogInfo ($"Cached identity resolution: resolved alias='{resolvedAlias}' for controllerId='{entry.ControllerId}'.");
-								}
+							LogInfo ($"Cached identity resolution: resolved alias='{resolvedAlias}' for controllerId='{entry.ControllerId}'.");
 							}
-						catch (Exception ex) when (!(ex is OperationCanceledException))
-							{
-							LogInfo ($"Cached identity resolution failed for controllerId='{entry.ControllerId}', host='{entry.Host}': {ex.Message}");
-							}
+						}
+					catch (Exception ex) when (!(ex is OperationCanceledException))
+						{
+						LogInfo ($"Cached identity resolution failed for controllerId='{entry.ControllerId}', host='{entry.Host}': {ex.Message}");
+						}
 					}
 			}, _runtimeCancellationSource.Token);
 		}
@@ -731,93 +731,93 @@ public sealed partial class PlatformDriver
 
 		try
 			{
-				_managedDeviceCacheWriteGate.Wait ();
-				string? cacheDirectory = Path.GetDirectoryName (cachePath);
-				if (!string.IsNullOrWhiteSpace (cacheDirectory))
+			_managedDeviceCacheWriteGate.Wait ();
+			string? cacheDirectory = Path.GetDirectoryName (cachePath);
+			if (!string.IsNullOrWhiteSpace (cacheDirectory))
+				{
+				Directory.CreateDirectory (cacheDirectory);
+				}
+
+			var cacheableDevices = _managedDevices
+				.OrderBy (entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+				.ToList ();
+
+			var cacheEntries = new List<ManagedDeviceCacheEntry> ();
+
+			foreach (KeyValuePair<string, PlatformManagedDevice> entry in cacheableDevices)
+				{
+				if (!_managedDeviceCacheMetadata.TryGetValue (entry.Key, out ManagedDeviceCacheEntry? metadata)
+					|| !IsCompleteManagedDeviceCacheIdentity (metadata))
 					{
-					Directory.CreateDirectory (cacheDirectory);
+					LogError ($"Managed-device cache entry skipped for controllerId='{entry.Key}' because it has no complete immutable cache metadata. This indicates a discovery publication bug; discovery will rebuild metadata on the next refresh.");
+					continue;
 					}
 
-				var cacheableDevices = _managedDevices
-					.OrderBy (entry => entry.Key, StringComparer.OrdinalIgnoreCase)
-					.ToList ();
-
-				var cacheEntries = new List<ManagedDeviceCacheEntry> ();
-
-				foreach (KeyValuePair<string, PlatformManagedDevice> entry in cacheableDevices)
+				cacheEntries.Add (new ManagedDeviceCacheEntry
 					{
-					if (!_managedDeviceCacheMetadata.TryGetValue (entry.Key, out ManagedDeviceCacheEntry? metadata)
-						|| !IsCompleteManagedDeviceCacheIdentity (metadata))
+					Immutable = new ManagedDeviceImmutableCacheFields
 						{
-						LogError ($"Managed-device cache entry skipped for controllerId='{entry.Key}' because it has no complete immutable cache metadata. This indicates a discovery publication bug; discovery will rebuild metadata on the next refresh.");
-						continue;
+						ControllerId = entry.Key,
+						UxCategory = metadata.UxCategory,
+						Manufacturer = metadata.Manufacturer,
+						Model = metadata.Model,
+						DiscoveredDeviceType = metadata.DiscoveredDeviceType,
+						ManagedLightKind = metadata.ManagedLightKind,
+						SerialNumber = metadata.SerialNumber,
+						DiscoveryDeviceId = metadata.DiscoveryDeviceId,
+						// ChildId identifies which physical child on a strip this controllerId
+						// is (see PlatformDriver.cs's ManagedDeviceImmutableCacheFields.ChildId
+						// comment). Omitting it here silently drops it from every persisted
+						// cache rewrite, so a subsequent reload recreates the descriptor with
+						// ChildId=null and UpdateDescriptorFromConnectedDevice falls back to
+						// the strip root's own alias/identity instead of this specific child's.
+						ChildId = metadata.ChildId,
+						// Same rewrite hazard as ChildId above: omitting HubChildCategory here
+						// would drop it from every persisted rewrite, so a reload recreates the
+						// descriptor with HubChildCategory=None and the sensor cannot trim its
+						// declared surface before publication (see KasaSensorEntity's
+						// ResolveCapabilitiesFromHubChildCategory).
+						HubChildCategory = metadata.HubChildCategory
+						},
+					Mutable = new ManagedDeviceMutableCacheFields
+						{
+						Name = entry.Value.Name,
+						Host = metadata.Host,
+						AwaitingConnectedIdentity = metadata.AwaitingConnectedIdentity,
+						IsConfigured = _configuredChildControllerIds.ContainsKey (entry.Key) || metadata.IsConfigured,
+						// TreatAsLight was previously omitted here, so every cache rewrite
+						// silently reset it to false regardless of the actual in-memory
+						// preference - discarding the user's "Treat As Light" choice even
+						// though the device was never assigned to a room. Restore it from
+						// _childTreatAsLight (falling back to the existing metadata value)
+						// so a driver reload/rewrite doesn't lose the preference.
+						TreatAsLight = _childTreatAsLight.TryGetValue (entry.Key, out bool treatAsLight) ? treatAsLight : metadata.TreatAsLight,
+						Port = metadata.Port,
+						TransportKind = metadata.TransportKind,
+						DeviceFamily = metadata.DeviceFamily,
+						EncryptionKind = metadata.EncryptionKind,
+						LoginVersion = metadata.LoginVersion,
+						UseHttps = metadata.UseHttps,
+						HttpPort = metadata.HttpPort,
+						UseSsl = metadata.UseSsl,
+						UseDefaultCredentials = metadata.UseDefaultCredentials,
+						DefaultCredentialProfile = metadata.DefaultCredentialProfile,
+						ApplicationPath = metadata.ApplicationPath,
+						UseSecurePassthrough = metadata.UseSecurePassthrough,
+						TpapKeepAliveIntervalMs = metadata.TpapKeepAliveIntervalMs
 						}
+					});
+				}
 
-					cacheEntries.Add (new ManagedDeviceCacheEntry
-						{
-						Immutable = new ManagedDeviceImmutableCacheFields
-							{
-							ControllerId = entry.Key,
-							UxCategory = metadata.UxCategory,
-							Manufacturer = metadata.Manufacturer,
-							Model = metadata.Model,
-							DiscoveredDeviceType = metadata.DiscoveredDeviceType,
-							ManagedLightKind = metadata.ManagedLightKind,
-							SerialNumber = metadata.SerialNumber,
-							DiscoveryDeviceId = metadata.DiscoveryDeviceId,
-							// ChildId identifies which physical child on a strip this controllerId
-							// is (see PlatformDriver.cs's ManagedDeviceImmutableCacheFields.ChildId
-							// comment). Omitting it here silently drops it from every persisted
-							// cache rewrite, so a subsequent reload recreates the descriptor with
-							// ChildId=null and UpdateDescriptorFromConnectedDevice falls back to
-							// the strip root's own alias/identity instead of this specific child's.
-							ChildId = metadata.ChildId,
-							// Same rewrite hazard as ChildId above: omitting HubChildCategory here
-							// would drop it from every persisted rewrite, so a reload recreates the
-							// descriptor with HubChildCategory=None and the sensor cannot trim its
-							// declared surface before publication (see KasaSensorEntity's
-							// ResolveCapabilitiesFromHubChildCategory).
-							HubChildCategory = metadata.HubChildCategory
-							},
-						Mutable = new ManagedDeviceMutableCacheFields
-							{
-							Name = entry.Value.Name,
-							Host = metadata.Host,
-							AwaitingConnectedIdentity = metadata.AwaitingConnectedIdentity,
-							IsConfigured = _configuredChildControllerIds.ContainsKey (entry.Key) || metadata.IsConfigured,
-							// TreatAsLight was previously omitted here, so every cache rewrite
-							// silently reset it to false regardless of the actual in-memory
-							// preference - discarding the user's "Treat As Light" choice even
-							// though the device was never assigned to a room. Restore it from
-							// _childTreatAsLight (falling back to the existing metadata value)
-							// so a driver reload/rewrite doesn't lose the preference.
-							TreatAsLight = _childTreatAsLight.TryGetValue (entry.Key, out bool treatAsLight) ? treatAsLight : metadata.TreatAsLight,
-							Port = metadata.Port,
-							TransportKind = metadata.TransportKind,
-							DeviceFamily = metadata.DeviceFamily,
-							EncryptionKind = metadata.EncryptionKind,
-							LoginVersion = metadata.LoginVersion,
-							UseHttps = metadata.UseHttps,
-							HttpPort = metadata.HttpPort,
-							UseSsl = metadata.UseSsl,
-							UseDefaultCredentials = metadata.UseDefaultCredentials,
-							DefaultCredentialProfile = metadata.DefaultCredentialProfile,
-							ApplicationPath = metadata.ApplicationPath,
-							UseSecurePassthrough = metadata.UseSecurePassthrough,
-							TpapKeepAliveIntervalMs = metadata.TpapKeepAliveIntervalMs
-							}
-						});
-					}
+			var document = new ManagedDeviceCacheDocument
+				{
+				Version = MANAGED_DEVICE_CACHE_VERSION,
+				Devices = cacheEntries
+				};
 
-				var document = new ManagedDeviceCacheDocument
-					{
-					Version = MANAGED_DEVICE_CACHE_VERSION,
-					Devices = cacheEntries
-					};
-
-				using var stream = File.Create (cachePath);
-				var serializer = new DataContractJsonSerializer (typeof (ManagedDeviceCacheDocument));
-				serializer.WriteObject (stream, document);
+			using var stream = File.Create (cachePath);
+			var serializer = new DataContractJsonSerializer (typeof (ManagedDeviceCacheDocument));
+			serializer.WriteObject (stream, document);
 			}
 		catch (Exception ex)
 			{

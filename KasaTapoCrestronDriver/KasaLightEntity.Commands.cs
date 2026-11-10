@@ -65,7 +65,8 @@ internal partial class KasaLightEntity
 
 	private DesiredLightCommand? GetRequestedSliderCommand ()
 		{
-		lock (_sliderGate) return _requestedSliderCommand;
+		lock (_sliderGate)
+			return _requestedSliderCommand;
 		}
 
 	private void LightColorSetHue (double hue)
@@ -73,7 +74,8 @@ internal partial class KasaLightEntity
 		double hueLevel = Clamp01 (hue);
 		LogCommandInvocation ("lightColor:setHue", $"hue={hueLevel:0.####}");
 		// Ignore passive Load-layer colour replays while the light is confirmed off.
-		if (!LightIsOn) return;
+		if (!LightIsOn)
+			return;
 		DesiredLightCommand? requested = GetRequestedSliderCommand ();
 		double saturation = requested is { Mode: DesiredLightMode.Hsv } hsv ? hsv.Saturation : LightColorSaturation;
 		if (requested is not { Mode: DesiredLightMode.Hsv } && _isColorTemperatureUiModeActive && saturation <= 0d)
@@ -85,7 +87,8 @@ internal partial class KasaLightEntity
 		{
 		double saturationLevel = Clamp01 (saturation);
 		LogCommandInvocation ("lightColor:setSaturation", $"saturation={saturationLevel:0.####}");
-		if (!LightIsOn) return;
+		if (!LightIsOn)
+			return;
 		DesiredLightCommand? requested = GetRequestedSliderCommand ();
 		double hue = requested is { Mode: DesiredLightMode.Hsv } hsv ? hsv.Hue : LightColorHue;
 		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.Hsv, requested?.Level ?? LightDimmerLevel, hue, saturationLevel, 0L));
@@ -195,7 +198,8 @@ internal partial class KasaLightEntity
 		long temperatureLevel = Math.Max (1L, level);
 		// A colour-temperature command while off can be a passive Load-layer replay.
 		// It must not mutate confirmed properties or change the retained colour mode.
-		if (!LightIsOn) return;
+		if (!LightIsOn)
+			return;
 
 		QueueSliderCommand (new DesiredLightCommand (DesiredLightMode.ColorTemperature, GetRequestedSliderCommand ()?.Level ?? GetEffectiveOnLevel (), 0d, 0d, temperatureLevel));
 		}

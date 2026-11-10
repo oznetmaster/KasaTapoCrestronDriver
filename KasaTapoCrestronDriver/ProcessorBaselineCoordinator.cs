@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 
 using Microsoft.Extensions.Logging;
+
 using Renci.SshNet;
 
 namespace KasaTapoCrestronDriver;
@@ -298,49 +299,49 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 
 		_ = Task.Run (async () =>
 			{
-			try
-				{
-				using var overallTimeoutSource = new CancellationTokenSource (OverallOperationTimeout);
-				using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken, overallTimeoutSource.Token);
-				await _gate.WaitAsync (linkedSource.Token).ConfigureAwait (false);
 				try
 					{
-					if (_loadIdsByName.ContainsKey (loadName))
+					using var overallTimeoutSource = new CancellationTokenSource (OverallOperationTimeout);
+					using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken, overallTimeoutSource.Token);
+					await _gate.WaitAsync (linkedSource.Token).ConfigureAwait (false);
+					try
 						{
-						// Already resolved by a prior synchronize call; nothing to validate.
-						return;
-						}
+						if (_loadIdsByName.ContainsKey (loadName))
+							{
+							// Already resolved by a prior synchronize call; nothing to validate.
+							return;
+							}
 
-					(List<long> matchingIds, List<string> observedProcessorLoadNames) = await ListMatchingLoadIdsAsync (loadName, linkedSource.Token).ConfigureAwait (false);
-					if (matchingIds.Count == 1)
+						(List<long> matchingIds, List<string> observedProcessorLoadNames) = await ListMatchingLoadIdsAsync (loadName, linkedSource.Token).ConfigureAwait (false);
+						if (matchingIds.Count == 1)
+							{
+							_logInfo ($"Processor baseline load name validated at publish time: loadName='{loadName}', loadId={matchingIds[0]}.");
+							return;
+							}
+
+						if (matchingIds.Count > 1)
+							{
+							_logError ($"Processor baseline load name validation at publish time: loadName='{loadName}' matched {matchingIds.Count} processor loads. Load names must be unique.");
+							return;
+							}
+
+						string observedNamesList = observedProcessorLoadNames.Count > 0
+							? string.Join ("', '", observedProcessorLoadNames)
+							: "(none)";
+						_logError ($"Processor baseline load name validation at publish time: loadName='{loadName}' matched 0 processor loads. This device's color/white tuning mode will not stay synchronized with the Crestron Home baseline until the name matches. Processor Load names currently reported: '{observedNamesList}'.");
+						}
+					finally
 						{
-						_logInfo ($"Processor baseline load name validated at publish time: loadName='{loadName}', loadId={matchingIds[0]}.");
-						return;
+						_gate.Release ();
 						}
-
-					if (matchingIds.Count > 1)
-						{
-						_logError ($"Processor baseline load name validation at publish time: loadName='{loadName}' matched {matchingIds.Count} processor loads. Load names must be unique.");
-						return;
-						}
-
-					string observedNamesList = observedProcessorLoadNames.Count > 0
-						? string.Join ("', '", observedProcessorLoadNames)
-						: "(none)";
-					_logError ($"Processor baseline load name validation at publish time: loadName='{loadName}' matched 0 processor loads. This device's color/white tuning mode will not stay synchronized with the Crestron Home baseline until the name matches. Processor Load names currently reported: '{observedNamesList}'.");
 					}
-				finally
+				catch (OperationCanceledException)
 					{
-					_gate.Release ();
 					}
-				}
-			catch (OperationCanceledException)
-				{
-				}
-			catch (Exception ex)
-				{
-				_logInfo ($"Processor baseline load name validation at publish time failed for loadName='{loadName}': {ex.Message}.");
-				}
+				catch (Exception ex)
+					{
+					_logInfo ($"Processor baseline load name validation at publish time failed for loadName='{loadName}': {ex.Message}.");
+					}
 			}, cancellationToken);
 		}
 
@@ -573,7 +574,11 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 		if (!connectTask.Wait (CommandTimeout))
 			{
 			_logError ($"Processor SSH connect to host='{host}' did not complete within {CommandTimeout}; forcing the connection closed.");
-			try { client.Dispose (); } catch { }
+			try
+				{
+				client.Dispose ();
+				}
+			catch { }
 			throw new TimeoutException ($"Timed out connecting to processor SSH host='{host}' after {CommandTimeout}.");
 			}
 
@@ -594,9 +599,9 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 				{
 				response.Append (_shell.Read ());
 				if (ProcessorConsolePromptExpression.IsMatch (response.ToString ()))
-						{
-						return;
-						}
+					{
+					return;
+					}
 				}
 			}
 
@@ -625,9 +630,24 @@ internal sealed class ProcessorBaselineCoordinator : IDisposable
 		{
 		_loadIdsByName.Clear ();
 		_baselineTuningModesByLoadId.Clear ();
-		try { _shell?.Dispose (); } catch { }
-		try { if (_client?.IsConnected == true) { _client.Disconnect (); } } catch { }
-		try { _client?.Dispose (); } catch { }
+		try
+			{
+			_shell?.Dispose ();
+			}
+		catch { }
+		try
+			{
+			if (_client?.IsConnected == true)
+				{
+				_client.Disconnect ();
+				}
+			}
+		catch { }
+		try
+			{
+			_client?.Dispose ();
+			}
+		catch { }
 		_shell = null;
 		_client = null;
 		}

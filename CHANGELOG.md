@@ -10,6 +10,12 @@ project follows [Semantic Versioning](https://semver.org/).
 
 This changelog records shipped features, fixes, compatibility and runtime dependency changes. See [development and validation history](DEVELOPMENT-HISTORY.md) for tests, CI, build tooling and work not yet released.
 
+## [2.1.16](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.16) - 2026-11-10
+
+- Use KasaTapoClient 2.2.1.
+- Close background-work admission before shutdown, drain discovery, refresh and cache work, and retain synchronization objects while cancelled observers unwind.
+- Preserve cached child identities, pairing/configuration, confirmed feedback events, startup baselines and staggered outlet polling.
+
 ## [2.1.15](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.15) — 2026-11-07
 
 - Separate frequent standalone outlet state polling from full energy refreshes, normally about once a minute. Stagger background polls, cap concurrency at three per platform and share physical-strip polls while retaining prompt confirmed command feedback.

@@ -260,7 +260,10 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			} = string.Empty;
 
 		[DataMember (Name = "discoveryDeviceId", EmitDefaultValue = false)]
-		public string? DiscoveryDeviceId { get; set; }
+		public string? DiscoveryDeviceId
+			{
+			get; set;
+			}
 
 		// Strip child outlets/lights must remember which physical child on the strip they are, or a
 		// managed-device cache reload (TryCreateCachedDescriptorAndConfiguration) recreates the
@@ -678,6 +681,8 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 	private ConcurrentDictionary<string, PlatformManagedDevice> _managedDevices = new (StringComparer.OrdinalIgnoreCase);
 	private readonly PlatformSharedConfiguration _sharedConfiguration = new ();
 	private readonly ProcessorBaselineCoordinator _processorBaselineCoordinator;
+	private readonly object _disposeGate = new ();
+	internal Task Shutdown { get; private set; } = Task.CompletedTask;
 	private readonly SemaphoreSlim _refreshGate = new (1, 1);
 	private readonly SemaphoreSlim _scheduledRefreshGate = new (1, 1);
 	private readonly SemaphoreSlim _managedDeviceCacheWriteGate = new (1, 1);
@@ -696,7 +701,7 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 	private string _processorSshHost = string.Empty;
 	private string _processorSshUserName = string.Empty;
 	private string _processorSshPassword = string.Empty;
-	private bool _disposed;
+	private volatile bool _disposed;
 	private bool _initialDiscoveryLoadPending = true;
 	private bool _initialShortRefreshPending = true;
 	private bool _initialMaterializationStageActive = true;
@@ -749,9 +754,9 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 		_driverLogId = args.DriverId;
 		_processorBaselineCoordinator = new ProcessorBaselineCoordinator (_sharedConfiguration, message => LogInfoCore (message), message => LogError (message));
 
-		#if DEBUG
+#if DEBUG
 		RegisterKasaClientDebugListener ();
-		#endif
+#endif
 
 		LogInfo ($"Platform driver instance starting: driverId='{_driverLogId}', dataDirectory='{_args.DriverDataDirectoryPath}'.");
 
@@ -787,61 +792,77 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 
 	public override void Dispose ()
 		{
-		if (_disposed)
+		lock (_disposeGate)
 			{
-			return;
+			if (_disposed)
+				return;
+			_disposed = true;
+			CancelRuntimeRefreshes ();
+			foreach (IKasaManagedChildEntity child in _lightEntities.Values.ToArray ())
+				child.Stop ();
+			Shutdown = CompleteDisposeAsync ();
 			}
+		}
 
-		LogInfo ("PlatformDriver.Dispose: disposing platform driver.");
-
-		Stop ();
-
-		foreach (IKasaManagedChildEntity lightEntity in _lightEntities.Values.ToArray ())
+	private async Task CompleteDisposeAsync ()
+		{
+		Task[] active = _runtimeTasks.Keys.ToArray ();
+		if (_discoveryRefreshTask != null)
+			active = active.Append (_discoveryRefreshTask).ToArray ();
+		try
 			{
-			lightEntity.Dispose ();
+			await Task.WhenAll (active).ConfigureAwait (false);
 			}
-
-		lock (_hubPollersGate)
+		catch (OperationCanceledException) { }
+		catch (Exception exception) { LogError ("Background work failed while stopping (" + exception.GetType ().Name + ")."); }
+		// Match the scheduled -> discovery -> cache writer lock order. Host disposal
+		// is nonblocking, including when requested reentrantly from a notification.
+		await _scheduledRefreshGate.WaitAsync ().ConfigureAwait (false);
+		try
 			{
-			foreach (ManagedParentDevicePoller poller in _hubPollers.Values) poller.Dispose ();
-			_hubPollers.Clear ();
-			}
-
+			await _refreshGate.WaitAsync ().ConfigureAwait (false);
+			try
+				{
+				await _managedDeviceCacheWriteGate.WaitAsync ().ConfigureAwait (false);
+				try
+					{
+					foreach (IKasaManagedChildEntity child in _lightEntities.Values.ToArray ())
+						child.Dispose ();
+					lock (_hubPollersGate)
+						{
+						foreach (ManagedParentDevicePoller poller in _hubPollers.Values)
+							poller.Dispose ();
+						_hubPollers.Clear ();
+						}
 #if DEBUG && NETFRAMEWORK
-		if (_diagnosticListener != null)
-			{
-			Debug.Listeners.Remove (_diagnosticListener);
-			_diagnosticListener.Dispose ();
-			_diagnosticListener = null;
-			}
+					if (_diagnosticListener != null)
+						{
+						Debug.Listeners.Remove (_diagnosticListener);
+						_diagnosticListener.Dispose ();
+						_diagnosticListener = null;
+						}
 #endif
-		_processorBaselineCoordinator.Dispose ();
-
-		_scheduledRefreshGate.Dispose ();
-		_managedDeviceCacheWriteGate.Dispose ();
-		_refreshGate.Dispose ();
-
-		// NOTE: Do NOT delete the managed-device cache file here. Dispose() is called by the
-		// Crestron Home host on every driver reload/restart, not only when the driver instance is
-		// actually removed - the SDK provides no reliable signal to distinguish the two. Deleting
-		// the cache unconditionally on every Dispose wiped out persisted managed-device state
-		// (friendly names, identity, UxCategory, etc.) on every routine reload, forcing a full
-		// rediscovery and leaving Configure Pro showing every device as offline/not-configured
-		// until identities re-resolved. See CHANGELOG/commit history for the removal-cleanup intent
-		// that originally motivated this call; that intent still needs a real removal signal before
-		// it can be reinstated safely.
-
-		_disposed = true;
+					_processorBaselineCoordinator.Dispose ();
+					base.Dispose ();
+					// Keep the managed-device cache: a host reload is not removal.
+					}
+				finally { _managedDeviceCacheWriteGate.Release (); }
+				}
+			finally { _refreshGate.Release (); }
+			}
+		finally { _scheduledRefreshGate.Release (); }
+		// These managed gates remain valid for already queued terminal checks and
+		// are collected with this instance. Never destroy one beneath a waiter.
 		}
 
 	private void CancelRuntimeRefreshes ()
 		{
 		LogInfo ($"CancelRuntimeRefreshes: runtimeDiscoveryStarted={_runtimeDiscoveryStarted}, discoveryTaskActive={_discoveryRefreshTask is not null}.");
 		_runtimeCancellationSource.Cancel ();
-		_discoveryRefreshTask = null;
+		// Retain the cancelled task until its terminal continuation has unwound.
 		}
 
-	#if DEBUG
+#if DEBUG
 #if NETFRAMEWORK
 	private TraceListener? _diagnosticListener;
 #endif
@@ -852,7 +873,7 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 		// System.Diagnostics.Debug.WriteLine, which is compiled out entirely in Release builds. In
 		// DEBUG builds we add a listener so those messages flow into the driver's own log instead of
 		// only being visible through OutputDebugString/attached debuggers.
-		#if NETFRAMEWORK
+#if NETFRAMEWORK
 		_diagnosticListener = new ForwardingTraceListener (message => LogInfo ($"KasaClientDiagnostic: {message}"));
 		Debug.Listeners.Add (_diagnosticListener);
 #endif
@@ -883,7 +904,7 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			_pendingLine.Clear ();
 			}
 		}
-	#endif
+#endif
 
 	private ConfigurationItemErrors? ApplyConfigurationItems (
 		DataDrivenConfigurationController.ApplyConfigurationAction action,
@@ -980,28 +1001,28 @@ public sealed partial class PlatformDriver : ReflectedAttributeDriverEntity, IDi
 			case ConfigurationApplyMode.InitialConfiguration:
 			case ConfigurationApplyMode.SavedConfiguration:
 				_managedDevices = new ConcurrentDictionary<string, PlatformManagedDevice> (StringComparer.OrdinalIgnoreCase);
-					_managedDeviceCacheMetadata.Clear ();
-						_resolvedDeviceNames.Clear ();
-						LoadManagedDeviceCacheIntoMemory ();
-						// Register cached controllers before advertising their identities to the host.
-						PublishCachedChildControllers (currentConfiguration);
+				_managedDeviceCacheMetadata.Clear ();
+				_resolvedDeviceNames.Clear ();
+				LoadManagedDeviceCacheIntoMemory ();
+				// Register cached controllers before advertising their identities to the host.
+				PublishCachedChildControllers (currentConfiguration);
 
-						// PublishCachedChildControllers only materializes/configures controllers that are
-					// not already registered in _childControllers - it silently skips (via `continue`)
-					// any controller already published from an earlier apply in this same driver
-					// session. If that earlier publish happened before credentials were entered/saved
-					// (e.g. the device was discovered and materialized while the Tapo UserName/Password
-					// fields were still blank), those already-published entities' DeviceConfiguration
-					// would otherwise never be refreshed with the credentials just applied here, leaving
-					// them retrying the TPAP handshake forever with no credentials. Explicitly refresh
-					// every already-materialized entity's configuration here too, exactly like the
-					// RealtimeChange branch below does, so credentials are always retrieved fresh on
-					// every apply rather than staying cached in a stale configuration.
-					RefreshExistingDeviceConfigurations (currentConfiguration);
-						NotifyManagedDevicesSnapshotChanged ("initial-or-saved-configuration-apply");
-					SetOnline (false);
-					SetReady (false);
-					_ = StartCachedIdentityResolutionsAsync (currentConfiguration);
+				// PublishCachedChildControllers only materializes/configures controllers that are
+				// not already registered in _childControllers - it silently skips (via `continue`)
+				// any controller already published from an earlier apply in this same driver
+				// session. If that earlier publish happened before credentials were entered/saved
+				// (e.g. the device was discovered and materialized while the Tapo UserName/Password
+				// fields were still blank), those already-published entities' DeviceConfiguration
+				// would otherwise never be refreshed with the credentials just applied here, leaving
+				// them retrying the TPAP handshake forever with no credentials. Explicitly refresh
+				// every already-materialized entity's configuration here too, exactly like the
+				// RealtimeChange branch below does, so credentials are always retrieved fresh on
+				// every apply rather than staying cached in a stale configuration.
+				RefreshExistingDeviceConfigurations (currentConfiguration);
+				NotifyManagedDevicesSnapshotChanged ("initial-or-saved-configuration-apply");
+				SetOnline (false);
+				SetReady (false);
+				_ = StartCachedIdentityResolutionsAsync (currentConfiguration);
 				_ = ScheduleRefreshAsync ();
 				break;
 

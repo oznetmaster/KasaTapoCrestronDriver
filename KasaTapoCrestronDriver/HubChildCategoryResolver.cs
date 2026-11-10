@@ -18,11 +18,15 @@ internal static class HubChildCategoryResolver
 
 		switch (normalized.ToUpperInvariant ())
 			{
-			case "T100": return HubChildCategory.Motion;
-			case "T110": return HubChildCategory.Contact;
+			case "T100":
+				return HubChildCategory.Motion;
+			case "T110":
+				return HubChildCategory.Contact;
 			case "T310":
-			case "T315": return HubChildCategory.TemperatureHumidity;
-			default: return HubChildCategory.None;
+			case "T315":
+				return HubChildCategory.TemperatureHumidity;
+			default:
+				return HubChildCategory.None;
 			}
 		}
 	}

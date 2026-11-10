@@ -364,16 +364,16 @@ public sealed partial class PlatformDriver
 			{
 			cacheEntry.UxCategory = resolvedKind switch
 				{
-				ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
-				ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
-				// Switch is used only as a distinct, round-trippable marker for Button kind - it
-				// must stay different from Sensor so cached reads resolve ManagedChildKind.Button
-				// correctly instead of collapsing S200B into KasaSensorEntity.
-				ManagedChildKind.Button => DeviceUxCategory.Switch,
-				ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
-				ManagedChildKind.Light => DeviceUxCategory.Light,
-				_ => throw new InvalidOperationException ($"Cannot resolve DeviceUxCategory for controllerId='{controllerId}' because ManagedChildKind '{resolvedKind}' is unrecognized."),
-				};
+					ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
+					ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
+					// Switch is used only as a distinct, round-trippable marker for Button kind - it
+					// must stay different from Sensor so cached reads resolve ManagedChildKind.Button
+					// correctly instead of collapsing S200B into KasaSensorEntity.
+					ManagedChildKind.Button => DeviceUxCategory.Switch,
+					ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
+					ManagedChildKind.Light => DeviceUxCategory.Light,
+					_ => throw new InvalidOperationException ($"Cannot resolve DeviceUxCategory for controllerId='{controllerId}' because ManagedChildKind '{resolvedKind}' is unrecognized."),
+					};
 
 			// This UxCategory change must be flushed to the on-disk managed-device cache
 			// immediately, not left in memory only. LoadManagedDeviceCacheIntoMemory (run on the
@@ -699,10 +699,10 @@ public sealed partial class PlatformDriver
 			// the in-flight apply.
 			if (kindActuallyChanging)
 				{
-				_ = Task.Run (async () =>
+				_ = RunRuntimeTask (async () =>
 					{
-					await Task.Delay (TimeSpan.FromMilliseconds (250)).ConfigureAwait (false);
-					ReconcileChildKindAfterTreatAsLightChange (controllerId, "child-config-callback:TreatAsLight");
+						await Task.Delay (TimeSpan.FromMilliseconds (250)).ConfigureAwait (false);
+						ReconcileChildKindAfterTreatAsLightChange (controllerId, "child-config-callback:TreatAsLight");
 					});
 				}
 			}
@@ -780,10 +780,10 @@ public sealed partial class PlatformDriver
 			// ReconcileChildKindAfterTreatAsLightChange's summary above; deferring the actual
 			// dispose/removal until after this callback has returned avoids it here too.
 			LogInfo ($"ApplyChildConfigurationItems: ClearValues for controllerId='{controllerId}'; treating as child removal from configuration.");
-			_ = Task.Run (async () =>
+			_ = RunRuntimeTask (async () =>
 				{
-				await Task.Delay (TimeSpan.FromMilliseconds (250)).ConfigureAwait (false);
-				RemoveChildFromConfiguration (controllerId, "child-config-callback:ClearValues");
+					await Task.Delay (TimeSpan.FromMilliseconds (250)).ConfigureAwait (false);
+					RemoveChildFromConfiguration (controllerId, "child-config-callback:ClearValues");
 				});
 			return null;
 			}
@@ -960,7 +960,7 @@ public sealed partial class PlatformDriver
 			republishedAsAvailable = AddInitialManagedDeviceEntry (descriptor);
 			}
 
-		LogInfo ($"RemoveChildFromConfiguration: controllerId='{controllerId}', context='{context}', removedManagedDevice={removedManagedDevice}, republishedAsAvailable={republishedAsAvailable}, resolvedChildKind={descriptor?.ChildKind.ToString() ?? "<none>"}.");
+		LogInfo ($"RemoveChildFromConfiguration: controllerId='{controllerId}', context='{context}', removedManagedDevice={removedManagedDevice}, republishedAsAvailable={republishedAsAvailable}, resolvedChildKind={descriptor?.ChildKind.ToString () ?? "<none>"}.");
 		}
 
 	private void ClearChildRuntimeState (string controllerId, string context)
@@ -1024,15 +1024,15 @@ public sealed partial class PlatformDriver
 		// even though the device has already reverted to Outlet internally.
 		DeviceUxCategory resolvedUxCategory = descriptor.ChildKind switch
 			{
-			ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
-			ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
-			// Switch is used only as a distinct, round-trippable marker for Button kind - see
-			// matching comment above.
-			ManagedChildKind.Button => DeviceUxCategory.Switch,
-			ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
-			ManagedChildKind.Light => DeviceUxCategory.Light,
-			_ => existingEntry.UxCategory,
-			};
+				ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
+				ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
+				// Switch is used only as a distinct, round-trippable marker for Button kind - see
+				// matching comment above.
+				ManagedChildKind.Button => DeviceUxCategory.Switch,
+				ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
+				ManagedChildKind.Light => DeviceUxCategory.Light,
+				_ => existingEntry.UxCategory,
+				};
 		bool uxCategoryChanged = existingEntry.UxCategory != resolvedUxCategory;
 
 		if (string.Equals (existingEntry.Name, descriptor.Name, StringComparison.Ordinal) && !kindChanged && !uxCategoryChanged)
@@ -1186,10 +1186,10 @@ public sealed partial class PlatformDriver
 					childKind: ResolveManagedChildKind (controllerId, discoveryResult.DeviceType, discoveryResult.Model));
 				yield break;
 
-			// KasaDeviceType.Strip is itemized into one descriptor per child outlet by
-			// ResolveStripChildDescriptorsAsync instead of being yielded here, because the strip's
-			// child outlets are only known after connecting to the device (DiscoveryResult alone does
-			// not expose them). See RefreshPlatformAsync's strip pre-resolution pass.
+				// KasaDeviceType.Strip is itemized into one descriptor per child outlet by
+				// ResolveStripChildDescriptorsAsync instead of being yielded here, because the strip's
+				// child outlets are only known after connecting to the device (DiscoveryResult alone does
+				// not expose them). See RefreshPlatformAsync's strip pre-resolution pass.
 			}
 		}
 
@@ -1655,7 +1655,7 @@ public sealed partial class PlatformDriver
 		finally
 			{
 			_aliasResolutionInFlightControllerIds.TryRemove (controllerId, out _);
-				LogInfo ($"EnrichDiscoveryResultAliasAsync: finished for controllerId='{controllerId}', inFlightCleared=True.");
+			LogInfo ($"EnrichDiscoveryResultAliasAsync: finished for controllerId='{controllerId}', inFlightCleared=True.");
 			}
 		}
 

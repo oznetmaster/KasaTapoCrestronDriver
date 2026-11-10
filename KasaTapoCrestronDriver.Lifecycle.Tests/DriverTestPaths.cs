@@ -10,5 +10,7 @@ namespace KasaTapoCrestronDriver.Tests;
 
 internal static class DriverTestPaths
 	{
-	internal static string DataDirectory => Path.Combine (TestContext.Parameters.Get ("TestDataDirectory", AppContext.BaseDirectory), "DriverTestData");
+	// Packaged UI/manifest fixtures belong beside the assembly; the processor's
+	// TestDataDirectory parameter names the separate private-input directory.
+	internal static string DataDirectory => Path.Combine (TestContext.CurrentContext.TestDirectory, "DriverTestData");
 	}

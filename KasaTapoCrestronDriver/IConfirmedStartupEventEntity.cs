@@ -4,6 +4,6 @@ namespace KasaTapoCrestronDriver;
 // The host must have started reading the running entity's definition/state before
 // its pending extension startup events are released to the host event queue.
 internal interface IConfirmedStartupEventEntity
-{
-    void NotifyHostStateRead();
-}
+	{
+	void NotifyHostStateRead ();
+	}

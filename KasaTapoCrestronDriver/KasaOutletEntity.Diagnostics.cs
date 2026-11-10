@@ -1,8 +1,9 @@
 // Copyright (c) 2026 Neil Colvin. See LICENSE in the repository root.
 using System.Diagnostics;
 namespace KasaTapoCrestronDriver;
+
 internal sealed partial class KasaOutletEntity
-{
+	{
 #if OUTLET_DIAGNOSTICS
     internal Action<OutletDiagnosticRecord>? DiagnosticObserverForTests { get; set; }
     private void CaptureDiagnostic(OutletDiagnosticRecord record)
@@ -22,9 +23,9 @@ internal sealed partial class KasaOutletEntity
         };
     }
 #endif
-    [Conditional("OUTLET_DIAGNOSTICS")]
-    private void TraceOutlet(string stage, Exception? error = null, double? durationMs = null)
-    {
+	[Conditional ("OUTLET_DIAGNOSTICS")]
+	private void TraceOutlet (string stage, Exception? error = null, double? durationMs = null)
+		{
 #if OUTLET_DIAGNOSTICS
         try {
             var record = DiagnosticRecord(stage);
@@ -38,10 +39,10 @@ internal sealed partial class KasaOutletEntity
             CaptureDiagnostic(record);
         } catch { }
 #endif
-    }
-    [Conditional("OUTLET_DIAGNOSTICS")]
-    private void TraceNumericDecision(string property, double previous, double candidate, bool changed)
-    {
+		}
+	[Conditional ("OUTLET_DIAGNOSTICS")]
+	private void TraceNumericDecision (string property, double previous, double candidate, bool changed)
+		{
 #if OUTLET_DIAGNOSTICS
         try {
             var record = DiagnosticRecord("numeric-decision"); record.Property = property;
@@ -49,10 +50,10 @@ internal sealed partial class KasaOutletEntity
             CaptureDiagnostic(record);
         } catch { }
 #endif
-    }
-    [Conditional("OUTLET_DIAGNOSTICS")]
-    private void TraceSample(KasaDevice device)
-    {
+		}
+	[Conditional ("OUTLET_DIAGNOSTICS")]
+	private void TraceSample (KasaDevice device)
+		{
 #if OUTLET_DIAGNOSTICS
         try {
             var e = device.Energy;
@@ -65,5 +66,5 @@ internal sealed partial class KasaOutletEntity
             CaptureDiagnostic(record);
         } catch { }
 #endif
-    }
-}
+		}
+	}

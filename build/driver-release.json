@@ -1,0 +1,15 @@
+{
+  "name": "KasaTapoCrestronDriver",
+  "version": "2.1.16",
+  "packages": [
+    {
+      "id": "CrestronHomeDriver.TpLink.KasaTapoPlatform",
+      "project": "KasaTapoCrestronDriver/KasaTapoCrestronDriver.csproj",
+      "manifest": "KasaTapoCrestronDriver/KasaTapoCrestronDriver.json",
+      "payload": "NeilColvin_Platform_KasaTapo_IP_V2.pkg",
+      "displayName": "KasaTapoCrestronDriver",
+      "vendor": "TP-Link",
+      "category": "Lighting"
+    }
+  ]
+}

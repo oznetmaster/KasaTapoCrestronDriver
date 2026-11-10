@@ -62,7 +62,10 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 	/// </summary>
 	public string ChildId
 		{
-		get { return _descriptor.ChildId ?? string.Empty; }
+		get
+			{
+			return _descriptor.ChildId ?? string.Empty;
+			}
 		}
 
 	public string DeviceName { get; private set; } = string.Empty;
@@ -699,7 +702,8 @@ internal sealed partial class KasaButtonEntity : ReflectedAttributeDriverEntity,
 		OnlineIndicatorIsOnline = true;
 		ReadyIndicatorIsReady = true;
 		bool stateChanged = HasChildStateChanged (child);
-		if (stateChanged) ApplyState (child);
+		if (stateChanged)
+			ApplyState (child);
 
 		if (_childPublished && (stateChanged || !wasOnline))
 			{

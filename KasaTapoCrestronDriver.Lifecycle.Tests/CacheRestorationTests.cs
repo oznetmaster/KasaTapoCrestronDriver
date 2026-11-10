@@ -9,8 +9,10 @@ using Crestron.DeviceDrivers.EntityModel;
 using Crestron.DeviceDrivers.EntityModel.Data;
 using Crestron.DeviceDrivers.SDK;
 using Crestron.DeviceDrivers.SDK.EntityModel;
+
 using KasaTapoClient;
 using KasaTapoClient.Internal;
+
 using DeviceType = KasaTapoClient.DeviceType;
 
 namespace KasaTapoCrestronDriver.Tests;
@@ -66,15 +68,58 @@ public sealed class CacheRestorationTests
 		_driver = new PlatformDriver (new DriverControllerCreationArgs ("cache-test", DriverTestPaths.DataDirectory, _logger.AppLogger, null!), resources, _cache);
 		}
 	[TearDown]
-	public void TearDown ()
+	public async Task TearDown ()
 		{
 		_driver?.Dispose ();
+		if (_driver != null)
+			await _driver.Shutdown;
 		_logger?.Dispose ();
 		if (_cache != null)
 			{
-			if (File.Exists (_cache)) File.Delete (_cache);
+			if (File.Exists (_cache))
+				File.Delete (_cache);
 			Directory.Delete (Path.GetDirectoryName (_cache)!);
 			}
+		}
+	[TestCase ("_refreshGate")]
+	[TestCase ("_scheduledRefreshGate")]
+	[TestCase ("_managedDeviceCacheWriteGate")]
+	public async Task DisposalDrainsAdmittedWorkWithoutDestroyingItsGateOrCache (string gateName)
+		{
+		File.WriteAllText (_cache, "synthetic cache retained during reload");
+		var gate = Field<SemaphoreSlim> (gateName);
+		await gate.WaitAsync ();
+		try
+			{
+			_driver.Dispose ();
+			_driver.Dispose ();
+			Assert.That (_driver.Shutdown.IsCompleted, Is.False);
+			}
+		finally { gate.Release (); }
+		await _driver.Shutdown.WaitForTestAsync (TimeSpan.FromSeconds (5));
+		Assert.That (File.ReadAllText (_cache), Is.EqualTo ("synthetic cache retained during reload"));
+		// A terminal waiter may still execute its finally/release after shutdown.
+		await gate.WaitAsync ();
+		gate.Release ();
+		}
+
+	[Test]
+	public async Task DetachedRuntimeWorkDrainsAndTerminalAdmissionDoesNotStartItsFactory ()
+		{
+		var entered = new TaskCompletionSource<bool> (TaskCreationOptions.RunContinuationsAsynchronously);
+		var release = new TaskCompletionSource<bool> (TaskCreationOptions.RunContinuationsAsynchronously);
+		Func<Task> work = async () => { entered.TrySetResult (true); await release.Task; };
+		var active = (Task)Call ("RunRuntimeTask", work, CancellationToken.None);
+		await entered.Task.WaitForTestAsync (TimeSpan.FromSeconds (5));
+		_driver.Dispose ();
+		Assert.That (_driver.Shutdown.IsCompleted, Is.False);
+		bool ran = false;
+		Func<Task> late = () => { ran = true; return Task.CompletedTask; };
+		var rejected = (Task)Call ("RunRuntimeTask", late, CancellationToken.None);
+		Assert.That (rejected.IsCanceled, Is.True);
+		Assert.That (ran, Is.False);
+		release.TrySetResult (true);
+		await Task.WhenAll (active, _driver.Shutdown).WaitForTestAsync (TimeSpan.FromSeconds (5));
 		}
 	private void Seed (DeviceUxCategory category, DeviceType type, string model, bool treatAsLight = false, bool configured = false, int port = 80,
 		string? discoveryId = null, string controllerId = "device_testparent_testparent00", string serial = "testparent00", string? childId = "testparent00", DeviceEncryptionKind? encryption = null)
@@ -92,13 +137,13 @@ public sealed class CacheRestorationTests
 		Set (entry, "HubChildCategory", model == "T310" ? HubChildCategory.TemperatureHumidity : HubChildCategory.None);
 		Set (entry, "Host", "192.0.2.1");
 		Set (entry, "Port", port);
-        if (encryption.HasValue)
-            {
-            Set (entry, "EncryptionKind", encryption.Value);
-            Set (entry, "TransportKind", DeviceTransportKind.HttpToken);
-            Set (entry, "DeviceFamily", DeviceFamilyKind.SmartKasaPlug);
-            Set (entry, "LoginVersion", 2);
-            }
+		if (encryption.HasValue)
+			{
+			Set (entry, "EncryptionKind", encryption.Value);
+			Set (entry, "TransportKind", DeviceTransportKind.HttpToken);
+			Set (entry, "DeviceFamily", DeviceFamilyKind.SmartKasaPlug);
+			Set (entry, "LoginVersion", 2);
+			}
 		Set (entry, "ApplicationPath", "app");
 		Set (entry, "TreatAsLight", treatAsLight);
 		Set (entry, "IsConfigured", configured);
@@ -130,7 +175,8 @@ public sealed class CacheRestorationTests
 		Assert.That (descriptor.ChildId, Is.EqualTo ("testparent00"));
 		Assert.That (descriptor.ControllerId, Is.EqualTo ("device_testparent_testparent00"));
 		Assert.That (descriptor.Name, Is.EqualTo ("Office test device"));
-		if (model == "T310") Assert.That (descriptor.HubChildCategory, Is.EqualTo (HubChildCategory.TemperatureHumidity));
+		if (model == "T310")
+			Assert.That (descriptor.HubChildCategory, Is.EqualTo (HubChildCategory.TemperatureHumidity));
 		}
 	[TestCase ("Parent-Exact", "device_parent_exact_child", "Child", "Child", "Parent-Exact")]
 	[TestCase (null, "device_aabb_aabb01", "AABB01", "AABB01", "AABB")]
@@ -235,45 +281,45 @@ public sealed class CacheRestorationTests
 		Call ("PublishCachedChildControllers", Field<PlatformSharedConfiguration> ("_sharedConfiguration").Snapshot ());
 		Assert.That (Field<IDictionary> ("_childControllers"), Is.Empty);
 		}
-    [TestCase("same-outlet", DeviceEncryptionKind.Klap)]
-    [TestCase("unrelated-outlet", DeviceEncryptionKind.Tpap)]
-    public async Task OnlyVerifiedMatchingOutletReplacesCachedProtocol(string returnedId, DeviceEncryptionKind expected)
-    {
-        const string id="same-outlet";
-        const string controller="device_same_outlet";
-        Seed(DeviceUxCategory.Outlet,DeviceType.Plug,"KP125M(US)",configured:true,
-            discoveryId:id,controllerId:controller,serial:id,childId:null,encryption:DeviceEncryptionKind.Tpap);
-        Call("LoadManagedDeviceCacheIntoMemory");
-        object GetCached() => Field<IDictionary>("_managedDeviceCacheMetadata")[controller]!;
-        object[] Restore()
-        {
-            object[] args={GetCached(),Field<PlatformSharedConfiguration>("_sharedConfiguration").Snapshot(),null!,null!};
-            Assert.That(Call("TryCreateCachedDescriptorAndConfiguration",args),Is.True);
-            return args;
-        }
-        var original=Restore();
-        Assert.That(((DeviceConfiguration)original[3]).ConnectionOptions.ConnectionParameters!.EncryptionKind,Is.EqualTo(DeviceEncryptionKind.Tpap));
-        var config=new DeviceConfiguration("192.0.2.1",80,connectionOptions:new DeviceConnectionOptions(
-            DeviceTransportKind.HttpToken,new DeviceConnectionParameters(DeviceFamilyKind.SmartKasaPlug,DeviceEncryptionKind.Klap,2,false,80)));
-        using var device=new KasaDevice(config,new VerifyTransport(returnedId));
-        await device.UpdateAsync();
-        Call("SaveVerifiedOutletConnection",original[2],device);
-        _driver.Dispose();
-        CreateDriver();
-        Call("LoadManagedDeviceCacheIntoMemory");
-        var reloaded=Restore();
-        var descriptor=(ManagedLightDescriptor)reloaded[2];
-        Assert.That(descriptor.Name,Is.EqualTo("Office test device"));
-        Assert.That(descriptor.ControllerId,Is.EqualTo(controller));
-        Assert.That(descriptor.DiscoveryDeviceId,Is.EqualTo(id));
-        Assert.That(((DeviceConfiguration)reloaded[3]).ConnectionOptions.ConnectionParameters!.EncryptionKind,Is.EqualTo(expected));
-    }
+	[TestCase ("same-outlet", DeviceEncryptionKind.Klap)]
+	[TestCase ("unrelated-outlet", DeviceEncryptionKind.Tpap)]
+	public async Task OnlyVerifiedMatchingOutletReplacesCachedProtocol (string returnedId, DeviceEncryptionKind expected)
+		{
+		const string id = "same-outlet";
+		const string controller = "device_same_outlet";
+		Seed (DeviceUxCategory.Outlet, DeviceType.Plug, "KP125M(US)", configured: true,
+			 discoveryId: id, controllerId: controller, serial: id, childId: null, encryption: DeviceEncryptionKind.Tpap);
+		Call ("LoadManagedDeviceCacheIntoMemory");
+		object GetCached () => Field<IDictionary> ("_managedDeviceCacheMetadata")[controller]!;
+		object[] Restore ()
+			{
+			object[] args = { GetCached (), Field<PlatformSharedConfiguration> ("_sharedConfiguration").Snapshot (), null!, null! };
+			Assert.That (Call ("TryCreateCachedDescriptorAndConfiguration", args), Is.True);
+			return args;
+			}
+		var original = Restore ();
+		Assert.That (((DeviceConfiguration)original[3]).ConnectionOptions.ConnectionParameters!.EncryptionKind, Is.EqualTo (DeviceEncryptionKind.Tpap));
+		var config = new DeviceConfiguration ("192.0.2.1", 80, connectionOptions: new DeviceConnectionOptions (
+			 DeviceTransportKind.HttpToken, new DeviceConnectionParameters (DeviceFamilyKind.SmartKasaPlug, DeviceEncryptionKind.Klap, 2, false, 80)));
+		using var device = new KasaDevice (config, new VerifyTransport (returnedId));
+		await device.UpdateAsync ();
+		Call ("SaveVerifiedOutletConnection", original[2], device);
+		_driver.Dispose ();
+		CreateDriver ();
+		Call ("LoadManagedDeviceCacheIntoMemory");
+		var reloaded = Restore ();
+		var descriptor = (ManagedLightDescriptor)reloaded[2];
+		Assert.That (descriptor.Name, Is.EqualTo ("Office test device"));
+		Assert.That (descriptor.ControllerId, Is.EqualTo (controller));
+		Assert.That (descriptor.DiscoveryDeviceId, Is.EqualTo (id));
+		Assert.That (((DeviceConfiguration)reloaded[3]).ConnectionOptions.ConnectionParameters!.EncryptionKind, Is.EqualTo (expected));
+		}
 
-    private sealed class VerifyTransport(string id) : IDeviceTransport
-    {
-        public Task<string> SendAsync(string json,CancellationToken token)=>Task.FromResult(
-            "{\"error_code\":0,\"result\":{\"responses\":[{\"method\":\"get_device_info\",\"error_code\":0,\"result\":{\"device_id\":\""+id+"\",\"model\":\"KP125M(US)\",\"device_on\":true}},{\"method\":\"component_nego\",\"error_code\":0,\"result\":{\"component_list\":[]}}]}}");
-        public Task<string> SendManyAsync(IReadOnlyList<string> json,CancellationToken token)=>throw new NotSupportedException();
-    }
+	private sealed class VerifyTransport (string id) : IDeviceTransport
+		{
+		public Task<string> SendAsync (string json, CancellationToken token) => Task.FromResult (
+			 "{\"error_code\":0,\"result\":{\"responses\":[{\"method\":\"get_device_info\",\"error_code\":0,\"result\":{\"device_id\":\"" + id + "\",\"model\":\"KP125M(US)\",\"device_on\":true}},{\"method\":\"component_nego\",\"error_code\":0,\"result\":{\"component_list\":[]}}]}}");
+		public Task<string> SendManyAsync (IReadOnlyList<string> json, CancellationToken token) => throw new NotSupportedException ();
+		}
 
 	}

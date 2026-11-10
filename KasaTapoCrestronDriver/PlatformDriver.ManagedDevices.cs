@@ -89,17 +89,17 @@ public sealed partial class PlatformDriver
 				ControllerId = descriptor.ControllerId,
 				UxCategory = descriptor.ChildKind switch
 					{
-					ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
-					ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
-					// Switch is used only as a distinct, round-trippable marker for Button kind in
-					// the persisted cache/host UxCategory - it must stay different from Sensor so
-					// TryCreateCachedDescriptorAndConfiguration can resolve ManagedChildKind.Button
-					// back correctly on reload instead of collapsing S200B into KasaSensorEntity.
-					ManagedChildKind.Button => DeviceUxCategory.Switch,
-					ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
-					ManagedChildKind.Light => DeviceUxCategory.Light,
-					_ => throw new InvalidOperationException ($"Cannot resolve DeviceUxCategory for controllerId='{descriptor.ControllerId}' because ManagedChildKind '{descriptor.ChildKind}' is unrecognized."),
-					},
+						ManagedChildKind.Outlet => DeviceUxCategory.Outlet,
+						ManagedChildKind.Sensor => DeviceUxCategory.Sensor,
+						// Switch is used only as a distinct, round-trippable marker for Button kind in
+						// the persisted cache/host UxCategory - it must stay different from Sensor so
+						// TryCreateCachedDescriptorAndConfiguration can resolve ManagedChildKind.Button
+						// back correctly on reload instead of collapsing S200B into KasaSensorEntity.
+						ManagedChildKind.Button => DeviceUxCategory.Switch,
+						ManagedChildKind.Thermostat => DeviceUxCategory.Thermostat,
+						ManagedChildKind.Light => DeviceUxCategory.Light,
+						_ => throw new InvalidOperationException ($"Cannot resolve DeviceUxCategory for controllerId='{descriptor.ControllerId}' because ManagedChildKind '{descriptor.ChildKind}' is unrecognized."),
+						},
 				Manufacturer = TP_LINK_MANUFACTURER,
 				Model = descriptor.ModelName,
 				DiscoveredDeviceType = descriptor.DiscoveredDeviceType,
@@ -564,15 +564,15 @@ public sealed partial class PlatformDriver
 		string serialNumber = ResolveCachedSerialNumber (entry);
 		ManagedChildKind childKind = entry.UxCategory switch
 			{
-			DeviceUxCategory.Outlet => ManagedChildKind.Outlet,
-			DeviceUxCategory.Sensor => ManagedChildKind.Sensor,
-			// Legacy cache entries persisted Switch for button children before this was fixed to
-			// use Sensor; keep accepting it on read so old caches still resolve correctly.
-			DeviceUxCategory.Switch => ManagedChildKind.Button,
-			DeviceUxCategory.Thermostat => ManagedChildKind.Thermostat,
-			DeviceUxCategory.Light => ManagedChildKind.Light,
-			_ => throw new InvalidOperationException ($"Cannot resolve ManagedChildKind for controllerId='{entry.ControllerId}' because cached UxCategory '{entry.UxCategory}' is unrecognized."),
-			};
+				DeviceUxCategory.Outlet => ManagedChildKind.Outlet,
+				DeviceUxCategory.Sensor => ManagedChildKind.Sensor,
+				// Legacy cache entries persisted Switch for button children before this was fixed to
+				// use Sensor; keep accepting it on read so old caches still resolve correctly.
+				DeviceUxCategory.Switch => ManagedChildKind.Button,
+				DeviceUxCategory.Thermostat => ManagedChildKind.Thermostat,
+				DeviceUxCategory.Light => ManagedChildKind.Light,
+				_ => throw new InvalidOperationException ($"Cannot resolve ManagedChildKind for controllerId='{entry.ControllerId}' because cached UxCategory '{entry.UxCategory}' is unrecognized."),
+				};
 
 		// Cache files written before the ChildId-persistence fix (see PersistManagedDeviceCache)
 		// already have ChildId=null baked in for every strip child outlet - the fix only stops
@@ -676,8 +676,10 @@ public sealed partial class PlatformDriver
 
 	private static string? ResolveCachedDiscoveryDeviceId (ManagedDeviceCacheEntry entry, string serialNumber, string? childId)
 		{
-		if (!string.IsNullOrWhiteSpace (entry.DiscoveryDeviceId)) return entry.DiscoveryDeviceId;
-		if (string.IsNullOrWhiteSpace (childId)) return serialNumber;
+		if (!string.IsNullOrWhiteSpace (entry.DiscoveryDeviceId))
+			return entry.DiscoveryDeviceId;
+		if (string.IsNullOrWhiteSpace (childId))
+			return serialNumber;
 
 		// Older caches only saved the child's serial number. Recover the parent from the
 		// stable controller ID only when both IDs survive sanitization without ambiguity.
@@ -685,11 +687,14 @@ public sealed partial class PlatformDriver
 		string suffix = "_" + childId;
 		if (!childId.All (char.IsLetterOrDigit)
 			|| !entry.ControllerId.StartsWith (prefix, StringComparison.OrdinalIgnoreCase)
-			|| !entry.ControllerId.EndsWith (suffix, StringComparison.OrdinalIgnoreCase)) return null;
+			|| !entry.ControllerId.EndsWith (suffix, StringComparison.OrdinalIgnoreCase))
+			return null;
 		int parentLength = entry.ControllerId.Length - prefix.Length - suffix.Length;
-		if (parentLength <= 0) return null;
+		if (parentLength <= 0)
+			return null;
 		string parentId = entry.ControllerId.Substring (prefix.Length, parentLength);
-		if (!parentId.All (char.IsLetterOrDigit)) return null;
+		if (!parentId.All (char.IsLetterOrDigit))
+			return null;
 		// Strip child IDs include the parent prefix; retain its original casing when available.
 		return serialNumber.StartsWith (parentId, StringComparison.OrdinalIgnoreCase)
 			? serialNumber.Substring (0, parentLength) : parentId;

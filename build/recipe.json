@@ -144,6 +144,15 @@
           ]
         }
       ]
+    },
+    "release-assets": {
+      "commands": [
+        {
+          "script": "build/steps/stage-driver-release.ps1",
+          "shell": "pwsh",
+          "executable": "pwsh"
+        }
+      ]
     }
   }
 }

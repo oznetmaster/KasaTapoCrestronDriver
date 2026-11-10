@@ -84,10 +84,22 @@ internal readonly struct PlatformSharedConfigurationSnapshot
 		ProcessorSshPassword = processorSshPassword;
 		}
 
-	public bool EnableProcessorBaselineWorkaround { get; }
-	public string ProcessorSshHost { get; }
-	public string ProcessorSshUserName { get; }
-	public string ProcessorSshPassword { get; }
+	public bool EnableProcessorBaselineWorkaround
+		{
+		get;
+		}
+	public string ProcessorSshHost
+		{
+		get;
+		}
+	public string ProcessorSshUserName
+		{
+		get;
+		}
+	public string ProcessorSshPassword
+		{
+		get;
+		}
 
 	public string UserName
 		{
@@ -126,61 +138,121 @@ internal sealed class PlatformSharedConfiguration : IPlatformSharedConfiguration
 
 	public string UserName
 		{
-		get { lock (_gate) { return field; } }
+		get
+			{
+			lock (_gate)
+				{
+				return field;
+				}
+			}
 		private set;
 		} = string.Empty;
 
 	public bool EnableProcessorBaselineWorkaround
 		{
-		get { lock (_gate) { return field; } }
+		get
+			{
+			lock (_gate)
+				{
+				return field;
+				}
+			}
 		private set;
 		}
 
 	public string ProcessorSshHost
 		{
-		get { lock (_gate) { return field; } }
+		get
+			{
+			lock (_gate)
+				{
+				return field;
+				}
+			}
 		private set;
 		} = string.Empty;
 
 	public string ProcessorSshUserName
 		{
-		get { lock (_gate) { return field; } }
+		get
+			{
+			lock (_gate)
+				{
+				return field;
+				}
+			}
 		private set;
 		} = string.Empty;
 
 	public string ProcessorSshPassword
 		{
-		get { lock (_gate) { return field; } }
+		get
+			{
+			lock (_gate)
+				{
+				return field;
+				}
+			}
 		private set;
 		} = string.Empty;
 
 	public string Password
 		{
-		get { lock (_gate) { return field; } }
+		get
+			{
+			lock (_gate)
+				{
+				return field;
+				}
+			}
 		private set;
 		} = string.Empty;
 
 	public TimeSpan DiscoveryTimeout
 		{
-		get { lock (_gate) { return field; } }
+		get
+			{
+			lock (_gate)
+				{
+				return field;
+				}
+			}
 		private set;
 		} = TimeSpan.FromSeconds (8);
 
 	public bool EnableLightPolling
 		{
-		get { lock (_gate) { return field; } }
+		get
+			{
+			lock (_gate)
+				{
+				return field;
+				}
+			}
 		private set;
 		}
 
 	public TimeSpan LightPollInterval
 		{
-		get { lock (_gate) { return field; } }
+		get
+			{
+			lock (_gate)
+				{
+				return field;
+				}
+			}
 		private set;
 		} = TimeSpan.FromSeconds (15);
 
 	public TimeSpan SensorPollInterval
 		{
-		get { lock (_gate) { return field; } }
+		get
+			{
+			lock (_gate)
+				{
+				return field;
+				}
+			}
 		private set;
 		} = TimeSpan.FromSeconds (3);
 

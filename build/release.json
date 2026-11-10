@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "name": "KasaTapoCrestronDriver",
+  "versionFile": "build/ReleaseVersion.props",
+  "versionXPath": "/Project/PropertyGroup/Version",
+  "notesFile": "release-notes/v{version}.md",
+  "packages": [
+    {
+      "frameworks": [],
+      "project": "KasaTapoCrestronDriver/KasaTapoCrestronDriver.csproj",
+      "id": "CrestronHomeDriver.TpLink.KasaTapoPlatform",
+      "symbols": false
+    }
+  ],
+  "applications": [],
+  "documents": [
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "rawLibraries": false,
+  "libraryArchive": false
+}

@@ -81,7 +81,10 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	/// </summary>
 	public string ChildId
 		{
-		get { return _descriptor.ChildId ?? string.Empty; }
+		get
+			{
+			return _descriptor.ChildId ?? string.Empty;
+			}
 		}
 
 	public string DeviceName { get; private set; } = string.Empty;
@@ -348,8 +351,18 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler ContactOpened
 		{
-		add { _contactOpened += value; LogInfo ($"Sensor entity '{ControllerId}' ContactOpened subscriber added; totalSubscribers={_contactOpened?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
-		remove { _contactOpened -= value; LogInfo ($"Sensor entity '{ControllerId}' ContactOpened subscriber removed; totalSubscribers={_contactOpened?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		add
+			{
+			_contactOpened += value;
+			LogInfo ($"Sensor entity '{ControllerId}' ContactOpened subscriber added; totalSubscribers={_contactOpened?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
+		remove
+			{
+			_contactOpened -= value;
+			LogInfo ($"Sensor entity '{ControllerId}' ContactOpened subscriber removed; totalSubscribers={_contactOpened?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
 		}
 
 	private EventHandler? _contactClosed;
@@ -358,8 +371,18 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler ContactClosed
 		{
-		add { _contactClosed += value; LogInfo ($"Sensor entity '{ControllerId}' ContactClosed subscriber added; totalSubscribers={_contactClosed?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
-		remove { _contactClosed -= value; LogInfo ($"Sensor entity '{ControllerId}' ContactClosed subscriber removed; totalSubscribers={_contactClosed?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		add
+			{
+			_contactClosed += value;
+			LogInfo ($"Sensor entity '{ControllerId}' ContactClosed subscriber added; totalSubscribers={_contactClosed?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
+		remove
+			{
+			_contactClosed -= value;
+			LogInfo ($"Sensor entity '{ControllerId}' ContactClosed subscriber removed; totalSubscribers={_contactClosed?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
 		}
 
 	private EventHandler? _motionDetectedEvent;
@@ -368,8 +391,18 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler MotionDetectedEvent
 		{
-		add { _motionDetectedEvent += value; LogInfo ($"Sensor entity '{ControllerId}' MotionDetectedEvent subscriber added; totalSubscribers={_motionDetectedEvent?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
-		remove { _motionDetectedEvent -= value; LogInfo ($"Sensor entity '{ControllerId}' MotionDetectedEvent subscriber removed; totalSubscribers={_motionDetectedEvent?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		add
+			{
+			_motionDetectedEvent += value;
+			LogInfo ($"Sensor entity '{ControllerId}' MotionDetectedEvent subscriber added; totalSubscribers={_motionDetectedEvent?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
+		remove
+			{
+			_motionDetectedEvent -= value;
+			LogInfo ($"Sensor entity '{ControllerId}' MotionDetectedEvent subscriber removed; totalSubscribers={_motionDetectedEvent?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
 		}
 
 	private EventHandler? _motionCleared;
@@ -378,8 +411,18 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler MotionCleared
 		{
-		add { _motionCleared += value; LogInfo ($"Sensor entity '{ControllerId}' MotionCleared subscriber added; totalSubscribers={_motionCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
-		remove { _motionCleared -= value; LogInfo ($"Sensor entity '{ControllerId}' MotionCleared subscriber removed; totalSubscribers={_motionCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		add
+			{
+			_motionCleared += value;
+			LogInfo ($"Sensor entity '{ControllerId}' MotionCleared subscriber added; totalSubscribers={_motionCleared?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
+		remove
+			{
+			_motionCleared -= value;
+			LogInfo ($"Sensor entity '{ControllerId}' MotionCleared subscriber removed; totalSubscribers={_motionCleared?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
 		}
 
 	// Records when motion was last seen. Deliberately only called while motion is detected, so
@@ -397,8 +440,18 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler LeakDetectedEvent
 		{
-		add { _leakDetectedEvent += value; LogInfo ($"Sensor entity '{ControllerId}' LeakDetectedEvent subscriber added; totalSubscribers={_leakDetectedEvent?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
-		remove { _leakDetectedEvent -= value; LogInfo ($"Sensor entity '{ControllerId}' LeakDetectedEvent subscriber removed; totalSubscribers={_leakDetectedEvent?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		add
+			{
+			_leakDetectedEvent += value;
+			LogInfo ($"Sensor entity '{ControllerId}' LeakDetectedEvent subscriber added; totalSubscribers={_leakDetectedEvent?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
+		remove
+			{
+			_leakDetectedEvent -= value;
+			LogInfo ($"Sensor entity '{ControllerId}' LeakDetectedEvent subscriber removed; totalSubscribers={_leakDetectedEvent?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
 		}
 
 	private EventHandler? _leakCleared;
@@ -407,8 +460,18 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler LeakCleared
 		{
-		add { _leakCleared += value; LogInfo ($"Sensor entity '{ControllerId}' LeakCleared subscriber added; totalSubscribers={_leakCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
-		remove { _leakCleared -= value; LogInfo ($"Sensor entity '{ControllerId}' LeakCleared subscriber removed; totalSubscribers={_leakCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		add
+			{
+			_leakCleared += value;
+			LogInfo ($"Sensor entity '{ControllerId}' LeakCleared subscriber added; totalSubscribers={_leakCleared?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
+		remove
+			{
+			_leakCleared -= value;
+			LogInfo ($"Sensor entity '{ControllerId}' LeakCleared subscriber removed; totalSubscribers={_leakCleared?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
 		}
 
 	private EventHandler? _batteryLowEvent;
@@ -417,8 +480,18 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler BatteryLowEvent
 		{
-		add { _batteryLowEvent += value; LogInfo ($"Sensor entity '{ControllerId}' BatteryLowEvent subscriber added; totalSubscribers={_batteryLowEvent?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
-		remove { _batteryLowEvent -= value; LogInfo ($"Sensor entity '{ControllerId}' BatteryLowEvent subscriber removed; totalSubscribers={_batteryLowEvent?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		add
+			{
+			_batteryLowEvent += value;
+			LogInfo ($"Sensor entity '{ControllerId}' BatteryLowEvent subscriber added; totalSubscribers={_batteryLowEvent?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
+		remove
+			{
+			_batteryLowEvent -= value;
+			LogInfo ($"Sensor entity '{ControllerId}' BatteryLowEvent subscriber removed; totalSubscribers={_batteryLowEvent?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
 		}
 
 	private EventHandler? _batteryNormal;
@@ -427,8 +500,18 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler BatteryNormal
 		{
-		add { _batteryNormal += value; LogInfo ($"Sensor entity '{ControllerId}' BatteryNormal subscriber added; totalSubscribers={_batteryNormal?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
-		remove { _batteryNormal -= value; LogInfo ($"Sensor entity '{ControllerId}' BatteryNormal subscriber removed; totalSubscribers={_batteryNormal?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		add
+			{
+			_batteryNormal += value;
+			LogInfo ($"Sensor entity '{ControllerId}' BatteryNormal subscriber added; totalSubscribers={_batteryNormal?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
+		remove
+			{
+			_batteryNormal -= value;
+			LogInfo ($"Sensor entity '{ControllerId}' BatteryNormal subscriber removed; totalSubscribers={_batteryNormal?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
 		}
 
 	private EventHandler? _temperatureWarningDetected;
@@ -437,8 +520,18 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler TemperatureWarningDetected
 		{
-		add { _temperatureWarningDetected += value; LogInfo ($"Sensor entity '{ControllerId}' TemperatureWarningDetected subscriber added; totalSubscribers={_temperatureWarningDetected?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
-		remove { _temperatureWarningDetected -= value; LogInfo ($"Sensor entity '{ControllerId}' TemperatureWarningDetected subscriber removed; totalSubscribers={_temperatureWarningDetected?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		add
+			{
+			_temperatureWarningDetected += value;
+			LogInfo ($"Sensor entity '{ControllerId}' TemperatureWarningDetected subscriber added; totalSubscribers={_temperatureWarningDetected?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
+		remove
+			{
+			_temperatureWarningDetected -= value;
+			LogInfo ($"Sensor entity '{ControllerId}' TemperatureWarningDetected subscriber removed; totalSubscribers={_temperatureWarningDetected?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
 		}
 
 	private EventHandler? _temperatureWarningCleared;
@@ -447,8 +540,18 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler TemperatureWarningCleared
 		{
-		add { _temperatureWarningCleared += value; LogInfo ($"Sensor entity '{ControllerId}' TemperatureWarningCleared subscriber added; totalSubscribers={_temperatureWarningCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
-		remove { _temperatureWarningCleared -= value; LogInfo ($"Sensor entity '{ControllerId}' TemperatureWarningCleared subscriber removed; totalSubscribers={_temperatureWarningCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		add
+			{
+			_temperatureWarningCleared += value;
+			LogInfo ($"Sensor entity '{ControllerId}' TemperatureWarningCleared subscriber added; totalSubscribers={_temperatureWarningCleared?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
+		remove
+			{
+			_temperatureWarningCleared -= value;
+			LogInfo ($"Sensor entity '{ControllerId}' TemperatureWarningCleared subscriber removed; totalSubscribers={_temperatureWarningCleared?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
 		}
 
 	private EventHandler? _humidityWarningDetected;
@@ -457,8 +560,18 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler HumidityWarningDetected
 		{
-		add { _humidityWarningDetected += value; LogInfo ($"Sensor entity '{ControllerId}' HumidityWarningDetected subscriber added; totalSubscribers={_humidityWarningDetected?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
-		remove { _humidityWarningDetected -= value; LogInfo ($"Sensor entity '{ControllerId}' HumidityWarningDetected subscriber removed; totalSubscribers={_humidityWarningDetected?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		add
+			{
+			_humidityWarningDetected += value;
+			LogInfo ($"Sensor entity '{ControllerId}' HumidityWarningDetected subscriber added; totalSubscribers={_humidityWarningDetected?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
+		remove
+			{
+			_humidityWarningDetected -= value;
+			LogInfo ($"Sensor entity '{ControllerId}' HumidityWarningDetected subscriber removed; totalSubscribers={_humidityWarningDetected?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
 		}
 
 	private EventHandler? _humidityWarningCleared;
@@ -467,8 +580,18 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 	[EntityEventMetadata (Programmable = true)]
 	public event EventHandler HumidityWarningCleared
 		{
-		add { _humidityWarningCleared += value; LogInfo ($"Sensor entity '{ControllerId}' HumidityWarningCleared subscriber added; totalSubscribers={_humidityWarningCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
-		remove { _humidityWarningCleared -= value; LogInfo ($"Sensor entity '{ControllerId}' HumidityWarningCleared subscriber removed; totalSubscribers={_humidityWarningCleared?.GetInvocationList ().Length ?? 0}."); EventSubscribersChanged?.Invoke (); }
+		add
+			{
+			_humidityWarningCleared += value;
+			LogInfo ($"Sensor entity '{ControllerId}' HumidityWarningCleared subscriber added; totalSubscribers={_humidityWarningCleared?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
+		remove
+			{
+			_humidityWarningCleared -= value;
+			LogInfo ($"Sensor entity '{ControllerId}' HumidityWarningCleared subscriber removed; totalSubscribers={_humidityWarningCleared?.GetInvocationList ().Length ?? 0}.");
+			EventSubscribersChanged?.Invoke ();
+			}
 		}
 
 	/// <summary>
@@ -844,7 +967,9 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 			}
 
 		// All properties, availability, status and icon precede transition events.
-		if (_childRunning) foreach (EventHandler handler in events) handler (this, EventArgs.Empty);
+		if (_childRunning)
+			foreach (EventHandler handler in events)
+				handler (this, EventArgs.Empty);
 		}
 
 	// Compares the freshly pushed child's typed state records (now value-comparable per KasaClient
@@ -946,7 +1071,8 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 				// confirmed. The per-signal announcement set prevents duplicate Running events.
 				var events = ApplyState (_lastChild);
 				PublishStateSnapshot ();
-				foreach (EventHandler handler in events) handler (this, EventArgs.Empty);
+				foreach (EventHandler handler in events)
+					handler (this, EventArgs.Empty);
 				}
 			}
 		}
@@ -955,13 +1081,15 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		{
 		lock (_stateEventLock)
 			{
-			if (_disposed || !_childRunning || _hostStateRead) return;
+			if (_disposed || !_childRunning || _hostStateRead)
+				return;
 			_hostStateRead = true;
 			if (OnlineIndicatorIsOnline && ReadyIndicatorIsReady && _lastChild is not null)
 				{
 				var events = ApplyState (_lastChild);
 				PublishStateSnapshot ();
-				foreach (EventHandler handler in events) handler (this, EventArgs.Empty);
+				foreach (EventHandler handler in events)
+					handler (this, EventArgs.Empty);
 				}
 			}
 		}
@@ -1211,7 +1339,8 @@ internal sealed partial class KasaSensorEntity : ReflectedAttributeDriverEntity,
 		if (_childRunning && _hostStateRead && changed)
 			{
 			_announcedSignals.Add (signal);
-			if (handler is not null) events.Add (handler);
+			if (handler is not null)
+				events.Add (handler);
 			}
 		}
 

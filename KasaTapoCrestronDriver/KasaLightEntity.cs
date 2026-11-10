@@ -71,8 +71,14 @@ internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaMa
 	// concrete capability is currently registered.
 	private interface IColorTemperatureLevelHolder
 		{
-		string LevelPropertyId { get; }
-		long LightColorTemperatureLevel { get; set; }
+		string LevelPropertyId
+			{
+			get;
+			}
+		long LightColorTemperatureLevel
+			{
+			get; set;
+			}
 		}
 
 	// Per the Crestron Lights API docs, lightColorTemperature is intended for lights where color
@@ -345,15 +351,33 @@ internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaMa
 	private static readonly SemaphoreSlim StartupConnectConcurrencyGate = new (STARTUP_CONNECT_MAX_CONCURRENCY, STARTUP_CONNECT_MAX_CONCURRENCY);
 
 	private object _sliderGate { get; } = new ();
-	private DriverControllerLogger _logger { get; }
-	private string _driverLogId { get; }
-	private Action<ManagedLightDescriptor>? _descriptorUpdated { get; }
-	private IPlatformSharedConfiguration _sharedConfiguration { get; }
-	private Func<string, ProcessorLightTuningMode, double, double, double, long, CancellationToken, Task>? _synchronizeProcessorBaselineAsync { get; }
+	private DriverControllerLogger _logger
+		{
+		get;
+		}
+	private string _driverLogId
+		{
+		get;
+		}
+	private Action<ManagedLightDescriptor>? _descriptorUpdated
+		{
+		get;
+		}
+	private IPlatformSharedConfiguration _sharedConfiguration
+		{
+		get;
+		}
+	private Func<string, ProcessorLightTuningMode, double, double, double, long, CancellationToken, Task>? _synchronizeProcessorBaselineAsync
+		{
+		get;
+		}
 	private CancellationTokenSource _lifetimeCancellationSource { get; } = new ();
 
 	private ManagedLightDescriptor _descriptor { get; set; } = null!;
-	private DeviceConfiguration? _configuration { get; set; }
+	private DeviceConfiguration? _configuration
+		{
+		get; set;
+		}
 	private KasaDevice? _connectedDevice;
 
 	// Crestron Home dispatches overlapping commands against the same connected device during
@@ -367,13 +391,34 @@ internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaMa
 	// actual disposal of a superseded device until the last active operation against it completes.
 	private int _activeDeviceOperationCount;
 	private KasaDevice? _deviceAwaitingDisposal;
-	private Task? _pollingTask { get; set; }
-	private ManagedLightKind Kind { get; set; }
-	private string? ChildId { get; set; }
-	private bool _supportsBrightness { get; set; }
-	private bool _supportsFullColor { get; set; }
-	private bool _supportsColorTemperature { get; set; }
-	private bool _isColorTemperatureUiModeActive { get; set; }
+	private Task? _pollingTask
+		{
+		get; set;
+		}
+	private ManagedLightKind Kind
+		{
+		get; set;
+		}
+	private string? ChildId
+		{
+		get; set;
+		}
+	private bool _supportsBrightness
+		{
+		get; set;
+		}
+	private bool _supportsFullColor
+		{
+		get; set;
+		}
+	private bool _supportsColorTemperature
+		{
+		get; set;
+		}
+	private bool _isColorTemperatureUiModeActive
+		{
+		get; set;
+		}
 	// Diagnostic instrumentation: records when the last power-on command was requested so that an
 	// inbound color-temperature setLevel arriving immediately afterward can be identified as a
 	// Load-layer-originated drive during power-on (rather than a genuine user white-mode selection).
@@ -424,14 +469,35 @@ internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaMa
 
 		return TimeSpan.FromMilliseconds (jitterMs);
 		}
-	private DesiredLightCommand? _pendingSliderCommand { get; set; }
-	private bool _sliderWorkerRunning { get; set; }
-	private CancellationTokenSource? _sliderCommandCancellationSource { get; set; }
+	private DesiredLightCommand? _pendingSliderCommand
+		{
+		get; set;
+		}
+	private bool _sliderWorkerRunning
+		{
+		get; set;
+		}
+	private CancellationTokenSource? _sliderCommandCancellationSource
+		{
+		get; set;
+		}
 	private bool _suppressPropertyNotifications { get; set; } = true;
-	private bool _isConfigured { get; set; }
-	private bool _initialStateEstablished { get; set; }
-	private FullColorMembers? _registeredFullColorMembers { get; set; }
-	private IColorTemperatureLevelHolder? _registeredColorTemperatureMembers { get; set; }
+	private bool _isConfigured
+		{
+		get; set;
+		}
+	private bool _initialStateEstablished
+		{
+		get; set;
+		}
+	private FullColorMembers? _registeredFullColorMembers
+		{
+		get; set;
+		}
+	private IColorTemperatureLevelHolder? _registeredColorTemperatureMembers
+		{
+		get; set;
+		}
 
 	// Immediately after InitializeConnectedStateAsync publishes the bulb's real (already on, at
 	// whatever brightness it actually was) state, Crestron Home's own Load layer has been observed
@@ -447,8 +513,14 @@ internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaMa
 	// happened to be, since the replay is a Load-layer artifact unrelated to the bulb's actual level.
 	private static readonly TimeSpan StartupDimmerReplayGuardWindow = TimeSpan.FromSeconds (5);
 	private const double STARTUP_DIMMER_REPLAY_SUSPECT_LEVEL_THRESHOLD = 0.02;
-	private DateTime? _startupDimmerReplayGuardUntilUtc { get; set; }
-	private double _startupDimmerReplayRealLevel { get; set; }
+	private DateTime? _startupDimmerReplayGuardUntilUtc
+		{
+		get; set;
+		}
+	private double _startupDimmerReplayRealLevel
+		{
+		get; set;
+		}
 
 	// The processor console synchronization dispatched by DispatchProcessorBaselineSynchronization
 	// only issues a real off->on SetLoadState toggle against the load (see
@@ -471,16 +543,28 @@ internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaMa
 	// genuine user-requested power command (either direction) must always reach the device
 	// immediately. Status queries (device.UpdateAsync) and UI-facing property updates are
 	// unaffected and continue normally.
-	private bool _isInitializingProcessorBaseline { get; set; }
+	private bool _isInitializingProcessorBaseline
+		{
+		get; set;
+		}
 
 	// While a color-capable bulb is in color/HSV mode, Kasa/Tapo devices report color_temp=0. This
 	// is the device's supported inactive-mode sentinel, so the emulated CT range includes zero and
 	// publishes zero in color mode. Retaining a Kelvin value in that state makes Crestron Home restore
 	// White mode after a color-mode power cycle. The mode itself is kept stable by dispatching power-on/off directly
 	// instead of through the deferred slider path - see LightDimmerSetLevel - not by the CT value.
-	private long _colorTemperatureRangeMinimum { get; set; }
-	private DimmableMembers? _registeredDimmableMembers { get; set; }
-	private OnOffMembers? _registeredOnOffMembers { get; set; }
+	private long _colorTemperatureRangeMinimum
+		{
+		get; set;
+		}
+	private DimmableMembers? _registeredDimmableMembers
+		{
+		get; set;
+		}
+	private OnOffMembers? _registeredOnOffMembers
+		{
+		get; set;
+		}
 
 	// LightDimmerLevel is forced to 0 while the bulb is off (see ApplyStateCore) because, for
 	// dimmable-only bulbs, lightDimmer:level also doubles as the Crestron power-state signal (0 =
@@ -490,11 +574,17 @@ internal partial class KasaLightEntity : ReflectedAttributeDriverEntity, IKasaMa
 	// track of it, not a device limitation. This field mirrors the device's last-reported brightness
 	// independent of power state so GetEffectiveOnLevel can restore it on the next power-on instead
 	// of falling back to full brightness.
-	private double? _lastKnownDeviceBrightnessLevel { get; set; }
+	private double? _lastKnownDeviceBrightnessLevel
+		{
+		get; set;
+		}
 
 	private int _stopState;
 	private int _pollingGeneration;
-	private bool _disposed { get; set; }
+	private bool _disposed
+		{
+		get; set;
+		}
 
 	public KasaLightEntity (
 		string controllerId,
