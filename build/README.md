@@ -29,7 +29,7 @@ The shared component rejects missing/stale/empty/failed declared TRX results and
 
 ## Shared public driver release
 
-The shared path in release-package.yml selects standard_release=true and public_version=2.1.16. It retains the caller workflow identity and publication environment. Versioned notes, driver manifests and build/driver-release.json select the artifacts. The repository release-assets Cake task builds and inspects the production packages; pinned shared actions freeze the exact bytes, publish to NuGet, verify GitHub assets, and then publish the draft. Earlier workflow paths remain available.
+The shared path in release-package.yml selects standard_release=true and public_version set to the three-part version in build/driver-release.json. It retains the caller workflow identity and publication environment. Versioned notes, driver manifests and build/driver-release.json select the artifacts. The repository release-assets Cake task builds and inspects the production packages; pinned shared actions freeze the exact bytes, publish to NuGet, verify GitHub assets, and then publish the draft. Earlier workflow paths remain available.
 
 Reviewed workstation and native processor results can be reused through the existing explicit flags and provenance fields. Public driver wrappers contain installable .pkg payloads, not referenceable library assemblies; they do not use the library symbol-package policy. No submission PDFs or private test inputs are staged.
 

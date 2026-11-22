@@ -10,6 +10,11 @@ project follows [Semantic Versioning](https://semver.org/).
 
 This changelog records shipped features, fixes, compatibility and runtime dependency changes. See [development and validation history](DEVELOPMENT-HISTORY.md) for tests, CI, build tooling and work not yet released.
 
+## [2.1.17](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.17) — 2026-11-22
+
+- Use KasaTapoClient 2.2.2 to recover from timed-out SMART refresh batches with individual requests and read all pages of child outlets.
+- Give SMART-strip discovery time for the individual requests after a batch timeout. Legacy XOR strips retain their existing discovery timeout.
+
 ## [2.1.16](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.16) - 2026-11-10
 
 - Use KasaTapoClient 2.2.1.

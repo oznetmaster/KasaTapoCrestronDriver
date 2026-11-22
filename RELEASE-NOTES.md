@@ -1,17 +1,11 @@
-# KasaTapoCrestronDriver 2.1.16
+# KasaTapoCrestronDriver 2.1.17
 
-This patch corrects the dependency and lifecycle issues described below.
-
-- Use KasaTapoClient 2.2.1.
-- Close background-work admission before shutdown, drain discovery, refresh and cache work, and retain synchronization objects while cancelled observers unwind.
-- Preserve cached child identities, pairing/configuration, confirmed feedback events, startup baselines and staggered outlet polling.
+This patch improves initial discovery for SMART power strips whose firmware times out on a combined child-device and component-list request. KasaTapoClient 2.2.2 retries with individual requests and reads each page of outlets. The driver gives that fallback a bounded window within strip discovery.
 
 ## Installation
 
-Use the driver package from [GitHub](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.16) or the matching NuGet distribution. Import the package, then update the existing driver in Home Setup or Configure Pro. Importing alone does not update the running instance. Existing pairing and configuration formats are retained; removal and re-add is not a routine update step.
+Use the driver package from [GitHub](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.17) or the matching NuGet distribution. Import it and update the existing KasaTapoPlatform driver in Crestron Home Setup or Configure Pro. Existing device IDs, configuration and pairing formats are retained.
 
 ## Validation
 
-Passed 196 workstation Debug and 196 Release test executions, plus 196 native net472/Mono processor tests. Processor validation used fake transports and synthetic credentials; no new physical-device acceptance or endurance run is claimed. Existing processor configuration and all pairing files were preserved. See [development history](DEVELOPMENT-HISTORY.md) for provenance and limits.
-
-This GitHub/NuGet release does not replace any submitted Crestron package. Submission-specific PDFs and correspondence are excluded from public artifacts.
+The regression uses a simulated P300-style strip. It lets the child-list batch time out, then verifies that the driver deadline allows all outlet pages to be read. A second case verifies the legacy strip deadline. The test uses synthetic device responses.

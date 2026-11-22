@@ -1,6 +1,6 @@
 {
   "name": "KasaTapoCrestronDriver",
-  "version": "2.1.16",
+  "version": "2.1.17",
   "packages": [
     {
       "id": "CrestronHomeDriver.TpLink.KasaTapoPlatform",

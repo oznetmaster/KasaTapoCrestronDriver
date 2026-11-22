@@ -1,8 +1,8 @@
 # Kasa/Tapo Crestron Driver
 
-## Current GitHub/NuGet release: 2.1.16
+## Current GitHub/NuGet release: 2.1.17
 
-[Download 2.1.16](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.16) or use the matching NuGet driver distribution. This patch includes the audited dependency and lifecycle corrections; see [release notes](RELEASE-NOTES.md). Existing configuration and pairing formats are retained. Crestron catalog/submission versions below retain their separate attribution.
+[Download 2.1.17](https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.17) or use the matching NuGet driver distribution. This patch improves discovery for SMART power strips that time out during batched requests. See the [release notes](RELEASE-NOTES.md). Existing configuration and pairing formats are retained. Crestron catalog/submission versions below retain their separate attribution.
 
 ## Crestron availability
 

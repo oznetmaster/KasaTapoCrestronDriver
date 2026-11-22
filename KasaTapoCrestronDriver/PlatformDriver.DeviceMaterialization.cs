@@ -1219,6 +1219,16 @@ public sealed partial class PlatformDriver
 		return Discover.CreateConfiguration (discoveryResult, credentials, timeout);
 		}
 
+	internal static TimeSpan GetStripDiscoveryTimeout (DeviceConfiguration configuration)
+		{
+		TimeSpan requestTimeout = configuration.Timeout > TimeSpan.Zero ? configuration.Timeout : DefaultDiscoveryTimeout;
+		// SMART strips may spend a full request timeout on a rejected batch before trying individual reads.
+		TimeSpan fallbackWindow = configuration.ConnectionOptions.TransportKind == DeviceTransportKind.LegacyXor
+			? TimeSpan.Zero
+			: requestTimeout;
+		return requestTimeout + fallbackWindow + TimeSpan.FromSeconds (2);
+		}
+
 	// Power strip child outlets (KasaDeviceType.Strip) are only known once connected -
 	// DiscoveryResult alone does not expose them - so, unlike every other supported device type,
 	// strips must be itemized into one ManagedLightDescriptor per child outlet via a one-shot
@@ -1261,10 +1271,7 @@ public sealed partial class PlatformDriver
 			LogInfo ($"ResolveStripChildDescriptorsAsync: attempting one-shot child expansion connect for host='{discoveryResult.Host}', deviceId='{discoveryResult.DeviceId ?? "<null>"}', model='{rootModel}'.");
 
 			using var expansionTimeoutSource = CancellationTokenSource.CreateLinkedTokenSource (cancellationToken);
-			TimeSpan expansionTimeout = configuration.Timeout > TimeSpan.Zero
-				? configuration.Timeout + TimeSpan.FromSeconds (2)
-				: DefaultDiscoveryTimeout + TimeSpan.FromSeconds (2);
-			expansionTimeoutSource.CancelAfter (expansionTimeout);
+			expansionTimeoutSource.CancelAfter (GetStripDiscoveryTimeout (configuration));
 
 			KasaDevice? device = null;
 			bool deviceAdopted = false;
