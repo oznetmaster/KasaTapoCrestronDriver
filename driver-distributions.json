@@ -564,6 +564,23 @@
       "nugetUrl": "https://www.nuget.org/packages/CrestronHomeDriver.TpLink.KasaTapoPlatform/2.1.16",
       "nugetPayloadSha256": "14b500898f79d7fb72b6b3a86af4ad8b86127184a2af218fa5f4df83ce8673e4",
       "publishedUtc": "2026-11-10T13:24:30.361978+00:00"
+    },
+    {
+      "id": "public-2.1.17",
+      "channel": "public",
+      "publicVersion": "2.1.17",
+      "driverVersion": "2.1.017.0000",
+      "purpose": "SMART strip discovery after timed-out child-list batches",
+      "url": "https://github.com/oznetmaster/KasaTapoCrestronDriver/releases/tag/v2.1.17",
+      "packageSha256": "9bcb8c01ab8fc13bc2543687b3ddde818f0bcf9668821f8f90a39c086386c9de",
+      "releaseSourceCommit": "922401cf2d57e44f28f821d9cd8fbd4ba845e521",
+      "status": "released",
+      "date": "2026-11-22",
+      "publicationRun": 45000014152,
+      "manifestSha256": "73dd14a35a7eac3666f7b54b04f0a017c25cc9995ef8f707eca4060fc5801bba",
+      "nugetUrl": "https://www.nuget.org/packages/CrestronHomeDriver.TpLink.KasaTapoPlatform/2.1.17",
+      "nugetPayloadSha256": "ad3e92c257144111def27b80405b8ac7fa22923e4c95bcd83341bcc694a603e2",
+      "publishedUtc": "2026-11-22T07:50:59Z"
     }
   ],
   "nugetDocumentationPatches": [
